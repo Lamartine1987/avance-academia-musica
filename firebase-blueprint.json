@@ -1,0 +1,125 @@
+{
+  "entities": {
+    "user": {
+      "title": "User Profile",
+      "description": "User profile data including role and basic info.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Firebase Auth UID" },
+        "email": { "type": "string", "format": "email" },
+        "displayName": { "type": "string" },
+        "role": { "type": "string", "enum": ["admin", "teacher", "student"] },
+        "teacherId": { "type": "string", "description": "ID of the teacher record in the teachers collection" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "role"]
+    },
+    "student": {
+      "title": "Student",
+      "description": "Data for a music student including multiple course enrollments.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "level": { "type": "string", "enum": ["beginner", "intermediate", "advanced"] },
+        "status": { "type": "string", "enum": ["active", "inactive"] },
+        "enrollments": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "instrument": { "type": "string" },
+              "teacherId": { "type": "string" },
+              "duration": { "type": "integer", "description": "Lesson duration in minutes" },
+              "schedule": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "day": { "type": "integer", "description": "Day of week (0-6)" },
+                    "time": { "type": "string", "description": "Start time (HH:mm)" }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "level", "status", "enrollments"]
+    },
+    "teacher": {
+      "title": "Teacher",
+      "description": "Data for a music teacher.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "instruments": { "type": "array", "items": { "type": "string" } },
+        "bio": { "type": "string" },
+        "role": { "type": "string", "enum": ["admin", "teacher"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name"]
+    },
+    "lesson": {
+      "title": "Lesson",
+      "description": "Scheduled music lesson.",
+      "type": "object",
+      "properties": {
+        "studentId": { "type": "string" },
+        "teacherId": { "type": "string" },
+        "instrument": { "type": "string" },
+        "startTime": { "type": "string", "format": "date-time" },
+        "endTime": { "type": "string", "format": "date-time" },
+        "status": { "type": "string", "enum": ["scheduled", "completed", "cancelled"] },
+        "notes": { "type": "string" }
+      },
+      "required": ["studentId", "teacherId", "instrument", "startTime", "endTime"]
+    },
+    "instrument": {
+      "title": "Instrument",
+      "description": "Musical instrument taught in the school.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name"]
+    },
+    "blockedTime": {
+      "title": "Blocked Time",
+      "description": "A time slot where no lessons can be scheduled.",
+      "type": "object",
+      "properties": {
+        "startTime": { "type": "string", "format": "date-time" },
+        "endTime": { "type": "string", "format": "date-time" },
+        "reason": { "type": "string" },
+        "teacherId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["startTime", "endTime"]
+    },
+    "schoolSettings": {
+      "title": "School Settings",
+      "description": "Global configuration for the music school.",
+      "type": "object",
+      "properties": {
+        "startHour": { "type": "integer", "description": "Start hour for the schedule grid (0-23)" },
+        "endHour": { "type": "integer", "description": "End hour for the schedule grid (0-23)" },
+        "availableDays": { "type": "array", "items": { "type": "integer" }, "description": "List of available days (0-6)" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["startHour", "endHour"]
+    }
+  },
+  "firestore": {
+    "/users/{uid}": { "schema": "user", "description": "User profiles" },
+    "/students/{studentId}": { "schema": "student", "description": "Student records" },
+    "/teachers/{teacherId}": { "schema": "teacher", "description": "Teacher records" },
+    "/lessons/{lessonId}": { "schema": "lesson", "description": "Lesson schedules" },
+    "/instruments/{instrumentId}": { "schema": "instrument", "description": "Musical instruments" },
+    "/blocked_times/{blockedTimeId}": { "schema": "blockedTime", "description": "Blocked time slots" },
+    "/settings/school": { "schema": "schoolSettings", "description": "Global school settings" }
+  }
+}

@@ -1,0 +1,216 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    // Collection: /users/{uid}
+    //   - uid: string (required)
+    //   - email: string (required, format: email)
+    //   - displayName: string
+    //   - role: string (required, enum: ['admin', 'teacher', 'student'])
+    //   - teacherId: string (optional)
+    //   - createdAt: timestamp
+    //
+    // Collection: /students/{studentId}
+    //   - name: string (required)
+    //   - email: string (format: email)
+    //   - level: string (enum: ['beginner', 'intermediate', 'advanced'])
+    //   - enrollments: list of objects {instrument: string, teacherId: string, duration: number, schedule: list} (required)
+    //   - status: string (enum: ['active', 'inactive'])
+    //   - createdAt: timestamp
+    //
+    // Collection: /teachers/{teacherId}
+    //   - name: string (required)
+    //   - email: string (format: email)
+    //   - instruments: list of strings
+    //   - bio: string
+    //   - createdAt: timestamp
+    //
+    // Collection: /lessons/{lessonId}
+    //   - studentId: string (required)
+    //   - teacherId: string (required)
+    //   - instrument: string (required)
+    //   - startTime: timestamp (required)
+    //   - endTime: timestamp (required)
+    //   - status: string (enum: ['scheduled', 'completed', 'cancelled'])
+    //   - notes: string
+    //   - createdAt: timestamp
+    //
+    // Collection: /instruments/{instrumentId}
+    //   - name: string (required)
+    //   - createdAt: timestamp
+    //
+    // Collection: /blocked_times/{blockedTimeId}
+    //   - startTime: timestamp (required)
+    //   - endTime: timestamp (required)
+    //   - reason: string
+    //   - teacherId: string
+    //   - createdAt: timestamp
+    //
+    // Collection: /settings/school
+    //   - startHour: number (required)
+    //   - endHour: number (required)
+    //   - updatedAt: timestamp
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && (
+        request.auth.token.email == "lamartinecezar3@gmail.com" ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
+      );
+    }
+
+    function isTeacher() {
+      return isAuthenticated() && 
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'teacher';
+    }
+
+    function getTeacherId() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.teacherId;
+    }
+
+    function isOwnTeacherId(teacherId) {
+      return exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.teacherId == teacherId;
+    }
+
+    function isLessonTeacher(teacherId) {
+      return isTeacher() && getTeacherId() == teacherId;
+    }
+
+    function isValidEmail(email) {
+      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+    function isValidUser(data) {
+      return hasOnlyAllowedFields(['uid', 'email', 'displayName', 'role', 'teacherId', 'createdAt']) &&
+             data.uid is string && data.uid.size() > 0 &&
+             data.email is string && isValidEmail(data.email) &&
+             data.role in ['admin', 'teacher', 'student'] &&
+             (!('teacherId' in data) || data.teacherId is string) &&
+             (!('displayName' in data) || data.displayName is string) &&
+             (!('createdAt' in data) || data.createdAt is timestamp);
+    }
+
+    function isValidStudent(data) {
+      return hasOnlyAllowedFields(['name', 'email', 'level', 'enrollments', 'status', 'createdAt']) &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
+             data.enrollments is list && data.enrollments.size() > 0 &&
+             (!('level' in data) || data.level in ['beginner', 'intermediate', 'advanced']) &&
+             (!('email' in data) || isValidEmail(data.email)) &&
+             (!('status' in data) || data.status in ['active', 'inactive']) &&
+             (!('createdAt' in data) || data.createdAt is timestamp);
+    }
+
+    function isValidTeacher(data) {
+      return hasOnlyAllowedFields(['name', 'email', 'instruments', 'bio', 'role', 'maxStudents', 'createdAt']) &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
+             (!('email' in data) || isValidEmail(data.email)) &&
+             (!('instruments' in data) || data.instruments is list) &&
+             (!('bio' in data) || data.bio is string) &&
+             (!('role' in data) || data.role in ['admin', 'teacher']) &&
+             (!('maxStudents' in data) || data.maxStudents is number) &&
+             (!('createdAt' in data) || data.createdAt is timestamp);
+    }
+
+    function isValidLesson(data) {
+      return hasOnlyAllowedFields(['studentId', 'teacherId', 'instrument', 'startTime', 'endTime', 'status', 'notes', 'createdAt']) &&
+             data.studentId is string && data.teacherId is string && data.instrument is string &&
+             data.startTime is timestamp && data.endTime is timestamp &&
+             (!('status' in data) || data.status in ['scheduled', 'completed', 'cancelled']) &&
+             (!('notes' in data) || data.notes is string) &&
+             (!('createdAt' in data) || data.createdAt is timestamp);
+    }
+
+    function isValidInstrument(data) {
+      return hasOnlyAllowedFields(['name', 'createdAt']) &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
+             (!('createdAt' in data) || data.createdAt is timestamp);
+    }
+
+    function isValidBlockedTime(data) {
+      return hasOnlyAllowedFields(['startTime', 'endTime', 'reason', 'teacherId', 'createdAt']) &&
+             data.startTime is timestamp && data.endTime is timestamp &&
+             (!('reason' in data) || data.reason is string) &&
+             (!('teacherId' in data) || data.teacherId == null || data.teacherId is string) &&
+             (!('createdAt' in data) || data.createdAt is timestamp);
+    }
+
+    function isValidSchoolSettings(data) {
+      return hasOnlyAllowedFields(['startHour', 'endHour', 'availableDays', 'defaultMaxStudents', 'updatedAt']) &&
+             data.startHour is number && data.startHour >= 0 && data.startHour <= 23 &&
+             data.endHour is number && data.endHour >= 0 && data.endHour <= 23 &&
+             data.startHour < data.endHour &&
+             data.availableDays is list &&
+             (!('defaultMaxStudents' in data) || data.defaultMaxStudents is number) &&
+             (!('updatedAt' in data) || data.updatedAt is timestamp);
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{uid} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && (
+        (isOwner(uid) && isValidUser(request.resource.data) && request.resource.data.role != 'admin') ||
+        (isAdmin() && isValidUser(request.resource.data))
+      );
+      allow update: if isAuthenticated() && (isAdmin() || (isOwner(uid) && request.resource.data.role == resource.data.role && isValidUser(request.resource.data)));
+    }
+
+    match /students/{studentId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isAdmin() && isValidStudent(request.resource.data);
+      allow delete: if isAdmin();
+    }
+
+    match /teachers/{teacherId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isAdmin() && isValidTeacher(request.resource.data);
+      allow delete: if isAdmin();
+    }
+
+    match /lessons/{lessonId} {
+      allow read: if isAdmin() || (isAuthenticated() && (resource == null || isLessonTeacher(resource.data.teacherId)));
+      allow create, update: if (isAdmin() || isLessonTeacher(request.resource.data.teacherId)) && isValidLesson(request.resource.data);
+      allow delete: if isAdmin();
+    }
+
+    match /instruments/{instrumentId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isAdmin() && isValidInstrument(request.resource.data);
+      allow delete: if isAdmin();
+    }
+
+    match /blocked_times/{blockedTimeId} {
+      allow read: if isAuthenticated();
+      allow create, update: if (isAdmin() || (isTeacher() && isOwnTeacherId(request.resource.data.teacherId))) && isValidBlockedTime(request.resource.data);
+      allow delete: if isAdmin() || (isTeacher() && isOwnTeacherId(resource.data.teacherId));
+    }
+
+    match /settings/{settingId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin() && (settingId != 'school' || isValidSchoolSettings(request.resource.data));
+    }
+  }
+}
