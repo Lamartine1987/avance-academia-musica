@@ -3,7 +3,7 @@ import { collection, onSnapshot, addDoc, serverTimestamp, deleteDoc, doc, Timest
 import { db } from '../firebase';
 import { UserProfile, Student, Teacher, Instrument, CourseEnrollment } from '../types';
 import { handleFirestoreError, OperationType } from '../lib/error-handler';
-import { Plus, Trash2, X, Calendar, Clock, User, Pencil } from 'lucide-react';
+import { Plus, Trash2, X, Calendar, Clock, User, Pencil, Eye } from 'lucide-react';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, getDay, setHours, setMinutes, isAfter, addYears } from 'date-fns';
 import { cn } from '../lib/utils';
 import ConfirmModal from './ConfirmModal';
@@ -27,16 +27,25 @@ export default function Students({ profile }: { profile: UserProfile }) {
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
   const [studentToDelete, setStudentToDelete] = useState<string | null>(null);
   const [editingStudentId, setEditingStudentId] = useState<string | null>(null);
+  const [viewingStudent, setViewingStudent] = useState<Student | null>(null);
   const [schoolSettings, setSchoolSettings] = useState({ defaultMaxStudents: 1 });
   const [filterName, setFilterName] = useState('');
+  const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'inactive'>('all');
   const [filterInstrument, setFilterInstrument] = useState('');
   const [filterTeacher, setFilterTeacher] = useState('');
   const [selectedStudents, setSelectedStudents] = useState<Set<string>>(new Set());
   const [newStudent, setNewStudent] = useState({
     name: '',
+    email: '',
+    phone: '',
+    birthDate: '',
+    fatherName: '',
+    motherName: '',
     level: 'beginner' as Student['level'],
     status: 'active' as const,
-    enrollments: [] as CourseEnrollment[]
+    enrollments: [] as CourseEnrollment[],
+    courseValue: 0,
+    dueDate: 10
   });
 
   useEffect(() => {
@@ -99,6 +108,7 @@ export default function Students({ profile }: { profile: UserProfile }) {
     // Check conflicts with other students' recurring schedules
     for (const student of students) {
       if (student.id === currentStudentId) continue;
+      if (student.status === 'inactive') continue;
       
       let studentOverlaps = false;
 
@@ -220,12 +230,14 @@ export default function Students({ profile }: { profile: UserProfile }) {
         return;
       }
       
-      for (const item of enrollment.schedule) {
-        const conflictReason = checkTimeConflict(enrollment.teacherId, item.day, item.time, enrollment.duration, editingStudentId || undefined);
-        if (conflictReason) {
-          const dayName = DAYS_OF_WEEK.find(d => d.value === item.day)?.label;
-          alert(`O horário de ${dayName} às ${item.time} para o curso de ${enrollment.instrument} está indisponível: ${conflictReason}`);
-          return;
+      if (newStudent.status === 'active') {
+        for (const item of enrollment.schedule) {
+          const conflictReason = checkTimeConflict(enrollment.teacherId, item.day, item.time, enrollment.duration, editingStudentId || undefined);
+          if (conflictReason) {
+            const dayName = DAYS_OF_WEEK.find(d => d.value === item.day)?.label;
+            alert(`O horário de ${dayName} às ${item.time} para o curso de ${enrollment.instrument} está indisponível: ${conflictReason}`);
+            return;
+          }
         }
       }
     }
@@ -261,7 +273,9 @@ export default function Students({ profile }: { profile: UserProfile }) {
         }
 
         // Generate new lessons based on updated schedule
-        await generateLessonsForYear(editingStudentId, newStudent.enrollments);
+        if (newStudent.status === 'active') {
+          await generateLessonsForYear(editingStudentId, newStudent.enrollments);
+        }
       } else {
         const docRef = await addDoc(collection(db, 'students'), {
           ...newStudent,
@@ -269,16 +283,25 @@ export default function Students({ profile }: { profile: UserProfile }) {
         });
 
         // Generate lessons for the next 12 months automatically
-        await generateLessonsForYear(docRef.id, newStudent.enrollments);
+        if (newStudent.status === 'active') {
+          await generateLessonsForYear(docRef.id, newStudent.enrollments);
+        }
       }
 
       setIsModalOpen(false);
       setEditingStudentId(null);
       setNewStudent({ 
         name: '', 
+        email: '',
+        phone: '',
+        birthDate: '',
+        fatherName: '',
+        motherName: '',
         level: 'beginner',
         status: 'active',
-        enrollments: []
+        enrollments: [],
+        courseValue: 0,
+        dueDate: 10
       });
     } catch (error) {
       handleFirestoreError(error, editingStudentId ? OperationType.UPDATE : OperationType.CREATE, 'students');
@@ -289,9 +312,16 @@ export default function Students({ profile }: { profile: UserProfile }) {
     setEditingStudentId(student.id);
     setNewStudent({
       name: student.name,
+      email: student.email || '',
+      phone: student.phone || '',
+      birthDate: student.birthDate || '',
+      fatherName: student.fatherName || '',
+      motherName: student.motherName || '',
       level: student.level || 'beginner',
       status: student.status,
-      enrollments: student.enrollments || []
+      enrollments: student.enrollments || [],
+      courseValue: student.courseValue || 0,
+      dueDate: student.dueDate || 10
     });
     setIsModalOpen(true);
   };
@@ -300,9 +330,16 @@ export default function Students({ profile }: { profile: UserProfile }) {
     setEditingStudentId(null);
     setNewStudent({ 
       name: '', 
+      email: '',
+      phone: '',
+      birthDate: '',
+      fatherName: '',
+      motherName: '',
       level: 'beginner',
       status: 'active',
-      enrollments: []
+      enrollments: [],
+      courseValue: 0,
+      dueDate: 10
     });
     setIsModalOpen(true);
   };
@@ -392,10 +429,11 @@ export default function Students({ profile }: { profile: UserProfile }) {
 
   const filteredStudents = students.filter(student => {
     const matchName = !filterName || student.name.toLowerCase().includes(filterName.toLowerCase());
+    const matchStatus = filterStatus === 'all' || student.status === filterStatus;
     const enrollments = student.enrollments || [];
     const matchInstrument = !filterInstrument || enrollments.some(e => e.instrument === filterInstrument);
     const matchTeacher = !filterTeacher || enrollments.some(e => e.teacherId === filterTeacher);
-    return matchName && matchInstrument && matchTeacher;
+    return matchName && matchStatus && matchInstrument && matchTeacher;
   });
 
   const toggleSelectAll = () => {
@@ -444,6 +482,15 @@ export default function Students({ profile }: { profile: UserProfile }) {
             onChange={(e) => setFilterName(e.target.value)}
             className="w-full sm:w-auto bg-zinc-50 border border-zinc-100 rounded-2xl px-5 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 transition-all font-medium placeholder-zinc-400"
           />
+          <select
+            value={filterStatus}
+            onChange={(e) => setFilterStatus(e.target.value as 'all' | 'active' | 'inactive')}
+            className="w-full sm:w-auto bg-zinc-50 border border-zinc-100 rounded-2xl px-5 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 transition-all text-zinc-600 font-medium"
+          >
+            <option value="all">Filtro de Status</option>
+            <option value="active">Apenas Ativos</option>
+            <option value="inactive">Apenas Inativos</option>
+          </select>
           <select
             value={filterInstrument}
             onChange={(e) => setFilterInstrument(e.target.value)}
@@ -506,6 +553,7 @@ export default function Students({ profile }: { profile: UserProfile }) {
                   />
                 </th>
                 <th className="py-4 font-medium">Nome</th>
+                <th className="py-4 font-medium">Financeiro</th>
                 <th className="py-4 font-medium">Curso</th>
                 <th className="py-4 font-medium">Professor</th>
                 <th className="py-4 font-medium">Horário</th>
@@ -526,6 +574,23 @@ export default function Students({ profile }: { profile: UserProfile }) {
                       />
                     </td>
                     <td className="py-5 font-bold text-black display-font">{student.name}</td>
+                    <td className="py-5">
+                      <div className="flex flex-col gap-1">
+                        {!!student.courseValue && (
+                          <span className="text-sm font-medium text-emerald-600">
+                            {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(student.courseValue)}
+                          </span>
+                        )}
+                        {!!student.dueDate && (
+                          <span className="text-xs text-zinc-500">
+                            Vence dia {student.dueDate}
+                          </span>
+                        )}
+                        {!student.courseValue && !student.dueDate && (
+                          <span className="text-xs text-zinc-400 italic">Não informado</span>
+                        )}
+                      </div>
+                    </td>
                     <td colSpan={3} className="py-5">
                       <div className="space-y-3">
                         {(student.enrollments || []).map((enrollment, eIdx) => {
@@ -569,6 +634,13 @@ export default function Students({ profile }: { profile: UserProfile }) {
                       {profile.role === 'admin' && (
                         <div className="flex items-center justify-end gap-3">
                           <button 
+                            onClick={() => setViewingStudent(student)}
+                            className="text-zinc-400 hover:text-blue-500 transition-colors"
+                            title="Visualizar Detalhes"
+                          >
+                            <Eye className="w-5 h-5" />
+                          </button>
+                          <button 
                             onClick={() => handleEditStudent(student)}
                             className="text-zinc-400 hover:text-black transition-colors"
                           >
@@ -600,8 +672,8 @@ export default function Students({ profile }: { profile: UserProfile }) {
 
       {/* Modal */}
       {isModalOpen && (
-        <div className="fixed inset-0 bg-zinc-950/40 backdrop-blur-md flex items-center justify-center p-6 z-50 overflow-y-auto">
-          <div className="bg-white w-full max-w-2xl rounded-[32px] p-8 shadow-2xl shadow-black/10 ring-1 ring-zinc-950/5 my-8">
+        <div className="fixed inset-0 bg-zinc-950/40 backdrop-blur-md flex items-start justify-center p-4 pt-12 pb-20 z-50 overflow-y-auto">
+          <div className="bg-white w-full max-w-2xl rounded-[32px] p-8 md:p-10 shadow-2xl shadow-black/10 ring-1 ring-zinc-950/5 relative my-auto">
             <div className="flex items-center justify-between mb-8">
               <h3 className="text-2xl font-bold display-font">{editingStudentId ? 'Editar Aluno' : 'Matrícula de Aluno'}</h3>
               <button onClick={() => setIsModalOpen(false)} className="text-zinc-400 hover:text-black transition-colors">
@@ -619,7 +691,52 @@ export default function Students({ profile }: { profile: UserProfile }) {
                       type="text" 
                       value={newStudent.name}
                       onChange={e => setNewStudent({...newStudent, name: e.target.value})}
-                      className="w-full bg-zinc-50 border border-zinc-100 rounded-2xl px-6 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 transition-all"
+                      className="w-full bg-zinc-50 border border-zinc-100 rounded-2xl px-6 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 transition-all font-medium"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-zinc-700 mb-2">Data de Nascimento</label>
+                    <input 
+                      type="date" 
+                      value={newStudent.birthDate}
+                      onChange={e => setNewStudent({...newStudent, birthDate: e.target.value})}
+                      className="w-full bg-zinc-50 border border-zinc-100 rounded-2xl px-6 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 transition-all font-medium"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-zinc-700 mb-2">E-mail</label>
+                    <input 
+                      type="email" 
+                      value={newStudent.email}
+                      onChange={e => setNewStudent({...newStudent, email: e.target.value})}
+                      className="w-full bg-zinc-50 border border-zinc-100 rounded-2xl px-6 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 transition-all font-medium"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-zinc-700 mb-2">Telefone</label>
+                    <input 
+                      type="tel" 
+                      value={newStudent.phone}
+                      onChange={e => setNewStudent({...newStudent, phone: e.target.value})}
+                      className="w-full bg-zinc-50 border border-zinc-100 rounded-2xl px-6 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 transition-all font-medium"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-zinc-700 mb-2">Nome da Mãe</label>
+                    <input 
+                      type="text" 
+                      value={newStudent.motherName}
+                      onChange={e => setNewStudent({...newStudent, motherName: e.target.value})}
+                      className="w-full bg-zinc-50 border border-zinc-100 rounded-2xl px-6 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 transition-all font-medium"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-zinc-700 mb-2">Nome do Pai</label>
+                    <input 
+                      type="text" 
+                      value={newStudent.fatherName}
+                      onChange={e => setNewStudent({...newStudent, fatherName: e.target.value})}
+                      className="w-full bg-zinc-50 border border-zinc-100 rounded-2xl px-6 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 transition-all font-medium"
                     />
                   </div>
                   <div>
@@ -645,6 +762,36 @@ export default function Students({ profile }: { profile: UserProfile }) {
                     <option value="active">Ativo</option>
                     <option value="inactive">Inativo</option>
                   </select>
+                </div>
+              </div>
+
+              <div className="space-y-6">
+                <h4 className="text-xs font-semibold uppercase tracking-widest text-zinc-400">Financeiro</h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <label className="block text-sm font-medium text-zinc-700 mb-2">Valor do Curso (R$)</label>
+                    <input 
+                      type="number" 
+                      min="0"
+                      step="0.01"
+                      value={newStudent.courseValue || ''}
+                      onChange={e => setNewStudent({...newStudent, courseValue: Number(e.target.value)})}
+                      className="w-full bg-zinc-50 border border-zinc-100 rounded-2xl px-6 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 transition-all font-medium"
+                      placeholder="Ex: 150.00"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-zinc-700 mb-2">Dia de Vencimento</label>
+                    <input 
+                      type="number" 
+                      min="1"
+                      max="31"
+                      value={newStudent.dueDate || ''}
+                      onChange={e => setNewStudent({...newStudent, dueDate: Number(e.target.value)})}
+                      className="w-full bg-zinc-50 border border-zinc-100 rounded-2xl px-6 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 transition-all font-medium"
+                      placeholder="Ex: 10"
+                    />
+                  </div>
                 </div>
               </div>
 
@@ -737,7 +884,7 @@ export default function Students({ profile }: { profile: UserProfile }) {
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                           {enrollment.schedule.map((item, sIdx) => {
                             const conflictReason = checkTimeConflict(enrollment.teacherId, item.day, item.time, enrollment.duration, editingStudentId || undefined);
-                            const hasConflict = !!conflictReason;
+                            const hasConflict = !!conflictReason && newStudent.status === 'active';
                             return (
                               <div key={sIdx} className="flex flex-col gap-1">
                                 <div className={cn(
@@ -794,6 +941,135 @@ export default function Students({ profile }: { profile: UserProfile }) {
                 {editingStudentId ? 'Salvar Alterações' : 'Confirmar Matrícula e Gerar Aulas'}
               </button>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* View Modal */}
+      {viewingStudent && (
+        <div className="fixed inset-0 bg-zinc-950/40 backdrop-blur-md flex items-start justify-center p-4 pt-12 pb-20 z-50 overflow-y-auto">
+          <div className="bg-white w-full max-w-2xl rounded-[32px] p-8 md:p-10 shadow-2xl shadow-black/10 ring-1 ring-zinc-950/5 relative my-auto">
+            <div className="flex items-center justify-between mb-8">
+              <h3 className="text-2xl font-bold display-font">Detalhes do Aluno</h3>
+              <button type="button" onClick={() => setViewingStudent(null)} className="text-zinc-400 hover:text-black transition-colors">
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            
+            <div className="space-y-8">
+              <div>
+                <h4 className="text-xs font-semibold uppercase tracking-widest text-zinc-400 mb-4">Dados Pessoais</h4>
+                <div className="grid grid-cols-2 gap-6 bg-zinc-50 p-6 rounded-[24px] border border-zinc-100">
+                  <div className="col-span-2">
+                    <span className="text-xs font-semibold uppercase tracking-widest text-zinc-400 block mb-1">Nome Completo</span>
+                    <span className="font-medium text-lg text-black">{viewingStudent.name}</span>
+                  </div>
+                  <div>
+                    <span className="text-xs font-semibold uppercase tracking-widest text-zinc-400 block mb-1">Status</span>
+                    <span className={cn("inline-flex px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider", viewingStudent.status === 'active' ? "bg-emerald-100 text-emerald-700" : "bg-zinc-200 text-zinc-600")}>
+                      {viewingStudent.status === 'active' ? 'Ativo' : 'Inativo'}
+                    </span>
+                  </div>
+                  {viewingStudent.level && (
+                    <div>
+                      <span className="text-xs font-semibold uppercase tracking-widest text-zinc-400 block mb-1">Nível</span>
+                      <span className="font-medium capitalize">{
+                        viewingStudent.level === 'beginner' ? 'Iniciante' :
+                        viewingStudent.level === 'intermediate' ? 'Intermediário' : 'Avançado'
+                      }</span>
+                    </div>
+                  )}
+                  {viewingStudent.birthDate && (
+                    <div>
+                      <span className="text-xs font-semibold uppercase tracking-widest text-zinc-400 block mb-1">Data de Nascimento</span>
+                      <span className="font-medium">{format(new Date(viewingStudent.birthDate + 'T12:00:00'), 'dd/MM/yyyy')}</span>
+                    </div>
+                  )}
+                  {viewingStudent.phone && (
+                    <div>
+                      <span className="text-xs font-semibold uppercase tracking-widest text-zinc-400 block mb-1">Telefone</span>
+                      <span className="font-medium">{viewingStudent.phone}</span>
+                    </div>
+                  )}
+                  {viewingStudent.email && (
+                    <div className="col-span-2">
+                      <span className="text-xs font-semibold uppercase tracking-widest text-zinc-400 block mb-1">E-mail</span>
+                      <span className="font-medium">{viewingStudent.email}</span>
+                    </div>
+                  )}
+                  {viewingStudent.motherName && (
+                    <div className="col-span-2">
+                      <span className="text-xs font-semibold uppercase tracking-widest text-zinc-400 block mb-1">Nome da Mãe</span>
+                      <span className="font-medium">{viewingStudent.motherName}</span>
+                    </div>
+                  )}
+                  {viewingStudent.fatherName && (
+                    <div className="col-span-2">
+                      <span className="text-xs font-semibold uppercase tracking-widest text-zinc-400 block mb-1">Nome do Pai</span>
+                      <span className="font-medium">{viewingStudent.fatherName}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <h4 className="text-xs font-semibold uppercase tracking-widest text-zinc-400 mb-4">Financeiro</h4>
+                <div className="grid grid-cols-2 gap-6 bg-zinc-50 p-6 rounded-[24px] border border-zinc-100">
+                  <div>
+                    <span className="text-xs font-semibold uppercase tracking-widest text-zinc-400 block mb-1">Valor do Curso</span>
+                    <span className="font-bold text-lg text-emerald-600">
+                      {viewingStudent.courseValue ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(viewingStudent.courseValue) : 'Não informado'}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-xs font-semibold uppercase tracking-widest text-zinc-400 block mb-1">Dia de Vencimento</span>
+                    <span className="font-medium text-lg">{viewingStudent.dueDate ? `Dia ${viewingStudent.dueDate}` : 'Não informado'}</span>
+                  </div>
+                </div>
+              </div>
+              
+              <div>
+                <h4 className="text-xs font-semibold uppercase tracking-widest text-zinc-400 mb-4">Matrículas (Cursos logados)</h4>
+                {viewingStudent.enrollments.length === 0 ? (
+                  <div className="text-sm text-zinc-500 italic">Nenhum curso matriculado.</div>
+                ) : (
+                  <div className="space-y-4">
+                    {viewingStudent.enrollments.map((enr, i) => {
+                      const teacher = teachers.find(t => t.id === enr.teacherId);
+                      return (
+                        <div key={i} className="bg-zinc-50 p-4 rounded-2xl border border-zinc-100">
+                          <div className="flex justify-between items-start mb-2">
+                            <div>
+                              <span className="font-bold text-black block display-font">{enr.instrument}</span>
+                              <span className="text-xs text-zinc-500">Professor: {teacher?.name || 'Não atribuído'}</span>
+                            </div>
+                            <span className="text-xs font-medium bg-zinc-200 px-2 py-1 rounded text-zinc-700">{enr.duration} Min</span>
+                          </div>
+                          <div className="flex flex-wrap gap-2 mt-3">
+                            {enr.schedule.map((sch, j) => (
+                              <div key={j} className="flex items-center gap-1.5 text-xs bg-white border border-zinc-200 px-2.5 py-1.5 rounded-lg">
+                                <span className="font-medium text-black">{sch.time}</span>
+                                <span className="text-zinc-400 font-medium">· {DAYS_OF_WEEK.find(d => d.value === sch.day)?.label}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+            
+            <div className="mt-8">
+              <button 
+                type="button"
+                onClick={() => setViewingStudent(null)}
+                className="w-full bg-zinc-100 text-black py-4 rounded-2xl font-bold hover:bg-zinc-200 transition-all"
+              >
+                Fechar
+              </button>
+            </div>
           </div>
         </div>
       )}

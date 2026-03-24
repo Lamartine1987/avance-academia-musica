@@ -25,9 +25,15 @@ export interface Student {
   id: string;
   name: string;
   email?: string;
+  phone?: string;
+  birthDate?: string;
+  fatherName?: string;
+  motherName?: string;
   enrollments: CourseEnrollment[];
   level?: 'beginner' | 'intermediate' | 'advanced';
   status: 'active' | 'inactive';
+  courseValue?: number;
+  dueDate?: number;
   createdAt: any;
 }
 
