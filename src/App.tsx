@@ -27,7 +27,9 @@ import {
   Search, 
   UserCircle,
   Menu,
-  X
+  X,
+  Wallet,
+  MessageSquareText
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { auth, db } from './firebase';
@@ -41,9 +43,12 @@ import Dashboard from './components/Dashboard';
 import Students from './components/Students';
 import Teachers from './components/Teachers';
 import Schedule from './components/Schedule';
-import Instruments from './components/Instruments';import Profile from './components/Profile';
+import Instruments from './components/Instruments';
+import Profile from './components/Profile';
+import Financial from './components/Financial';
+import Communication from './components/Communication';
 
-type View = 'dashboard' | 'students' | 'teachers' | 'schedule' | 'instruments' | 'profile';
+type View = 'dashboard' | 'students' | 'teachers' | 'schedule' | 'instruments' | 'profile' | 'financial' | 'communication';
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -225,6 +230,8 @@ export default function App() {
     { id: 'students', label: 'Alunos', icon: Users, roles: ['admin'] },
     { id: 'teachers', label: 'Professores', icon: Music, roles: ['admin'] },
     { id: 'instruments', label: 'Instrumentos', icon: Music2, roles: ['admin'] },
+    { id: 'financial', label: 'Financeiro', icon: Wallet, roles: ['admin'] },
+    { id: 'communication', label: 'Comunicação', icon: MessageSquareText, roles: ['admin'] },
   ].filter(item => item.roles.includes(profile.role));
 
   return (
@@ -360,6 +367,8 @@ export default function App() {
             {currentView === 'teachers' && profile.role === 'admin' && <Teachers profile={profile} />}
             {currentView === 'schedule' && (profile.role === 'admin' || profile.role === 'teacher') && <Schedule profile={profile} />}
             {currentView === 'instruments' && profile.role === 'admin' && <Instruments profile={profile} />}
+            {currentView === 'financial' && profile.role === 'admin' && <Financial />}
+            {currentView === 'communication' && profile.role === 'admin' && <Communication />}
             {currentView === 'profile' && <Profile user={user} profile={profile} />}
           </motion.div>
         </AnimatePresence>

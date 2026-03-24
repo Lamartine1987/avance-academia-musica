@@ -73,3 +73,38 @@ export interface BlockedTime {
   teacherId?: string; // If undefined, applies to all teachers
   createdAt: any;
 }
+
+export interface Payment {
+  id: string;
+  studentId: string;
+  studentName: string;
+  amount: number;
+  dueDate: string; // YYYY-MM-DD
+  month: number;
+  year: number;
+  status: 'pending' | 'paid' | 'overdue' | 'cancelled';
+  whatsappSent: ('pre-due' | 'due' | 'overdue')[];
+  createdAt: any;
+  paidAt?: any;
+}
+
+export interface IntegrationsSettings {
+  zapiInstance: string;
+  zapiToken: string;
+  zapiSecurityToken?: string;
+  remindersEnabled?: boolean;
+  reminderDaysBefore?: boolean;
+  reminderDaysBeforeCount?: number;
+  sendOnDue?: boolean;
+  reminderDaysAfter?: boolean;
+  reminderDaysAfterCount?: number;
+}
+
+export interface MessageTemplate {
+  id: string;
+  title: string;
+  content: string;
+  type: 'welcome' | 'promo' | 'reminder_predue' | 'reminder_due' | 'reminder_overdue' | 'custom';
+  isAutomatic: boolean;
+  createdAt: any;
+}

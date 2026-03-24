@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, onSnapshot, addDoc, serverTimestamp, deleteDoc, doc, Timestamp, updateDoc, query, where, getDocs, writeBatch } from 'firebase/firestore';
+import { collection, onSnapshot, addDoc, serverTimestamp, deleteDoc, doc, Timestamp, updateDoc, query, where, getDocs, getDoc, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
 import { UserProfile, Student, Teacher, Instrument, CourseEnrollment } from '../types';
 import { handleFirestoreError, OperationType } from '../lib/error-handler';
@@ -285,6 +285,69 @@ export default function Students({ profile }: { profile: UserProfile }) {
         // Generate lessons for the next 12 months automatically
         if (newStudent.status === 'active') {
           await generateLessonsForYear(docRef.id, newStudent.enrollments);
+        }
+
+        // Generate initial payment for the current month
+        if (newStudent.status === 'active' && newStudent.courseValue && newStudent.dueDate) {
+          try {
+            const today = new Date();
+            const currentMonth = today.getMonth() + 1;
+            const currentYear = today.getFullYear();
+            let dueD = newStudent.dueDate;
+            
+            const daysInMonth = new Date(currentYear, currentMonth, 0).getDate();
+            if (dueD > daysInMonth) dueD = daysInMonth;
+            
+            const dueDateStr = `${currentYear}-${String(currentMonth).padStart(2, '0')}-${String(dueD).padStart(2, '0')}`;
+            
+            await addDoc(collection(db, 'payments'), {
+              studentId: docRef.id,
+              studentName: newStudent.name,
+              amount: newStudent.courseValue,
+              dueDate: dueDateStr,
+              month: currentMonth,
+              year: currentYear,
+              status: 'pending',
+              whatsappSent: [],
+              createdAt: serverTimestamp()
+            });
+          } catch(err) {
+            console.error("Error generating initial payment:", err);
+          }
+        }
+
+        // Automatic Welcome Message (Z-API)
+        if (newStudent.status === 'active' && newStudent.phone) {
+          try {
+            const tSnap = await getDocs(query(collection(db, 'templates'), where('type', '==', 'welcome'), where('isAutomatic', '==', true)));
+            if (!tSnap.empty) {
+               const template = tSnap.docs[0].data();
+               const sSnap = await getDoc(doc(db, 'settings', 'integrations'));
+               if (sSnap.exists()) {
+                  const { zapiInstance, zapiToken, zapiSecurityToken } = sSnap.data() as any;
+                  if (zapiInstance && zapiToken) {
+                     const cleanPhone = newStudent.phone.replace(/\D/g, '');
+                     if (cleanPhone.length >= 10) {
+                       const number = cleanPhone.length <= 11 ? `55${cleanPhone}` : cleanPhone;
+                       const msg = template.content.replace(/{nome}/g, newStudent.name.split(' ')[0]);
+                       
+                       const headers: any = { 'Content-Type': 'application/json' };
+                       if (zapiSecurityToken) {
+                         headers['Client-Token'] = zapiSecurityToken;
+                       }
+                       
+                       fetch(`https://api.z-api.io/instances/${zapiInstance}/token/${zapiToken}/send-text`, {
+                         method: 'POST',
+                         headers: headers,
+                         body: JSON.stringify({ phone: number, message: msg })
+                       }).catch(err => console.error("Z-API Welcome Error:", err));
+                     }
+                  }
+               }
+            }
+          } catch(e) {
+            console.error("Welcome message flow error:", e);
+          }
         }
       }
 

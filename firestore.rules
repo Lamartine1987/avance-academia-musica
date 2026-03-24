@@ -171,6 +171,25 @@ service cloud.firestore {
              (!('updatedAt' in data) || data.updatedAt is timestamp);
     }
 
+    function isValidPayment(data) {
+      return hasOnlyAllowedFields(['studentId', 'studentName', 'amount', 'dueDate', 'month', 'year', 'status', 'whatsappSent', 'createdAt', 'paidAt']) &&
+             data.studentId is string && data.studentName is string && data.amount is number &&
+             data.dueDate is string && data.month is number && data.year is number &&
+             data.status in ['pending', 'paid', 'overdue', 'cancelled'] &&
+             data.whatsappSent is list &&
+             (!('paidAt' in data) || data.paidAt is timestamp) &&
+             (!('createdAt' in data) || data.createdAt is timestamp);
+    }
+
+    function isValidMessageTemplate(data) {
+      return hasOnlyAllowedFields(['title', 'content', 'type', 'isAutomatic', 'createdAt']) &&
+             data.title is string && data.title.size() > 0 &&
+             data.content is string && data.content.size() > 0 &&
+             data.type in ['welcome', 'promo', 'reminder_predue', 'reminder_due', 'reminder_overdue', 'custom'] &&
+             data.isAutomatic is bool &&
+             (!('createdAt' in data) || data.createdAt is timestamp);
+    }
+
     // ===============================================================
     // Rules
     // ===============================================================
@@ -212,6 +231,18 @@ service cloud.firestore {
       allow read: if isAuthenticated();
       allow create, update: if (isAdmin() || (isTeacher() && isOwnTeacherId(request.resource.data.teacherId))) && isValidBlockedTime(request.resource.data);
       allow delete: if isAdmin() || (isTeacher() && isOwnTeacherId(resource.data.teacherId));
+    }
+
+    match /payments/{paymentId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isAdmin() && isValidPayment(request.resource.data);
+      allow delete: if isAdmin();
+    }
+
+    match /templates/{templateId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isAdmin() && isValidMessageTemplate(request.resource.data);
+      allow delete: if isAdmin();
     }
 
     match /settings/{settingId} {
