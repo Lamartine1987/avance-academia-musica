@@ -3,7 +3,7 @@ import { db } from '../firebase';
 import { collection, query, getDocs, doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { Payment, IntegrationsSettings } from '../types';
-import { Loader2, DollarSign, Wallet, AlertCircle, Save, CheckCircle2, PlayCircle } from 'lucide-react';
+import { Loader2, DollarSign, Wallet, AlertCircle, Save, CheckCircle2, PlayCircle, Search, Filter } from 'lucide-react';
 import { format, isThisMonth, isPast } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
@@ -14,6 +14,12 @@ export default function Financial() {
   const [loading, setLoading] = useState(true);
   const [savingConfig, setSavingConfig] = useState(false);
   const [runningRoutine, setRunningRoutine] = useState(false);
+
+  // Filters
+  const [filterName, setFilterName] = useState('');
+  const [filterStatus, setFilterStatus] = useState('all');
+  const [filterMonth, setFilterMonth] = useState('');
+  const [filterNotification, setFilterNotification] = useState('all');
 
   useEffect(() => {
     fetchData();
@@ -135,10 +141,63 @@ export default function Financial() {
         </div>
       )}
 
-      {activeTab === 'payments' && (
-        <div className="bg-white rounded-[32px] ring-1 ring-zinc-950/5 shadow-xl overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
+      {activeTab === 'payments' && (() => {
+        const filteredPayments = payments.filter(p => {
+          if (filterName && !p.studentName.toLowerCase().includes(filterName.toLowerCase())) return false;
+          if (filterStatus !== 'all' && p.status !== filterStatus) return false;
+          if (filterMonth && !p.dueDate.startsWith(filterMonth)) return false;
+          if (filterNotification !== 'all') {
+            if (filterNotification === 'none' && p.whatsappSent && p.whatsappSent.length > 0) return false;
+            if (filterNotification !== 'none' && (!p.whatsappSent || !p.whatsappSent.includes(filterNotification))) return false;
+          }
+          return true;
+        });
+
+        return (
+          <div className="space-y-4">
+            <div className="bg-white p-6 rounded-[32px] ring-1 ring-zinc-950/5 shadow-sm grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div className="relative">
+                <Search className="w-4 h-4 text-zinc-400 absolute left-4 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  placeholder="Buscar por aluno..."
+                  value={filterName}
+                  onChange={e => setFilterName(e.target.value)}
+                  className="w-full pl-10 pr-4 py-3 bg-zinc-50 border border-zinc-100 rounded-2xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20"
+                />
+              </div>
+              <select
+                value={filterStatus}
+                onChange={e => setFilterStatus(e.target.value)}
+                className="w-full px-4 py-3 bg-zinc-50 border border-zinc-100 rounded-2xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 text-zinc-700"
+              >
+                <option value="all">Todos os Status</option>
+                <option value="pending">Pendentes</option>
+                <option value="paid">Pagos</option>
+                <option value="overdue">Atrasados</option>
+              </select>
+              <input
+                type="month"
+                value={filterMonth}
+                onChange={e => setFilterMonth(e.target.value)}
+                className="w-full px-4 py-3 bg-zinc-50 border border-zinc-100 rounded-2xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 text-zinc-700 font-sans"
+              />
+              <select
+                value={filterNotification}
+                onChange={e => setFilterNotification(e.target.value)}
+                className="w-full px-4 py-3 bg-zinc-50 border border-zinc-100 rounded-2xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 text-zinc-700"
+              >
+                <option value="all">Todas Notificações</option>
+                <option value="none">Sem Notificações</option>
+                <option value="pre-due">Aviso Prévio</option>
+                <option value="due">No Vencimento</option>
+                <option value="overdue">Cobrança Atraso</option>
+              </select>
+            </div>
+
+            <div className="bg-white rounded-[32px] ring-1 ring-zinc-950/5 shadow-xl overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="border-b border-zinc-100">
                   <th className="py-4 px-6 text-xs font-semibold uppercase tracking-widest text-zinc-400">Aluno</th>
@@ -150,7 +209,7 @@ export default function Financial() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-50">
-                {payments.map(payment => (
+                {filteredPayments.map(payment => (
                   <tr key={payment.id} className="hover:bg-zinc-50 transition-colors">
                     <td className="py-4 px-6 font-medium text-sm">{payment.studentName}</td>
                     <td className="py-4 px-6 font-bold text-sm text-black">
@@ -195,7 +254,7 @@ export default function Financial() {
                     </td>
                   </tr>
                 ))}
-                {payments.length === 0 && (
+                {filteredPayments.length === 0 && (
                   <tr>
                     <td colSpan={6} className="py-12 text-center text-sm text-zinc-400">Nenhuma mensalidade encontrada.</td>
                   </tr>
@@ -204,7 +263,9 @@ export default function Financial() {
             </table>
           </div>
         </div>
-      )}
+          </div>
+        );
+      })()}
     </div>
   );
 }

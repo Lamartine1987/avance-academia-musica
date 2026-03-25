@@ -276,6 +276,40 @@ export default function Students({ profile }: { profile: UserProfile }) {
         if (newStudent.status === 'active') {
           await generateLessonsForYear(editingStudentId, newStudent.enrollments);
         }
+
+        // Sync pending/overdue invoices with new course value and due date
+        try {
+          if (newStudent.courseValue && newStudent.dueDate) {
+            const paymentsRef = collection(db, 'payments');
+            const qPending = query(paymentsRef, where('studentId', '==', editingStudentId), where('status', 'in', ['pending', 'overdue']));
+            const pendingSnaps = await getDocs(qPending);
+            
+            if (!pendingSnaps.empty) {
+              const syncBatch = writeBatch(db);
+              pendingSnaps.docs.forEach(p => {
+                const data = p.data();
+                if (data.dueDate) {
+                  const [y, m] = data.dueDate.split('-');
+                  let newD = Number(newStudent.dueDate);
+                  const daysInMonth = new Date(Number(y), Number(m), 0).getDate();
+                  if (newD > daysInMonth) newD = daysInMonth;
+                  
+                  const newDueDateStr = `${y}-${m}-${String(newD).padStart(2, '0')}`;
+                  
+                  syncBatch.update(p.ref, {
+                    amount: Number(newStudent.courseValue),
+                    dueDate: newDueDateStr,
+                    studentName: newStudent.name
+                  });
+                }
+              });
+              await syncBatch.commit();
+            }
+          }
+        } catch (syncErr) {
+          console.error("Error syncing invoices:", syncErr);
+        }
+
       } else {
         const docRef = await addDoc(collection(db, 'students'), {
           ...newStudent,
