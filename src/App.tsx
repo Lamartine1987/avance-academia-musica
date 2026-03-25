@@ -173,7 +173,7 @@ export default function App() {
             <div className="w-16 h-16 bg-black rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-lg shadow-orange-500/20">
               <Music2 className="w-8 h-8 text-orange-500" />
             </div>
-            <h1 className="text-3xl font-bold tracking-tight text-black mb-2 display-font">Avanca</h1>
+            <h1 className="text-3xl font-bold tracking-tight text-black mb-2 display-font">Avance</h1>
             <p className="text-zinc-500 leading-relaxed text-sm uppercase tracking-widest font-semibold">
               Academia de Música
             </p>
@@ -243,7 +243,7 @@ export default function App() {
           <div className="w-8 h-8 bg-orange-500 rounded-lg flex items-center justify-center">
             <Music2 className="w-5 h-5 text-white" />
           </div>
-          <span className="text-lg font-bold display-font">Avanca</span>
+          <span className="text-lg font-bold display-font">Avance</span>
         </div>
         <button onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} className="p-2">
           {isMobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
@@ -261,8 +261,8 @@ export default function App() {
               <Music2 className="w-6 h-6 text-white" />
             </div>
             <div className="flex flex-col">
-              <span className="text-xl font-bold tracking-tight display-font leading-none">Avanca</span>
-              <span className="text-[10px] uppercase tracking-widest text-orange-500 font-semibold mt-1">Academia</span>
+              <span className="text-xl font-bold tracking-tight display-font leading-none">Avance</span>
+              <span className="text-[10px] uppercase tracking-widest text-orange-500 font-semibold mt-1">Academia de Música</span>
             </div>
           </div>
           <button onClick={() => setIsMobileMenuOpen(false)} className="md:hidden p-2 text-zinc-400 hover:text-white">

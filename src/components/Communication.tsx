@@ -460,7 +460,7 @@ export default function Communication() {
                     value={currentTemplate.content || ''}
                     onChange={(e) => setCurrentTemplate({ ...currentTemplate, content: e.target.value })}
                     className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl px-4 py-3 focus:ring-2 focus:ring-orange-500/20 outline-none transition-all resize-none"
-                    placeholder="Olá, {nome}! Bem-vindo à Avanca Academia de Música..."
+                    placeholder="Olá, {nome}! Bem-vindo à Avance Academia de Música..."
                   />
                 </div>
 

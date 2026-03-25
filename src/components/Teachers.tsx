@@ -50,8 +50,8 @@ export default function Teachers({ profile }: { profile: UserProfile }) {
 
   const handleAddTeacher = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (newTeacher.instruments.length === 0) {
-      alert('Selecione pelo menos um instrumento.');
+    if (newTeacher.role === 'teacher' && newTeacher.instruments.length === 0) {
+      alert('Selecione pelo menos um instrumento para o professor.');
       return;
     }
     
@@ -205,7 +205,9 @@ export default function Teachers({ profile }: { profile: UserProfile }) {
                 Administrador
               </span>
             )}
-            <p className="text-orange-500 text-sm font-medium mb-4">{teacher.instruments.join(', ')}</p>
+            <p className="text-orange-500 text-sm font-medium mb-4">
+              {teacher.instruments.length > 0 ? teacher.instruments.join(', ') : 'Equipe Administrativa'}
+            </p>
             <p className="text-zinc-500 text-xs line-clamp-2 mb-6">{teacher.bio || 'Sem biografia disponível.'}</p>
             <button className="w-full py-3 bg-zinc-50 text-black rounded-2xl text-sm font-bold hover:bg-zinc-100 transition-all">
               Ver Perfil
@@ -224,7 +226,9 @@ export default function Teachers({ profile }: { profile: UserProfile }) {
         <div className="fixed inset-0 bg-zinc-950/40 backdrop-blur-md flex items-center justify-center p-6 z-50">
           <div className="bg-white w-full max-w-md rounded-[32px] p-8 shadow-2xl shadow-black/10 ring-1 ring-zinc-950/5 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-8">
-              <h3 className="text-2xl font-bold display-font">{editingTeacherId ? 'Editar Professor' : 'Novo Professor'}</h3>
+              <h3 className="text-2xl font-bold display-font">
+                {editingTeacherId ? 'Editar Perfil' : 'Novo Cadastro'}
+              </h3>
               <button onClick={() => setIsModalOpen(false)} className="text-zinc-400 hover:text-black transition-colors">
                 <X className="w-6 h-6" />
               </button>
@@ -302,7 +306,9 @@ export default function Teachers({ profile }: { profile: UserProfile }) {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-zinc-700 mb-4">Instrumentos que Ensinam</label>
+                <label className="block text-sm font-medium text-zinc-700 mb-4">
+                  Instrumentos que Ensina {newTeacher.role === 'admin' && <span className="text-xs text-zinc-400 font-normal ml-1">(Opcional para a sua função)</span>}
+                </label>
                 <div className="flex flex-wrap gap-2 max-h-40 overflow-y-auto p-1">
                   {instruments.map(instrument => (
                     <button
@@ -338,7 +344,7 @@ export default function Teachers({ profile }: { profile: UserProfile }) {
                 type="submit"
                 className="w-full bg-gradient-to-r from-orange-500 to-amber-500 text-white py-4 rounded-2xl font-bold hover:from-orange-600 hover:to-amber-600 transition-all shadow-lg shadow-orange-500/25 active:scale-[0.98]"
               >
-                {editingTeacherId ? 'Salvar Alterações' : 'Cadastrar Professor'}
+                {editingTeacherId ? 'Salvar Alterações' : 'Concluir Cadastro'}
               </button>
             </form>
           </div>
