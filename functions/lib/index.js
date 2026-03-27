@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.confirmReschedule = exports.getRescheduleData = exports.registerTeacherAbsence = exports.manualFinancialRoutine = exports.financialRoutineDaily = void 0;
+exports.provideNewRescheduleSlots = exports.rejectRescheduleSlots = exports.confirmReschedule = exports.getRescheduleData = exports.registerTeacherAbsence = exports.manualFinancialRoutine = exports.financialRoutineDaily = void 0;
 const functions = require("firebase-functions/v1");
 const admin = require("firebase-admin");
 const firestore_1 = require("firebase-admin/firestore");
@@ -127,7 +127,7 @@ async function runFinancialRoutine() {
             text = text.replace(/{nome}/g, studentName.split(' ')[0]);
             text = text.replace(/{valor}/g, formatBRL(amount));
             text = text.replace(/{vencimento}/g, dueDateStr);
-            return text;
+            return `🔔 *Aviso do Sistema Avance*\n\n${text}`;
         };
         // Evaluate pending payments
         const pendingSnaps = await db.collection('payments').where('status', 'in', ['pending', 'overdue']).get();
@@ -273,6 +273,8 @@ exports.registerTeacherAbsence = functions.https.onCall(async (data, context) =>
     const settings = settingsSnap.data() || {};
     const teacherDoc = await db.collection('teachers').doc(teacherId).get();
     const teacherName = ((_a = teacherDoc.data()) === null || _a === void 0 ? void 0 : _a.name) || 'Professor';
+    const templateSnap = await db.collection('templates').where('type', '==', 'reschedule').limit(1).get();
+    const customTemplate = templateSnap.empty ? null : templateSnap.docs[0].data().content;
     for (const [studentId, lostCount] of Array.from(affectedStudentsMap.entries())) {
         console.log(`[ABSENCE] Processing student: ${studentId} with ${lostCount} credits`);
         const token = crypto.randomBytes(16).toString('hex');
@@ -290,13 +292,28 @@ exports.registerTeacherAbsence = functions.https.onCall(async (data, context) =>
             if (studentDoc.exists && ((_b = studentDoc.data()) === null || _b === void 0 ? void 0 : _b.phone)) {
                 const phone = studentDoc.data().phone.replace(/\D/g, '');
                 const link = `${originUrl || 'http://localhost:5173'}/reposicao/${token}`;
-                const msg = `Olá, ${studentDoc.data().name}! Informamos que o professor *${teacherName}* teve um imprevisto e sua(s) ${lostCount} aula(s) precisaram ser suspensas${reason ? ` pelo seguinte motivo: ${reason}` : ''}. Para não sair no prejuízo, por favor, clique no link seguro abaixo para escolher o melhor horário para sua reposição:\n\n🔗 ${link}`;
+                const studentName = studentDoc.data().name.split(' ')[0];
+                let msg = '';
+                if (customTemplate) {
+                    msg = customTemplate
+                        .replace(/{nome}/g, studentName)
+                        .replace(/{professor}/g, teacherName)
+                        .replace(/{motivo}/g, reason || '')
+                        .replace(/{link}/g, link);
+                    msg = `🔔 *Aviso do Sistema Avance*\n\n${msg}`;
+                }
+                else {
+                    msg = `🔔 *Aviso do Sistema Avance*\n\nOlá, ${studentDoc.data().name}! Informamos que o professor *${teacherName}* teve um imprevisto e sua(s) ${lostCount} aula(s) precisaram ser suspensas${reason ? ` pelo seguinte motivo: ${reason}` : ''}. Para não sair no prejuízo, por favor, clique no link seguro abaixo para escolher o melhor horário para sua reposição:\n\n🔗 ${link}`;
+                }
                 console.log(`[ABSENCE] Sending ZAPI to ${phone}`);
                 const url = `https://api.z-api.io/instances/${settings.zapiInstance}/token/${settings.zapiToken}/send-text`;
+                const headers = { 'Content-Type': 'application/json' };
+                if (settings.zapiSecurityToken)
+                    headers['Client-Token'] = settings.zapiSecurityToken;
                 try {
                     const resp = await fetch(url, {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
+                        headers,
                         body: JSON.stringify({ phone: phone.length <= 11 ? `55${phone}` : phone, message: msg })
                     });
                     console.log(`[ABSENCE] ZAPI status: ${resp.status}`);
@@ -430,11 +447,128 @@ exports.confirmReschedule = functions.https.onCall(async (data, context) => {
         const phone = settings.schoolPhone.replace(/\D/g, '');
         const msg = `🔔 *Aviso do Sistema Avance*\n\nO aluno *${studentName}* acaba de realizar o reagendamento automático de reposição para as seguintes datas:\n\n${datesSelected}`;
         const url = `https://api.z-api.io/instances/${settings.zapiInstance}/token/${settings.zapiToken}/send-text`;
+        const headers = { 'Content-Type': 'application/json' };
+        if (settings.zapiSecurityToken)
+            headers['Client-Token'] = settings.zapiSecurityToken;
         fetch(url, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers,
             body: JSON.stringify({ phone: phone.length <= 11 ? `55${phone}` : phone, message: msg })
         }).catch(e => console.error('[CONFIRM_RESCHEDULE] Z-API Error', e));
+    }
+    return { success: true };
+});
+exports.rejectRescheduleSlots = functions.https.onCall(async (data, context) => {
+    const { token, observation } = data;
+    if (!token)
+        throw new functions.https.HttpsError('invalid-argument', 'Token missing');
+    const txResult = await db.runTransaction(async (transaction) => {
+        const tokensSnap = await transaction.get(db.collection('reschedule_tokens').where('token', '==', token));
+        if (tokensSnap.empty)
+            throw new functions.https.HttpsError('not-found', 'Token inválido');
+        const tokenDoc = tokensSnap.docs[0];
+        const tokenData = tokenDoc.data();
+        if (tokenData.status === 'used' || tokenData.status === 'rejected_slots') {
+            throw new functions.https.HttpsError('already-exists', 'Este link já foi processado.');
+        }
+        const absenceRef = db.collection('teacher_absences').doc(tokenData.absenceId);
+        const absenceDoc = await transaction.get(absenceRef);
+        if (!absenceDoc.exists)
+            throw new functions.https.HttpsError('not-found', 'Ausência não encontrada');
+        const studentDoc = await transaction.get(db.collection('students').doc(tokenData.studentId));
+        const studentName = studentDoc.exists ? studentDoc.data().name : 'Aluno';
+        const settingsDoc = await transaction.get(db.collection('settings').doc('integrations'));
+        transaction.update(tokenDoc.ref, {
+            status: 'rejected_slots',
+            studentObservation: observation || '',
+            rejectedAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+        const notifRef = db.collection('notifications').doc();
+        transaction.set(notifRef, {
+            title: 'Reposição Recusada',
+            message: `O aluno ${studentName} não possui disponibilidade nos horários sugeridos.${observation ? ` Obs: ${observation}` : ''}`,
+            read: false,
+            createdAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+        return {
+            success: true,
+            studentName,
+            settings: settingsDoc.exists ? settingsDoc.data() : null
+        };
+    });
+    const { success, studentName, settings } = txResult;
+    if (success && (settings === null || settings === void 0 ? void 0 : settings.zapiInstance) && (settings === null || settings === void 0 ? void 0 : settings.zapiToken) && (settings === null || settings === void 0 ? void 0 : settings.schoolPhone)) {
+        const phone = settings.schoolPhone.replace(/\D/g, '');
+        const msg = `🔔 *Aviso do Sistema Avance*\n\nO aluno *${studentName}* informou que NÃO tem disponibilidade nos horários de reposição sugeridos.${observation ? `\n\n*Recado do aluno:* ${observation}` : ''}\n\nAcesse o painel web na aba de Início -> Exceções para fornecer novos horários a este aluno.`;
+        const url = `https://api.z-api.io/instances/${settings.zapiInstance}/token/${settings.zapiToken}/send-text`;
+        const headers = { 'Content-Type': 'application/json' };
+        if (settings.zapiSecurityToken)
+            headers['Client-Token'] = settings.zapiSecurityToken;
+        fetch(url, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({ phone: phone.length <= 11 ? `55${phone}` : phone, message: msg })
+        }).catch(e => console.error('[REJECT_RESCHEDULE] Z-API Error', e));
+    }
+    return { success: true };
+});
+exports.provideNewRescheduleSlots = functions.https.onCall(async (data, context) => {
+    if (!context.auth)
+        throw new functions.https.HttpsError('unauthenticated', 'Acesso negado');
+    const { tokenId, newSlots, originUrl } = data;
+    if (!tokenId || !newSlots || !Array.isArray(newSlots) || newSlots.length === 0) {
+        throw new functions.https.HttpsError('invalid-argument', 'Faltam argumentos');
+    }
+    const processedSlots = newSlots.map((s) => ({
+        id: crypto.randomUUID(),
+        dateLabel: s.dateLabel,
+        date: s.date,
+        time: s.time,
+        maxCapacity: Number(s.maxCapacity) || 1,
+        currentCount: 0
+    }));
+    const txResult = await db.runTransaction(async (transaction) => {
+        const tokenRef = db.collection('reschedule_tokens').doc(tokenId);
+        const tokenDoc = await transaction.get(tokenRef);
+        if (!tokenDoc.exists)
+            throw new functions.https.HttpsError('not-found', 'Token não encontrado');
+        const tokenData = tokenDoc.data();
+        if (tokenData.status !== 'rejected_slots') {
+            throw new functions.https.HttpsError('failed-precondition', 'Este token não está aguardando novos horários.');
+        }
+        const absenceRef = db.collection('teacher_absences').doc(tokenData.absenceId);
+        const absenceDoc = await transaction.get(absenceRef);
+        if (!absenceDoc.exists)
+            throw new functions.https.HttpsError('not-found', 'Ausência não encontrada');
+        const absenceData = absenceDoc.data();
+        const updatedSlots = [...(absenceData.customSlots || []), ...processedSlots];
+        const studentDoc = await transaction.get(db.collection('students').doc(tokenData.studentId));
+        const teacherDoc = await transaction.get(db.collection('teachers').doc(absenceData.teacherId));
+        const settingsDoc = await transaction.get(db.collection('settings').doc('integrations'));
+        transaction.update(absenceRef, { customSlots: updatedSlots });
+        transaction.update(tokenRef, { status: 'pending', rePushedAt: admin.firestore.FieldValue.serverTimestamp() });
+        return {
+            success: true,
+            studentData: studentDoc.data(),
+            teacherName: teacherDoc.exists ? teacherDoc.data().name : 'Professor',
+            settings: settingsDoc.exists ? settingsDoc.data() : null,
+            token: tokenData.token
+        };
+    });
+    const { success, studentData, teacherName, settings, token } = txResult;
+    if (success && (settings === null || settings === void 0 ? void 0 : settings.zapiInstance) && (settings === null || settings === void 0 ? void 0 : settings.zapiToken) && (studentData === null || studentData === void 0 ? void 0 : studentData.phone)) {
+        const phone = studentData.phone.replace(/\D/g, '');
+        const link = `${originUrl || 'http://localhost:5173'}/reposicao/${token}`;
+        const msg = `🔔 *Aviso do Sistema Avance*\n\nOlá, ${studentData.name}! O professor *${teacherName}* disponibilizou novos horários para a sua reposição.\n\nPor favor, acesse o link abaixo para escolher o seu horário:\n🔗 ${link}`;
+        const url = `https://api.z-api.io/instances/${settings.zapiInstance}/token/${settings.zapiToken}/send-text`;
+        const headers = { 'Content-Type': 'application/json' };
+        if (settings.zapiSecurityToken)
+            headers['Client-Token'] = settings.zapiSecurityToken;
+        fetch(url, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({ phone: phone.length <= 11 ? `55${phone}` : phone, message: msg })
+        }).catch(e => console.error('[NOVO_HORARIO] Z-API Error', e));
     }
     return { success: true };
 });

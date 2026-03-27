@@ -76,7 +76,9 @@ export default function App() {
 
   const [notifications, setNotifications] = useState<any[]>([]);
   const [showNotifications, setShowNotifications] = useState(false);
-  const [unreadCount, setUnreadCount] = useState(0);
+  
+  // Derived state to ensure real-time synchronization with notifications array
+  const unreadCount = notifications.filter((n) => !n.read).length;
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
@@ -145,7 +147,6 @@ export default function App() {
   useEffect(() => {
     if (!profile || profile.role !== 'admin') {
       setNotifications([]);
-      setUnreadCount(0);
       return;
     }
 
@@ -153,7 +154,6 @@ export default function App() {
     const unsubscribe = onSnapshot(q, (snap) => {
       const notifs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       setNotifications(notifs);
-      setUnreadCount(notifs.filter((n: any) => !n.read).length);
     });
 
     return () => unsubscribe();
@@ -164,7 +164,6 @@ export default function App() {
     notifications.filter(n => !n.read).forEach((n) => {
       setDoc(doc(db, 'notifications', n.id), { read: true }, { merge: true }).catch(console.error);
     });
-    setUnreadCount(0);
   };
 
   const handleAuth = async (e: React.FormEvent) => {

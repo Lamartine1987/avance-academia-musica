@@ -106,6 +106,7 @@ export default function Communication() {
   const getTypeLabel = (type: string) => {
     switch (type) {
       case 'welcome': return 'Boas-Vindas';
+      case 'reschedule': return 'Aviso de Reposição (Ausência)';
       case 'promo': return 'Promoção';
       case 'reminder_predue': return 'Aviso Antecipado';
       case 'reminder_due': return 'Vencimento Hoje';
@@ -429,6 +430,7 @@ export default function Communication() {
                       className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl px-4 py-3 focus:ring-2 focus:ring-orange-500/20 outline-none transition-all"
                     >
                       <option value="welcome">Boas-Vindas</option>
+                      <option value="reschedule">Aviso de Reposição (Ausência)</option>
                       <option value="promo">Promoção</option>
                       <option value="reminder_predue">Aviso Antecipado (Cobrança)</option>
                       <option value="reminder_due">Vencimento Hoje (Cobrança)</option>
@@ -463,11 +465,26 @@ export default function Communication() {
                 <div>
                   <label className="flex items-baseline justify-between mb-2">
                     <span className="text-sm font-bold text-zinc-700">Conteúdo da Mensagem</span>
-                    <span className="text-xs text-zinc-400">
-                      Variáveis: {'{nome}'}
-                      {currentTemplate.type?.startsWith('reminder') ? ', {valor}, {vencimento}' : ''}
-                    </span>
                   </label>
+                  <div className="mb-3 p-3 bg-blue-50 border border-blue-100 rounded-xl text-xs text-blue-800 leading-relaxed">
+                    <strong>Dica de Preenchimento:</strong> Você pode usar variáveis que o painel enviará pro WhatsApp do cliente no lugar desse texto. Basta digitar com as chaves, exatamente como mostrado abaixo:<br/>
+                    <ul className="list-disc pl-4 mt-2 mb-1 space-y-1">
+                      <li><strong>{'{nome}'}</strong> - Primeiro nome do aluno/cliente;</li>
+                      {currentTemplate.type?.startsWith('reminder') && (
+                        <>
+                          <li><strong>{'{valor}'}</strong> - Valor da mensalidade (ex: R$ 150,00);</li>
+                          <li><strong>{'{vencimento}'}</strong> - Data de vencimento (ex: 15/05/2026);</li>
+                        </>
+                      )}
+                      {currentTemplate.type === 'reschedule' && (
+                        <>
+                          <li><strong>{'{professor}'}</strong> - O nome do professor que irá se ausentar;</li>
+                          <li><strong>{'{motivo}'}</strong> - O motivo exibido no momento de registrar ausências prolongadas;</li>
+                          <li><strong>{'{link}'}</strong> - Link seguro onde o aluno fará sua remarcação (OBRIGATÓRIO).</li>
+                        </>
+                      )}
+                    </ul>
+                  </div>
                   <textarea
                     required
                     rows={6}

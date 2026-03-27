@@ -363,7 +363,8 @@ export default function Students({ profile }: { profile: UserProfile }) {
                      const cleanPhone = newStudent.phone.replace(/\D/g, '');
                      if (cleanPhone.length >= 10) {
                        const number = cleanPhone.length <= 11 ? `55${cleanPhone}` : cleanPhone;
-                       const msg = template.content.replace(/{nome}/g, newStudent.name.split(' ')[0]);
+                       let msg = template.content.replace(/{nome}/g, newStudent.name.split(' ')[0]);
+                       msg = `🔔 *Aviso do Sistema Avance*\n\n${msg}`;
                        
                        const headers: any = { 'Content-Type': 'application/json' };
                        if (zapiSecurityToken) {
@@ -501,6 +502,25 @@ export default function Students({ profile }: { profile: UserProfile }) {
   };
 
   const confirmDelete = async () => {
+    if (studentToDelete === 'bulk') {
+      try {
+        const batch = writeBatch(db);
+        for (const studentId of Array.from(selectedStudents) as string[]) {
+          const lessonsQuery = query(collection(db, 'lessons'), where('studentId', '==', studentId));
+          const lessonsSnapshot = await getDocs(lessonsQuery);
+          lessonsSnapshot.docs.forEach((doc) => batch.delete(doc.ref));
+          batch.delete(doc(db, 'students', studentId));
+        }
+        await batch.commit();
+        setSelectedStudents(new Set());
+        setStudentToDelete(null);
+        setIsConfirmOpen(false);
+      } catch (error) {
+        handleFirestoreError(error, OperationType.DELETE, 'students_bulk');
+      }
+      return;
+    }
+
     if (!studentToDelete) return;
     try {
       // 1. Delete associated lessons
@@ -550,22 +570,8 @@ export default function Students({ profile }: { profile: UserProfile }) {
 
   const handleBulkDelete = async () => {
     if (selectedStudents.size === 0) return;
-    if (!window.confirm(`Tem certeza que deseja excluir ${selectedStudents.size} alunos selecionados? (Todas as aulas cadastradas também serão apagadas)`)) return;
-    
-    try {
-      const batch = writeBatch(db);
-      for (const studentId of Array.from(selectedStudents) as string[]) {
-        const lessonsQuery = query(collection(db, 'lessons'), where('studentId', '==', studentId));
-        const lessonsSnapshot = await getDocs(lessonsQuery);
-        lessonsSnapshot.docs.forEach((doc) => batch.delete(doc.ref));
-        batch.delete(doc(db, 'students', studentId));
-      }
-      await batch.commit();
-      setSelectedStudents(new Set());
-    } catch (error) {
-      console.error(error);
-      alert('Erro ao excluir alunos em massa.');
-    }
+    setStudentToDelete('bulk');
+    setIsConfirmOpen(true);
   };
 
   return (
@@ -1175,8 +1181,10 @@ export default function Students({ profile }: { profile: UserProfile }) {
         isOpen={isConfirmOpen}
         onClose={() => setIsConfirmOpen(false)}
         onConfirm={confirmDelete}
-        title="Excluir Aluno"
-        message="Tem certeza que deseja excluir este aluno? Esta ação não pode ser desfeita e TODAS as aulas (horários) associadas a este aluno também serão excluídas do sistema."
+        title={studentToDelete === 'bulk' ? "Excluir Alunos em Massa" : "Excluir Aluno"}
+        message={studentToDelete === 'bulk' 
+          ? `Tem certeza que deseja excluir os ${selectedStudents.size} alunos selecionados? Esta ação não pode ser desfeita e TODAS as aulas (horários) associadas a estes alunos também serão excluídas mantendo a agenda limpa.`
+          : "Tem certeza que deseja excluir este aluno? Esta ação não pode ser desfeita e TODAS as aulas (horários) associadas a este aluno também serão excluídas do sistema."}
         confirmText="Excluir"
       />
     </div>

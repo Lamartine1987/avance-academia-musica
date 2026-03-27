@@ -6,6 +6,8 @@ import { Payment, IntegrationsSettings } from '../types';
 import { Loader2, DollarSign, Wallet, AlertCircle, Save, CheckCircle2, PlayCircle, Search, Filter } from 'lucide-react';
 import { format, isThisMonth, isPast } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import ConfirmModal from './ConfirmModal';
+import FeedbackModal from './FeedbackModal';
 
 export default function Financial() {
   const [activeTab, setActiveTab] = useState<'panel' | 'payments'>('panel');
@@ -14,6 +16,30 @@ export default function Financial() {
   const [loading, setLoading] = useState(true);
   const [savingConfig, setSavingConfig] = useState(false);
   const [runningRoutine, setRunningRoutine] = useState(false);
+
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {}
+  });
+
+  const [feedbackModal, setFeedbackModal] = useState<{
+    isOpen: boolean;
+    type: 'success' | 'error';
+    title: string;
+    message: string;
+  }>({
+    isOpen: false,
+    type: 'success',
+    title: '',
+    message: ''
+  });
 
   // Filters
   const [filterName, setFilterName] = useState('');
@@ -39,10 +65,8 @@ export default function Financial() {
     setLoading(false);
   };
 
-  const markAsPaid = async (paymentId: string) => {
-    const confirmation = window.confirm('Tem certeza que deseja marcar esta fatura como paga? Esta ação não pode ser desfeita e irá interromper os alertas de cobrança desta fatura.');
-    if (!confirmation) return;
-    
+  const executeMarkAsPaid = async (paymentId: string) => {
+    setConfirmModal(prev => ({ ...prev, isOpen: false }));
     try {
       await updateDoc(doc(db, 'payments', paymentId), {
         status: 'paid',
@@ -51,26 +75,58 @@ export default function Financial() {
       fetchData(); // reload
     } catch (error) {
       console.error(error);
-      alert('Erro ao marcar pagamento.');
+      setFeedbackModal({
+        isOpen: true,
+        type: 'error',
+        title: 'Erro ao Marcar Pagamento',
+        message: 'Ocorreu um problema ao comunicar com o servidor. Tente novamente.'
+      });
     }
   };
 
-  const handleRunRoutine = async () => {
-    if (!window.confirm('Isto fará com que o sistema valide todas as faturas em aberto e envie as mensagens devidas no WhatsApp na mesma hora. Quer prosseguir?')) return;
-    
+  const markAsPaid = (paymentId: string) => {
+    setConfirmModal({
+      isOpen: true,
+      title: 'Confirmar Pagamento',
+      message: 'Tem certeza que deseja marcar esta fatura como paga?\n\nEsta ação mudará o status para PAGO e irá interromper imediatamente os alertas de cobrança desta fatura no WhatsApp.',
+      onConfirm: () => executeMarkAsPaid(paymentId)
+    });
+  };
+
+  const confirmRunRoutine = async () => {
+    setConfirmModal(prev => ({ ...prev, isOpen: false }));
     setRunningRoutine(true);
     try {
       const fn = getFunctions();
       const runRoutine = httpsCallable(fn, 'manualFinancialRoutine');
       await runRoutine();
-      alert('Rotina executada com sucesso! As faturas e mensagens foram atualizadas.');
+      setFeedbackModal({
+        isOpen: true,
+        type: 'success',
+        title: 'Rotina Executada!',
+        message: 'As faturas foram validadas e as mensagens devidas de WhatsApp foram disparadas com sucesso.'
+      });
       fetchData();
     } catch (e) {
       console.error('Error running manual routine:', e);
-      alert('Erro ao executar retinas. Consulte o log.');
+      setFeedbackModal({
+        isOpen: true,
+        type: 'error',
+        title: 'Erro de Automação',
+        message: 'Encontramos um erro ao executar a rotina. Consulte os logs Firebase.'
+      });
     } finally {
       setRunningRoutine(false);
     }
+  };
+
+  const handleRunRoutine = () => {
+    setConfirmModal({
+      isOpen: true,
+      title: 'Iniciar Automação Financeira?',
+      message: 'Isto fará com que o sistema valide todas as faturas em aberto e dispare mensagens corretivas no WhatsApp (Vencimentos, Atrasos) na mesma hora.\n\nVocê tem certeza que deseja prosseguir agora?',
+      onConfirm: confirmRunRoutine
+    });
   };
 
   if (loading) {
@@ -266,6 +322,22 @@ export default function Financial() {
           </div>
         );
       })()}
+
+      <ConfirmModal
+        isOpen={confirmModal.isOpen}
+        onClose={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+        onConfirm={confirmModal.onConfirm}
+        title={confirmModal.title}
+        message={confirmModal.message}
+      />
+
+      <FeedbackModal
+        isOpen={feedbackModal.isOpen}
+        onClose={() => setFeedbackModal(prev => ({ ...prev, isOpen: false }))}
+        type={feedbackModal.type}
+        title={feedbackModal.title}
+        message={feedbackModal.message}
+      />
     </div>
   );
 }

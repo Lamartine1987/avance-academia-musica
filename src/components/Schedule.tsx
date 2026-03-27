@@ -9,6 +9,8 @@ import { ptBR } from 'date-fns/locale';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { cn } from '../lib/utils';
 import ConfirmModal from './ConfirmModal';
+import FeedbackModal from './FeedbackModal';
+import RejectedReschedules from './schedule/RejectedReschedules';
 
 export default function Schedule({ profile }: { profile: UserProfile }) {
   const [lessons, setLessons] = useState<Lesson[]>([]);
@@ -32,10 +34,12 @@ export default function Schedule({ profile }: { profile: UserProfile }) {
   const [blockingSlot, setBlockingSlot] = useState<{ date: Date, time: string, teacherId?: string } | null>(null);
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
   const [blockedTimeToConfirm, setBlockedTimeToConfirm] = useState<string | null>(null);
+  const [pendingRejections, setPendingRejections] = useState(0);
   const [isSyncing, setIsSyncing] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [syncStatus, setSyncStatus] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useState<'list' | 'week' | 'day'>('week');
+  const [rescheduleTemplate, setRescheduleTemplate] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<'list' | 'week' | 'day' | 'rejections'>('week');
   const [filterTeacherId, setFilterTeacherId] = useState<string>('all');
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
@@ -59,6 +63,7 @@ export default function Schedule({ profile }: { profile: UserProfile }) {
     reason: '',
     teacherId: 'all'
   });
+  const [feedback, setFeedback] = useState<{isOpen: boolean, type: 'success' | 'error' | 'warning', title: string, message: string}>({ isOpen: false, type: 'success', title: '', message: '' });
 
   useEffect(() => {
     let q = query(collection(db, 'lessons'), orderBy('startTime', 'asc'));
@@ -98,12 +103,26 @@ export default function Schedule({ profile }: { profile: UserProfile }) {
       setBlockedTimes(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as BlockedTime)));
     });
 
+    const unsubscribeRejections = onSnapshot(query(collection(db, 'reschedule_tokens'), where('status', '==', 'rejected_slots')), (snapshot) => {
+      setPendingRejections(snapshot.size);
+    });
+
+    const unsubscribeTemplate = onSnapshot(query(collection(db, 'templates'), where('type', '==', 'reschedule')), (snapshot) => {
+      if (!snapshot.empty) {
+        setRescheduleTemplate(snapshot.docs[0].data().content);
+      } else {
+        setRescheduleTemplate(null);
+      }
+    });
+
     return () => {
       unsubscribeLessons();
       unsubscribeStudents();
       unsubscribeTeachers();
       unsubscribeSettings();
       unsubscribeBlockedTimes();
+      unsubscribeRejections();
+      unsubscribeTemplate();
     };
   }, []);
 
@@ -379,8 +398,8 @@ export default function Schedule({ profile }: { profile: UserProfile }) {
 
   const handleRegisterAbsence = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newAbsence.teacherId) return alert('Selecione o professor.');
-    if (newAbsence.customSlots.length === 0) return alert('Adicione ao menos um horário de reposição (Slots).');
+    if (!newAbsence.teacherId) return setFeedback({ isOpen: true, type: 'warning', title: 'Aviso', message: 'Selecione o professor.' });
+    if (newAbsence.customSlots.length === 0) return setFeedback({ isOpen: true, type: 'warning', title: 'Aviso', message: 'Adicione ao menos um horário de reposição (Slots).' });
     
     setIsSubmittingAbsence(true);
     try {
@@ -391,16 +410,16 @@ export default function Schedule({ profile }: { profile: UserProfile }) {
       const data = res.data as any;
       
       if (data.affectedLessons === 0) {
-        alert('Atenção: Nenhuma aula agendada foi encontrada para suspender nesse período. Nenhum aluno foi notificado.');
+        setFeedback({ isOpen: true, type: 'warning', title: 'Atenção', message: 'Nenhuma aula agendada foi encontrada para suspender nesse período. Nenhum aluno foi notificado.' });
       } else {
-        alert(`Ausência registrada com sucesso! ${data.affectedLessons} aula(s) suspensas. ${data.affectedStudents} aluno(s) receram o WhatsApp com o link de remarcação.`);
+        setFeedback({ isOpen: true, type: 'success', title: 'Sucesso!', message: `Ausência registrada com sucesso! ${data.affectedLessons} aula(s) suspensas. ${data.affectedStudents} aluno(s) receram o WhatsApp com o link de remarcação.` });
       }
       
       setIsAbsenceModalOpen(false);
       setNewAbsence({ teacherId: '', startDate: format(new Date(), 'yyyy-MM-dd'), endDate: format(new Date(), 'yyyy-MM-dd'), reason: '', customSlots: [] });
     } catch (err: any) {
       console.error(err);
-      alert('Erro ao registrar ausência: ' + err.message);
+      setFeedback({ isOpen: true, type: 'error', title: 'Erro', message: 'Erro ao registrar ausência: ' + err.message });
     } finally {
       setIsSubmittingAbsence(false);
     }
@@ -511,6 +530,14 @@ export default function Schedule({ profile }: { profile: UserProfile }) {
   };
 
   return (
+    <>
+      <FeedbackModal 
+        isOpen={feedback.isOpen} 
+        onClose={() => setFeedback(prev => ({ ...prev, isOpen: false }))}
+        title={feedback.title}
+        message={feedback.message}
+        type={feedback.type}
+      />
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div className="flex flex-wrap items-center gap-4">
@@ -542,6 +569,20 @@ export default function Schedule({ profile }: { profile: UserProfile }) {
             >
               Lista
             </button>
+            {profile.role === 'admin' && (
+              <button 
+                onClick={() => setViewMode('rejections')}
+                className={cn(
+                  "px-4 py-2 rounded-xl text-xs font-medium flex items-center gap-2 transition-all relative",
+                  viewMode === 'rejections' ? "bg-orange-500 text-white shadow-md shadow-orange-500/20" : "text-zinc-500 hover:text-black"
+                )}
+              >
+                Exceções
+                {pendingRejections > 0 && (
+                  <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 border-2 border-white rounded-full animate-pulse shadow-sm shadow-red-500/50"></span>
+                )}
+              </button>
+            )}
           </div>
 
           {profile.role === 'admin' && (
@@ -646,7 +687,9 @@ export default function Schedule({ profile }: { profile: UserProfile }) {
         </div>
       </div>
 
-      {viewMode === 'list' ? (
+      {viewMode === 'rejections' ? (
+        <RejectedReschedules />
+      ) : viewMode === 'list' ? (
         <div className="bg-white rounded-[32px] ring-1 ring-zinc-950/5 shadow-xl shadow-black/[0.03] p-8">
           <div className="flex items-center justify-between mb-8">
             <h3 className="text-xl font-bold display-font">Próximas Aulas</h3>
@@ -1361,6 +1404,23 @@ export default function Schedule({ profile }: { profile: UserProfile }) {
                    </div>
                 </div>
 
+                {newAbsence.teacherId && (
+                  <div className="bg-emerald-50 rounded-2xl p-4 border border-emerald-100 relative mt-4">
+                    <span className="absolute -top-3 left-4 bg-emerald-100 text-emerald-800 text-[10px] uppercase font-bold px-2 py-1 rounded-full border border-emerald-200">Pré-visualização do WhatsApp</span>
+                    <p className="text-sm text-emerald-900 leading-relaxed mt-2 whitespace-pre-wrap">
+                      {rescheduleTemplate ? (
+                        rescheduleTemplate
+                          .replace(/{nome}/g, '[Nome do Aluno]')
+                          .replace(/{professor}/g, teachers.find(t => t.id === newAbsence.teacherId)?.name || '...')
+                          .replace(/{motivo}/g, newAbsence.reason || '')
+                          .replace(/{link}/g, `${window.location.origin}/reposicao/[LINK_ÚNICO]`)
+                      ) : (
+                        `Olá, [Nome do Aluno]! Informamos que o professor *${teachers.find(t => t.id === newAbsence.teacherId)?.name || '...'}* teve um imprevisto e sua(s) aula(s) precisaram ser suspensas${newAbsence.reason ? ` pelo seguinte motivo: ${newAbsence.reason}` : ''}. Para não sair no prejuízo, por favor, clique no link seguro abaixo para escolher o melhor horário para sua reposição:\n\n🔗 ${window.location.origin}/reposicao/[LINK_ÚNICO]`
+                      )}
+                    </p>
+                  </div>
+                )}
+
                 <div className="pt-4 border-t border-zinc-100 flex justify-end gap-3 mt-8">
                    <button type="button" onClick={() => setIsAbsenceModalOpen(false)} className="px-6 py-3 rounded-2xl text-sm font-bold text-zinc-600 hover:bg-zinc-100 transition-colors">Cancelar</button>
                    <button 
@@ -1385,5 +1445,6 @@ export default function Schedule({ profile }: { profile: UserProfile }) {
         confirmText="Remover"
       />
     </div>
+    </>
   );
 }
