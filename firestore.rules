@@ -249,5 +249,9 @@ service cloud.firestore {
       allow read: if isAuthenticated();
       allow write: if isAdmin() && (settingId != 'school' || isValidSchoolSettings(request.resource.data));
     }
+
+    match /notifications/{notifId} {
+      allow read, update, delete: if isAdmin();
+    }
   }
 }

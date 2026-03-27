@@ -1,9 +1,10 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.manualFinancialRoutine = exports.financialRoutineDaily = void 0;
+exports.confirmReschedule = exports.getRescheduleData = exports.registerTeacherAbsence = exports.manualFinancialRoutine = exports.financialRoutineDaily = void 0;
 const functions = require("firebase-functions/v1");
 const admin = require("firebase-admin");
 const firestore_1 = require("firebase-admin/firestore");
+const crypto = require("crypto");
 admin.initializeApp();
 const db = (0, firestore_1.getFirestore)(admin.app(), 'ai-studio-00c161e8-693c-4cc9-8d3a-3e1ddae8db8e');
 exports.financialRoutineDaily = functions.pubsub
@@ -221,4 +222,220 @@ async function runFinancialRoutine() {
         throw error;
     }
 }
+// --- NEW INTELLIGENT RESCHEDULE MODULE ---
+exports.registerTeacherAbsence = functions.https.onCall(async (data, context) => {
+    var _a, _b;
+    if (!context.auth)
+        throw new functions.https.HttpsError('unauthenticated', 'Apenas usuários autenticados podem registrar faltas.');
+    const { teacherId, startDate, endDate, customSlots, originUrl, reason } = data;
+    if (!teacherId || !startDate || !endDate || !customSlots) {
+        throw new functions.https.HttpsError('invalid-argument', 'Faltam argumentos (teacherId, startDate, endDate, customSlots)');
+    }
+    console.log(`[ABSENCE] Request received: teacherId=${teacherId}, start=${startDate}, end=${endDate}`);
+    // Construct dates enforcing Brazilian Timezone (UTC-3)
+    const startObj = new Date(`${startDate}T00:00:00-03:00`);
+    const endObj = new Date(`${endDate}T23:59:59-03:00`);
+    console.log(`[ABSENCE] Querying between ${startObj.toISOString()} and ${endObj.toISOString()}`);
+    const processedSlots = customSlots.map((s) => ({
+        id: crypto.randomUUID(),
+        dateLabel: s.dateLabel,
+        date: s.date,
+        time: s.time,
+        maxCapacity: Number(s.maxCapacity) || 1,
+        currentCount: 0
+    }));
+    const absenceRef = await db.collection('teacher_absences').add({
+        teacherId,
+        startDate: admin.firestore.Timestamp.fromDate(startObj),
+        endDate: admin.firestore.Timestamp.fromDate(endObj),
+        customSlots: processedSlots,
+        reason: reason || '',
+        createdAt: admin.firestore.FieldValue.serverTimestamp()
+    });
+    const lessonsSnap = await db.collection('lessons')
+        .where('teacherId', '==', teacherId)
+        .where('startTime', '>=', admin.firestore.Timestamp.fromDate(startObj))
+        .where('startTime', '<=', admin.firestore.Timestamp.fromDate(endObj))
+        .get();
+    const affectedStudentsMap = new Map();
+    const batch = db.batch();
+    lessonsSnap.docs.forEach(docSnap => {
+        if (docSnap.data().status === 'scheduled') {
+            const sId = docSnap.data().studentId;
+            affectedStudentsMap.set(sId, (affectedStudentsMap.get(sId) || 0) + 1);
+            batch.update(docSnap.ref, {
+                status: 'needs_reschedule',
+                absenceId: absenceRef.id
+            });
+        }
+    });
+    const settingsSnap = await db.collection('settings').doc('integrations').get();
+    const settings = settingsSnap.data() || {};
+    const teacherDoc = await db.collection('teachers').doc(teacherId).get();
+    const teacherName = ((_a = teacherDoc.data()) === null || _a === void 0 ? void 0 : _a.name) || 'Professor';
+    for (const [studentId, lostCount] of Array.from(affectedStudentsMap.entries())) {
+        console.log(`[ABSENCE] Processing student: ${studentId} with ${lostCount} credits`);
+        const token = crypto.randomBytes(16).toString('hex');
+        const tokenRef = db.collection('reschedule_tokens').doc();
+        batch.set(tokenRef, {
+            token,
+            studentId,
+            absenceId: absenceRef.id,
+            status: 'pending',
+            credits: lostCount,
+            createdAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+        if (settings.zapiInstance && settings.zapiToken) {
+            const studentDoc = await db.collection('students').doc(studentId).get();
+            if (studentDoc.exists && ((_b = studentDoc.data()) === null || _b === void 0 ? void 0 : _b.phone)) {
+                const phone = studentDoc.data().phone.replace(/\D/g, '');
+                const link = `${originUrl || 'http://localhost:5173'}/reposicao/${token}`;
+                const msg = `Olá, ${studentDoc.data().name}! Informamos que o professor *${teacherName}* teve um imprevisto e sua(s) ${lostCount} aula(s) precisaram ser suspensas${reason ? ` pelo seguinte motivo: ${reason}` : ''}. Para não sair no prejuízo, por favor, clique no link seguro abaixo para escolher o melhor horário para sua reposição:\n\n🔗 ${link}`;
+                console.log(`[ABSENCE] Sending ZAPI to ${phone}`);
+                const url = `https://api.z-api.io/instances/${settings.zapiInstance}/token/${settings.zapiToken}/send-text`;
+                try {
+                    const resp = await fetch(url, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ phone: phone.length <= 11 ? `55${phone}` : phone, message: msg })
+                    });
+                    console.log(`[ABSENCE] ZAPI status: ${resp.status}`);
+                }
+                catch (e) {
+                    console.error('[ABSENCE] Z-API error', e);
+                }
+            }
+            else {
+                console.log(`[ABSENCE] Student ${studentId} lacks a valid phone number or document.`);
+            }
+        }
+        else {
+            console.log(`[ABSENCE] No ZAPI credentials found. Skipping MSGs.`);
+        }
+    }
+    await batch.commit();
+    console.log(`[ABSENCE] Success. Lessons changed: ${lessonsSnap.size}. Students affected: ${affectedStudentsMap.size}`);
+    return { success: true, affectedLessons: lessonsSnap.size, affectedStudents: affectedStudentsMap.size };
+});
+exports.getRescheduleData = functions.https.onCall(async (data, context) => {
+    var _a, _b;
+    const { token } = data;
+    if (!token)
+        throw new functions.https.HttpsError('invalid-argument', 'Token missing');
+    const tokensSnap = await db.collection('reschedule_tokens').where('token', '==', token).get();
+    if (tokensSnap.empty)
+        throw new functions.https.HttpsError('not-found', 'Token inválido');
+    const tokenData = tokensSnap.docs[0].data();
+    if (tokenData.status === 'used')
+        throw new functions.https.HttpsError('already-exists', 'Este link já foi utilizado para reagendamento.');
+    const studentDoc = await db.collection('students').doc(tokenData.studentId).get();
+    const absenceDoc = await db.collection('teacher_absences').doc(tokenData.absenceId).get();
+    if (!studentDoc.exists || !absenceDoc.exists)
+        throw new functions.https.HttpsError('internal', 'Dados corrompidos');
+    const absenceData = absenceDoc.data();
+    const teacherDoc = await db.collection('teachers').doc(absenceData.teacherId).get();
+    const availableSlots = (absenceData.customSlots || []).filter((s) => s.currentCount < s.maxCapacity);
+    return {
+        studentName: (_a = studentDoc.data()) === null || _a === void 0 ? void 0 : _a.name,
+        teacherName: (_b = teacherDoc.data()) === null || _b === void 0 ? void 0 : _b.name,
+        credits: tokenData.credits || 1,
+        reason: absenceData.reason || '',
+        availableSlots
+    };
+});
+exports.confirmReschedule = functions.https.onCall(async (data, context) => {
+    const { token, slotIds } = data;
+    if (!token || !slotIds || !Array.isArray(slotIds) || slotIds.length === 0)
+        throw new functions.https.HttpsError('invalid-argument', 'Missing token or slotIds');
+    const txResult = await db.runTransaction(async (transaction) => {
+        // 1. ALL READS FIRST
+        const tokensSnap = await transaction.get(db.collection('reschedule_tokens').where('token', '==', token));
+        if (tokensSnap.empty)
+            throw new functions.https.HttpsError('not-found', 'Token inválido');
+        const tokenDoc = tokensSnap.docs[0];
+        const tokenData = tokenDoc.data();
+        if (tokenData.status === 'used')
+            throw new functions.https.HttpsError('already-exists', 'Link já utilizado');
+        const expectedCredits = tokenData.credits || 1;
+        if (slotIds.length !== expectedCredits)
+            throw new functions.https.HttpsError('invalid-argument', `Você deve selecionar exatamente ${expectedCredits} horário(s).`);
+        const absenceRef = db.collection('teacher_absences').doc(tokenData.absenceId);
+        const absenceDoc = await transaction.get(absenceRef);
+        if (!absenceDoc.exists)
+            throw new functions.https.HttpsError('not-found', 'Ausência não encontrada');
+        const absenceData = absenceDoc.data();
+        const slots = absenceData.customSlots || [];
+        const selectedSlotIndexes = [];
+        for (const sid of slotIds) {
+            const idx = slots.findIndex((s) => s.id === sid);
+            if (idx === -1)
+                throw new functions.https.HttpsError('not-found', 'Vaga não encontrada');
+            if (slots[idx].currentCount >= slots[idx].maxCapacity) {
+                throw new functions.https.HttpsError('resource-exhausted', 'Uma das vagas escolhidas já está esgotada. Recarregue a página.');
+            }
+            selectedSlotIndexes.push(idx);
+        }
+        const lessonsQuery = db.collection('lessons')
+            .where('studentId', '==', tokenData.studentId)
+            .where('absenceId', '==', tokenData.absenceId)
+            .where('status', '==', 'needs_reschedule');
+        const lessonsSnap = await transaction.get(lessonsQuery);
+        const studentDoc = await transaction.get(db.collection('students').doc(tokenData.studentId));
+        const settingsSnap = await transaction.get(db.collection('settings').doc('integrations'));
+        // 2. ALL WRITES AFTER ALL READS
+        for (const idx of selectedSlotIndexes) {
+            slots[idx].currentCount += 1;
+        }
+        transaction.update(absenceRef, { customSlots: slots });
+        transaction.update(tokenDoc.ref, { status: 'used', usedAt: admin.firestore.FieldValue.serverTimestamp() });
+        lessonsSnap.docs.forEach(lDoc => {
+            transaction.update(lDoc.ref, { status: 'rescheduled' });
+        });
+        const baseLesson = lessonsSnap.empty ? { instrument: 'Instrumento' } : lessonsSnap.docs[0].data();
+        const studentName = studentDoc.exists ? studentDoc.data().name : 'Aluno';
+        let datesSelected = '';
+        for (const idx of selectedSlotIndexes) {
+            const slot = slots[idx];
+            const newStart = new Date(`${slot.date}T${slot.time}:00-03:00`);
+            const newEnd = new Date(newStart.getTime() + 60 * 60000);
+            const newLessonRef = db.collection('lessons').doc();
+            transaction.set(newLessonRef, {
+                studentId: tokenData.studentId,
+                teacherId: absenceData.teacherId,
+                instrument: baseLesson.instrument || 'Instrumento',
+                startTime: admin.firestore.Timestamp.fromDate(newStart),
+                endTime: admin.firestore.Timestamp.fromDate(newEnd),
+                status: 'scheduled',
+                isMakeup: true,
+                createdAt: admin.firestore.FieldValue.serverTimestamp()
+            });
+            datesSelected += `${slot.dateLabel} às ${slot.time}; `;
+        }
+        const notifRef = db.collection('notifications').doc();
+        transaction.set(notifRef, {
+            title: 'Reposição Agendada',
+            message: `O aluno ${studentName} agendou reposição para: ${datesSelected}`,
+            read: false,
+            createdAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+        return {
+            success: true,
+            studentName,
+            settings: settingsSnap.exists ? settingsSnap.data() : {},
+            datesSelected
+        };
+    });
+    const { success, studentName, settings, datesSelected } = txResult;
+    if (success && (settings === null || settings === void 0 ? void 0 : settings.zapiInstance) && (settings === null || settings === void 0 ? void 0 : settings.zapiToken) && (settings === null || settings === void 0 ? void 0 : settings.schoolPhone)) {
+        const phone = settings.schoolPhone.replace(/\D/g, '');
+        const msg = `🔔 *Aviso do Sistema Avance*\n\nO aluno *${studentName}* acaba de realizar o reagendamento automático de reposição para as seguintes datas:\n\n${datesSelected}`;
+        const url = `https://api.z-api.io/instances/${settings.zapiInstance}/token/${settings.zapiToken}/send-text`;
+        fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ phone: phone.length <= 11 ? `55${phone}` : phone, message: msg })
+        }).catch(e => console.error('[CONFIRM_RESCHEDULE] Z-API Error', e));
+    }
+    return { success: true };
+});
 //# sourceMappingURL=index.js.map

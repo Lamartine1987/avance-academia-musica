@@ -61,8 +61,9 @@ export interface Lesson {
   instrument: string;
   startTime: any;
   endTime: any;
-  status: 'scheduled' | 'completed' | 'cancelled';
+  status: 'scheduled' | 'completed' | 'cancelled' | 'needs_reschedule' | 'rescheduled';
   notes?: string;
+  isMakeup?: boolean;
 }
 
 export interface BlockedTime {
@@ -92,6 +93,7 @@ export interface IntegrationsSettings {
   zapiInstance: string;
   zapiToken: string;
   zapiSecurityToken?: string;
+  schoolPhone?: string;
   remindersEnabled?: boolean;
   reminderDaysBefore?: boolean;
   reminderDaysBeforeCount?: number;

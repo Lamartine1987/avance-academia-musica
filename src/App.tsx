@@ -13,7 +13,10 @@ import {
   collection,
   query,
   where,
-  getDocs
+  getDocs,
+  onSnapshot,
+  orderBy,
+  limit
 } from 'firebase/firestore';
 import { 
   LayoutDashboard, 
@@ -29,7 +32,8 @@ import {
   Menu,
   X,
   Wallet,
-  MessageSquareText
+  MessageSquareText,
+  Bell
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { auth, db } from './firebase';
@@ -47,10 +51,17 @@ import Instruments from './components/Instruments';
 import Profile from './components/Profile';
 import Financial from './components/Financial';
 import Communication from './components/Communication';
+import ReschedulePortal from './components/ReschedulePortal';
 
 type View = 'dashboard' | 'students' | 'teachers' | 'schedule' | 'instruments' | 'profile' | 'financial' | 'communication';
 
 export default function App() {
+  const pathname = window.location.pathname;
+  if (pathname.startsWith('/reposicao/')) {
+    const token = pathname.replace('/reposicao/', '');
+    return <ReschedulePortal token={token} />;
+  }
+
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
@@ -62,6 +73,10 @@ export default function App() {
   const [password, setPassword] = useState('');
   const [authError, setAuthError] = useState<string | null>(null);
   const [authLoading, setAuthLoading] = useState(false);
+
+  const [notifications, setNotifications] = useState<any[]>([]);
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
@@ -126,6 +141,31 @@ export default function App() {
       setCurrentView('schedule');
     }
   }, [profile, currentView]);
+
+  useEffect(() => {
+    if (!profile || profile.role !== 'admin') {
+      setNotifications([]);
+      setUnreadCount(0);
+      return;
+    }
+
+    const q = query(collection(db, 'notifications'), orderBy('createdAt', 'desc'), limit(15));
+    const unsubscribe = onSnapshot(q, (snap) => {
+      const notifs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      setNotifications(notifs);
+      setUnreadCount(notifs.filter((n: any) => !n.read).length);
+    });
+
+    return () => unsubscribe();
+  }, [profile]);
+
+  const markNotificationsRead = async () => {
+    if (unreadCount === 0) return;
+    notifications.filter(n => !n.read).forEach((n) => {
+      setDoc(doc(db, 'notifications', n.id), { read: true }, { merge: true }).catch(console.error);
+    });
+    setUnreadCount(0);
+  };
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -348,6 +388,58 @@ export default function App() {
                 className="w-full md:w-64 bg-white ring-1 ring-zinc-950/5 shadow-sm rounded-2xl pl-12 pr-6 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/30 transition-all"
               />
             </div>
+
+            {profile.role === 'admin' && (
+              <div className="relative">
+                <button 
+                  onClick={() => {
+                    setShowNotifications(!showNotifications);
+                    if (!showNotifications) markNotificationsRead();
+                  }}
+                  className="relative p-3 rounded-2xl bg-white ring-1 ring-zinc-950/5 hover:bg-zinc-50 transition-all text-zinc-600 shadow-sm outline-none focus:ring-2 focus:ring-orange-500/30"
+                >
+                  <Bell className="w-6 h-6" />
+                  {unreadCount > 0 && (
+                    <span className="absolute top-2 right-2 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-white"></span>
+                  )}
+                </button>
+
+                {/* Dropdown Notificacoes */}
+                <AnimatePresence>
+                  {showNotifications && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                      className="absolute right-0 top-full mt-2 w-80 bg-white rounded-[24px] shadow-2xl ring-1 ring-zinc-950/5 overflow-hidden z-50 text-left backdrop-blur-xl"
+                    >
+                      <div className="p-4 border-b border-zinc-100 bg-zinc-50/50 flex items-center justify-between">
+                        <h3 className="font-bold text-zinc-900">Notificações</h3>
+                      </div>
+                      <div className="max-h-[70vh] overflow-y-auto w-full">
+                        {notifications.length === 0 ? (
+                          <div className="p-8 text-center text-sm text-zinc-500 flex flex-col items-center gap-2">
+                            <Bell className="w-6 h-6 text-zinc-300" />
+                            Nenhuma notificação nova.
+                          </div>
+                        ) : (
+                          notifications.map(notif => (
+                            <div key={notif.id} className={`p-4 border-b border-zinc-50 hover:bg-zinc-50 transition-colors ${!notif.read ? 'bg-orange-50/20' : ''}`}>
+                              <p className="font-bold text-sm text-zinc-900 mb-1 leading-tight">{notif.title}</p>
+                              <p className="text-xs text-zinc-600 leading-relaxed">{notif.message}</p>
+                              <span className="text-[10px] text-zinc-400 mt-2 block font-medium">
+                                {notif.createdAt?.toDate ? notif.createdAt.toDate().toLocaleString('pt-BR') : 'Agora'}
+                              </span>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            )}
+
             <button className="bg-gradient-to-r from-orange-500 to-amber-500 text-white p-3 rounded-2xl hover:from-orange-600 hover:to-amber-600 transition-all shadow-lg shadow-orange-500/25 shrink-0 active:scale-[0.96]">
               <Plus className="w-6 h-6" />
             </button>

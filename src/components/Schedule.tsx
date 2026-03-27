@@ -3,9 +3,10 @@ import { collection, onSnapshot, addDoc, Timestamp, query, orderBy, getDocs, whe
 import { db } from '../firebase';
 import { UserProfile, Lesson, Student, Teacher, BlockedTime } from '../types';
 import { handleFirestoreError, OperationType } from '../lib/error-handler';
-import { Plus, X, Clock, User, Music, RefreshCw, CheckCircle2, LayoutGrid, List as ListIcon, ChevronLeft, ChevronRight, Settings } from 'lucide-react';
+import { Plus, X, Clock, User, Music, RefreshCw, CheckCircle2, LayoutGrid, List as ListIcon, ChevronLeft, ChevronRight, Settings, AlertCircle, Trash2, CalendarDays } from 'lucide-react';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, getDay, setHours, setMinutes, isAfter, isSameDay, startOfWeek, addDays, subWeeks, addWeeks, addYears } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 import { cn } from '../lib/utils';
 import ConfirmModal from './ConfirmModal';
 
@@ -16,6 +17,17 @@ export default function Schedule({ profile }: { profile: UserProfile }) {
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isBlockModalOpen, setIsBlockModalOpen] = useState(false);
+  
+  const [isAbsenceModalOpen, setIsAbsenceModalOpen] = useState(false);
+  const [isSubmittingAbsence, setIsSubmittingAbsence] = useState(false);
+  const [newAbsence, setNewAbsence] = useState({
+    teacherId: '',
+    startDate: format(new Date(), 'yyyy-MM-dd'),
+    endDate: format(new Date(), 'yyyy-MM-dd'),
+    reason: '',
+    customSlots: [] as { dateLabel: string, date: string, time: string, maxCapacity: number }[]
+  });
+  const [tempSlot, setTempSlot] = useState({ date: format(new Date(), 'yyyy-MM-dd'), time: '08:00', maxCapacity: 1 });
   const [isBlockingMode, setIsBlockingMode] = useState(false);
   const [blockingSlot, setBlockingSlot] = useState<{ date: Date, time: string, teacherId?: string } | null>(null);
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
@@ -365,6 +377,44 @@ export default function Schedule({ profile }: { profile: UserProfile }) {
     }
   };
 
+  const handleRegisterAbsence = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newAbsence.teacherId) return alert('Selecione o professor.');
+    if (newAbsence.customSlots.length === 0) return alert('Adicione ao menos um horário de reposição (Slots).');
+    
+    setIsSubmittingAbsence(true);
+    try {
+      const fn = getFunctions();
+      const registerAbsence = httpsCallable(fn, 'registerTeacherAbsence');
+      const payload = { ...newAbsence, originUrl: window.location.origin };
+      const res = await registerAbsence(payload);
+      const data = res.data as any;
+      
+      if (data.affectedLessons === 0) {
+        alert('Atenção: Nenhuma aula agendada foi encontrada para suspender nesse período. Nenhum aluno foi notificado.');
+      } else {
+        alert(`Ausência registrada com sucesso! ${data.affectedLessons} aula(s) suspensas. ${data.affectedStudents} aluno(s) receram o WhatsApp com o link de remarcação.`);
+      }
+      
+      setIsAbsenceModalOpen(false);
+      setNewAbsence({ teacherId: '', startDate: format(new Date(), 'yyyy-MM-dd'), endDate: format(new Date(), 'yyyy-MM-dd'), reason: '', customSlots: [] });
+    } catch (err: any) {
+      console.error(err);
+      alert('Erro ao registrar ausência: ' + err.message);
+    } finally {
+      setIsSubmittingAbsence(false);
+    }
+  };
+
+  const addCustomSlot = () => {
+    const dateObj = new Date(`${tempSlot.date}T00:00:00`);
+    const dateLabel = format(dateObj, "dd/MM/yyyy (EEEE)", { locale: ptBR });
+    setNewAbsence({
+      ...newAbsence,
+      customSlots: [...newAbsence.customSlots, { dateLabel, date: tempSlot.date, time: tempSlot.time, maxCapacity: tempSlot.maxCapacity }]
+    });
+  };
+
   const syncMonthlyLessons = async () => {
     if (!profile || profile.role !== 'admin') return;
     setIsSyncing(true);
@@ -574,6 +624,17 @@ export default function Schedule({ profile }: { profile: UserProfile }) {
           )}
           {profile.role === 'admin' && (
             <button 
+              onClick={() => setIsAbsenceModalOpen(true)}
+              className="bg-red-50 text-red-600 border border-red-200 px-4 md:px-6 py-3 rounded-2xl flex items-center gap-2 hover:bg-red-100 transition-all font-bold flex-1 md:flex-none justify-center text-sm md:text-base"
+              title="Registrar Falta e Gerar Links de Reposição"
+            >
+              <AlertCircle className="w-5 h-5" />
+              <span className="hidden sm:inline">Ausência Prolongada</span>
+              <span className="sm:hidden">Falta</span>
+            </button>
+          )}
+          {profile.role === 'admin' && (
+            <button 
               onClick={() => setIsModalOpen(true)}
               className="bg-gradient-to-r from-orange-500 to-amber-500 text-white px-4 md:px-6 py-3 rounded-2xl flex items-center gap-2 hover:from-orange-600 hover:to-amber-600 transition-all font-bold shadow-lg shadow-orange-500/25 active:scale-[0.98] flex-1 md:flex-none justify-center text-sm md:text-base"
             >
@@ -611,13 +672,17 @@ export default function Schedule({ profile }: { profile: UserProfile }) {
                     
                     <div className="md:hidden">
                       <span className={cn(
-                        "px-3 py-1 rounded-full text-[10px] font-medium",
+                        "px-3 py-1 rounded-full text-[10px] font-medium text-center",
                         lesson.status === 'scheduled' ? "bg-white/50 text-orange-600 border border-orange-100" :
                         lesson.status === 'completed' ? "bg-emerald-50 text-emerald-600 border border-emerald-100" :
+                        lesson.status === 'needs_reschedule' ? "bg-red-50 text-red-600 border border-red-100" :
+                        lesson.status === 'rescheduled' ? "bg-zinc-100 text-zinc-500 border border-zinc-200" :
                         "bg-red-50 text-red-600 border border-red-100"
                       )}>
                         {lesson.status === 'scheduled' ? 'Agendada' : 
-                         lesson.status === 'completed' ? 'Concluída' : 'Cancelada'}
+                         lesson.status === 'completed' ? 'Concluída' : 
+                         lesson.status === 'needs_reschedule' ? 'Pendente Reposição' :
+                         lesson.status === 'rescheduled' ? 'Reposta' : 'Cancelada'}
                       </span>
                     </div>
                   </div>
@@ -658,10 +723,14 @@ export default function Schedule({ profile }: { profile: UserProfile }) {
                       "px-4 py-2 rounded-full text-xs font-medium",
                       lesson.status === 'scheduled' ? "bg-white/50 text-orange-600 border border-orange-100" :
                       lesson.status === 'completed' ? "bg-emerald-50 text-emerald-600 border border-emerald-100" :
+                      lesson.status === 'needs_reschedule' ? "bg-red-50 text-red-600 border border-red-100" :
+                      lesson.status === 'rescheduled' ? "bg-zinc-100 text-zinc-500 border border-zinc-200" :
                       "bg-red-50 text-red-600 border border-red-100"
                     )}>
                       {lesson.status === 'scheduled' ? 'Agendada' : 
-                       lesson.status === 'completed' ? 'Concluída' : 'Cancelada'}
+                       lesson.status === 'completed' ? 'Concluída' : 
+                       lesson.status === 'needs_reschedule' ? 'Pendente Reposição' :
+                       lesson.status === 'rescheduled' ? 'Reposta' : 'Cancelada'}
                     </span>
                   </div>
                 </div>
@@ -748,11 +817,18 @@ export default function Schedule({ profile }: { profile: UserProfile }) {
                             return (
                               <div 
                                 key={lesson.id}
+                                title={
+                                  lesson.status === 'needs_reschedule' ? 'Aula suspensa aguardando reposição pelo aluno.' :
+                                  lesson.status === 'rescheduled' ? 'Aula antiga já reagendada para nova data.' :
+                                  lesson.status === 'cancelled' ? 'Aula Cancelada.' :
+                                  lesson.isMakeup ? '✅ Aula de Reposição Agendada.' :
+                                  'Aula Regular Agendada.'
+                                }
                                 className={cn(
                                   "p-2 rounded-xl text-[10px] mb-1 shadow-sm border transition-all cursor-pointer hover:scale-[1.02]",
-                                  tColor.bg,
-                                  tColor.border,
-                                  tColor.text,
+                                  lesson.status === 'needs_reschedule' ? "bg-red-100 border-red-300 text-red-800" :
+                                  lesson.status === 'rescheduled' ? "bg-zinc-100 border-zinc-200 text-zinc-400 opacity-60 line-through" :
+                                  `${tColor.bg} ${tColor.border} ${tColor.text}`,
                                   lesson.status === 'cancelled' && "opacity-50 grayscale"
                                 )}
                               >
@@ -850,11 +926,18 @@ export default function Schedule({ profile }: { profile: UserProfile }) {
                                 return (
                                   <div 
                                     key={lesson.id}
+                                    title={
+                                      lesson.status === 'needs_reschedule' ? 'Aula suspensa aguardando reposição pelo aluno.' :
+                                      lesson.status === 'rescheduled' ? 'Aula antiga já reagendada para nova data.' :
+                                      lesson.status === 'cancelled' ? 'Aula Cancelada.' :
+                                      lesson.isMakeup ? '✅ Aula de Reposição Agendada.' :
+                                      'Aula Regular Agendada.'
+                                    }
                                     className={cn(
                                       "p-2 rounded-xl text-[10px] mb-1 shadow-sm border transition-all cursor-pointer hover:scale-[1.02]",
-                                      tColor.bg,
-                                      tColor.border,
-                                      tColor.text,
+                                      lesson.status === 'needs_reschedule' ? "bg-red-100 border-red-300 text-red-800" :
+                                      lesson.status === 'rescheduled' ? "bg-zinc-100 border-zinc-200 text-zinc-400 opacity-60 line-through" :
+                                      `${tColor.bg} ${tColor.border} ${tColor.text}`,
                                       lesson.status === 'cancelled' && "opacity-50 grayscale"
                                     )}
                                   >
@@ -1163,6 +1246,132 @@ export default function Schedule({ profile }: { profile: UserProfile }) {
                 Opções Avançadas (Motivo, Duração...)
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {isAbsenceModalOpen && (
+        <div className="fixed inset-0 bg-zinc-950/40 backdrop-blur-md flex items-center justify-center p-6 z-50 overflow-y-auto">
+          <div className="bg-white w-full max-w-2xl rounded-[32px] p-8 shadow-2xl shadow-black/10 ring-1 ring-zinc-950/5 my-8">
+            <div className="flex items-center justify-between mb-8">
+              <div>
+                <h3 className="text-2xl font-bold display-font text-red-500 flex items-center gap-2">
+                  <AlertCircle className="w-6 h-6" />
+                  Registrar Ausência em Massa
+                </h3>
+                <p className="text-sm text-zinc-500 mt-1">Suspende as aulas do período e gera links mágicos de remarcação.</p>
+              </div>
+              <button 
+                onClick={() => setIsAbsenceModalOpen(false)} 
+                className="text-zinc-400 hover:text-black transition-colors w-10 h-10 flex items-center justify-center rounded-full hover:bg-zinc-100"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+
+             <form onSubmit={handleRegisterAbsence} className="space-y-6">
+                <div>
+                  <label className="block text-sm font-medium text-zinc-700 mb-2">Professor Ausente</label>
+                  <select 
+                    required
+                    value={newAbsence.teacherId}
+                    onChange={e => setNewAbsence({...newAbsence, teacherId: e.target.value})}
+                    className="w-full bg-zinc-50 border border-zinc-100 rounded-2xl px-6 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 text-black"
+                  >
+                    <option value="">Selecione um professor...</option>
+                    {teachers.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                  </select>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-zinc-700 mb-2">Data Inicial da Falta</label>
+                    <input 
+                      required
+                      type="date"
+                      value={newAbsence.startDate}
+                      onChange={e => setNewAbsence({...newAbsence, startDate: e.target.value})}
+                      className="w-full bg-zinc-50 border border-zinc-100 rounded-2xl px-6 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 text-black"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-zinc-700 mb-2">Data Final da Falta</label>
+                    <input 
+                      required
+                      type="date"
+                      value={newAbsence.endDate}
+                      onChange={e => setNewAbsence({...newAbsence, endDate: e.target.value})}
+                      className="w-full bg-zinc-50 border border-zinc-100 rounded-2xl px-6 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 text-black"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-zinc-700 mb-2">Motivo do Cancelamento</label>
+                  <input 
+                    required
+                    type="text"
+                    value={newAbsence.reason}
+                    onChange={e => setNewAbsence({...newAbsence, reason: e.target.value})}
+                    placeholder="Ex: Problemas de saúde"
+                    className="w-full bg-zinc-50 border border-zinc-100 rounded-2xl px-6 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 text-black"
+                  />
+                  <p className="text-xs text-zinc-400 mt-1">Este motivo será exibido para o aluno na tela de reposição.</p>
+                </div>
+
+                <div className="p-5 border-2 border-dashed border-zinc-200 rounded-2xl bg-zinc-50/50">
+                   <h4 className="text-sm font-bold text-zinc-900 mb-2 flex items-center gap-2">
+                     <CalendarDays className="w-4 h-4 text-orange-500" />
+                     Criar Vagas de Reposição (Mutirão)
+                   </h4>
+                   <p className="text-[11px] text-zinc-500 mb-4 uppercase tracking-wider font-semibold">Adicione os dias e horários que o professor fará a reposição.</p>
+                   
+                   <div className="flex items-end gap-2 mb-4">
+                      <div className="flex-1">
+                        <label className="block text-[10px] uppercase font-bold text-zinc-500 mb-1">Data</label>
+                        <input type="date" value={tempSlot.date} onChange={e=>setTempSlot({...tempSlot, date: e.target.value})} className="w-full bg-white border border-zinc-200 rounded-xl px-3 py-2 text-sm text-black" />
+                      </div>
+                      <div className="w-24 border-l pl-2 border-zinc-200">
+                        <label className="block text-[10px] uppercase font-bold text-zinc-500 mb-1">Hora</label>
+                        <input type="time" value={tempSlot.time} onChange={e=>setTempSlot({...tempSlot, time: e.target.value})} className="w-full bg-white border border-zinc-200 rounded-xl px-3 py-2 text-sm text-black" />
+                      </div>
+                      <div className="w-24 border-l pl-2 border-zinc-200">
+                        <label className="block text-[10px] uppercase font-bold text-zinc-500 mb-1" title="Capacidade máxima de alunos">Capacidade</label>
+                        <input type="number" min="1" value={tempSlot.maxCapacity} onChange={e=>setTempSlot({...tempSlot, maxCapacity: parseInt(e.target.value)||1})} className="w-full bg-white border border-zinc-200 rounded-xl px-3 py-2 text-sm text-black" />
+                      </div>
+                      <button type="button" onClick={addCustomSlot} className="bg-zinc-900 text-white rounded-xl px-4 py-2 text-sm font-bold hover:bg-zinc-800 transition-colors h-[38px]">
+                        Adicionar
+                      </button>
+                   </div>
+
+                   <div className="space-y-2 max-h-40 overflow-y-auto pr-1 mt-6">
+                      {newAbsence.customSlots.map((slot, idx) => (
+                         <div key={idx} className="flex flex-wrap items-center justify-between bg-white p-3 rounded-xl border border-zinc-200 shadow-sm">
+                           <div>
+                             <span className="font-bold text-sm text-black">{slot.dateLabel}</span>
+                             <span className="text-[13px] text-orange-600 font-black ml-2">{slot.time}</span>
+                             <span className="text-xs text-zinc-400 font-medium ml-2 uppercase tracking-wider bg-zinc-100 px-2 py-0.5 rounded-full">{slot.maxCapacity} Vagas</span>
+                           </div>
+                           <button type="button" onClick={() => setNewAbsence(prev => ({...prev, customSlots: prev.customSlots.filter((_, i) => i !== idx)}))} className="text-red-500 hover:text-red-700 p-2 hover:bg-red-50 rounded-lg transition-colors">
+                             <Trash2 className="w-4 h-4" />
+                           </button>
+                         </div>
+                      ))}
+                      {newAbsence.customSlots.length === 0 && <p className="text-[13px] text-zinc-400 font-medium py-2 text-center border border-dashed border-zinc-200 rounded-xl">Nenhum horário de reposição cadastrado ainda.</p>}
+                   </div>
+                </div>
+
+                <div className="pt-4 border-t border-zinc-100 flex justify-end gap-3 mt-8">
+                   <button type="button" onClick={() => setIsAbsenceModalOpen(false)} className="px-6 py-3 rounded-2xl text-sm font-bold text-zinc-600 hover:bg-zinc-100 transition-colors">Cancelar</button>
+                   <button 
+                     type="submit" 
+                     disabled={isSubmittingAbsence}
+                     className="bg-red-500 text-white px-8 py-3 rounded-2xl font-bold flex items-center gap-2 hover:bg-red-600 transition-all shadow-lg shadow-red-500/20 disabled:opacity-50"
+                   >
+                     {isSubmittingAbsence ? 'Montando Links...' : 'Registrar Falta e Notificar Alunos'}
+                   </button>
+                </div>
+             </form>
           </div>
         </div>
       )}

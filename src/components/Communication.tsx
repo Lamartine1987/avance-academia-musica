@@ -243,6 +243,20 @@ export default function Communication() {
                 className="w-full bg-zinc-50 border border-zinc-100 rounded-2xl px-6 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20"
               />
             </div>
+
+            <div>
+              <label className="block text-sm font-semibold uppercase tracking-widest text-zinc-600 mb-2">Telefone da Escola (WhatsApp Central)</label>
+              <input 
+                type="text" 
+                value={settings.schoolPhone || ''}
+                onChange={e => setSettings({...settings, schoolPhone: e.target.value})}
+                placeholder="Ex: 11999999999 (Apenas números)"
+                className="w-full bg-zinc-50 border border-zinc-100 rounded-2xl px-6 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20"
+              />
+              <p className="text-xs text-zinc-400 mt-1">
+                A secretaria receberá alertas neste número quando alunos utilizarem o portal de reposição.
+              </p>
+            </div>
             
             <div className="pt-8 border-t border-zinc-100">
               <div className="flex items-center justify-between mb-6">
