@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.provideNewRescheduleSlots = exports.rejectRescheduleSlots = exports.confirmReschedule = exports.getRescheduleData = exports.registerTeacherAbsence = exports.manualFinancialRoutine = exports.financialRoutineDaily = void 0;
+exports.createStudentUser = exports.provideNewRescheduleSlots = exports.rejectRescheduleSlots = exports.confirmReschedule = exports.getRescheduleData = exports.registerTeacherAbsence = exports.manualFinancialRoutine = exports.financialRoutineDaily = void 0;
 const functions = require("firebase-functions/v1");
 const admin = require("firebase-admin");
 const firestore_1 = require("firebase-admin/firestore");
@@ -571,5 +571,43 @@ exports.provideNewRescheduleSlots = functions.https.onCall(async (data, context)
         }).catch(e => console.error('[NOVO_HORARIO] Z-API Error', e));
     }
     return { success: true };
+});
+exports.createStudentUser = functions.https.onCall(async (data, context) => {
+    var _a;
+    if (!context.auth) {
+        throw new functions.https.HttpsError('unauthenticated', 'Apenas usuários logados podem criar credenciais didáticas.');
+    }
+    // Optional: check if caller is an admin
+    const callerSnap = await db.collection('users').doc(context.auth.uid).get();
+    if (callerSnap.exists && ((_a = callerSnap.data()) === null || _a === void 0 ? void 0 : _a.role) !== 'admin' && context.auth.token.email !== 'lamartinecezar3@gmail.com') {
+        throw new functions.https.HttpsError('permission-denied', 'Somente administradores podem criar novos acessos.');
+    }
+    const { email, password, displayName, studentId } = data;
+    if (!email || !password || !studentId) {
+        throw new functions.https.HttpsError('invalid-argument', 'Parâmetros incompletos para a geração de credenciais.');
+    }
+    try {
+        const userRecord = await admin.auth().createUser({
+            email,
+            password,
+            displayName,
+        });
+        await db.collection('users').doc(userRecord.uid).set({
+            uid: userRecord.uid,
+            email,
+            displayName,
+            role: 'student',
+            studentId,
+            mustChangePassword: true,
+            createdAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+        await db.collection('students').doc(studentId).update({ authUid: userRecord.uid });
+        return { success: true, uid: userRecord.uid };
+    }
+    catch (error) {
+        console.error('Erro ao gerar Auth para Aluno', error);
+        // If the email already exists, Firebase throws 'auth/email-already-exists'. Handle gracefully?
+        throw new functions.https.HttpsError('internal', error.message || 'Erro ao criar conta no Firebase Auth');
+    }
 });
 //# sourceMappingURL=index.js.map

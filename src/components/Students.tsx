@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { collection, onSnapshot, addDoc, serverTimestamp, deleteDoc, doc, Timestamp, updateDoc, query, where, getDocs, getDoc, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 import { UserProfile, Student, Teacher, Instrument, CourseEnrollment } from '../types';
 import { handleFirestoreError, OperationType } from '../lib/error-handler';
 import { Plus, Trash2, X, Calendar, Clock, User, Pencil, Eye } from 'lucide-react';
@@ -243,10 +244,14 @@ export default function Students({ profile }: { profile: UserProfile }) {
     }
 
     try {
+      const payload = {
+        ...newStudent,
+        courseValue: Number(newStudent.courseValue) || 0,
+        dueDate: Number(newStudent.dueDate) || 10
+      };
+
       if (editingStudentId) {
-        await updateDoc(doc(db, 'students', editingStudentId), {
-          ...newStudent
-        });
+        await updateDoc(doc(db, 'students', editingStudentId), payload);
 
         // Delete all future scheduled lessons for this student
         const now = new Date();
@@ -312,9 +317,27 @@ export default function Students({ profile }: { profile: UserProfile }) {
 
       } else {
         const docRef = await addDoc(collection(db, 'students'), {
-          ...newStudent,
+          ...payload,
           createdAt: serverTimestamp()
         });
+
+        const names = newStudent.name.trim().split(' ').map(n => n.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, ""));
+        const firstTwo = names.slice(0, 2).join('.');
+        const generatedEmail = `${firstTwo}@avance.com`;
+        const generatedPassword = '123456';
+
+        try {
+          const fn = getFunctions();
+          const createStudentUser = httpsCallable(fn, 'createStudentUser');
+          await createStudentUser({
+            email: generatedEmail,
+            password: generatedPassword,
+            displayName: newStudent.name,
+            studentId: docRef.id
+          });
+        } catch (authErr) {
+          console.error("Erro ao gerar Auth para Aluno:", authErr);
+        }
 
         // Generate lessons for the next 12 months automatically
         if (newStudent.status === 'active') {
@@ -365,6 +388,8 @@ export default function Students({ profile }: { profile: UserProfile }) {
                        const number = cleanPhone.length <= 11 ? `55${cleanPhone}` : cleanPhone;
                        let msg = template.content.replace(/{nome}/g, newStudent.name.split(' ')[0]);
                        msg = `🔔 *Aviso do Sistema Avance*\n\n${msg}`;
+                       
+                       msg += `\n\n📱 *Seu Portal do Aluno*\nAcesse sua agenda e histórico de mensalidades através da nossa plataforma:\n🔗 Link: https://avance-1334e.web.app\n👤 Usuário: ${generatedEmail}\n🔑 Senha provisória: ${generatedPassword}`;
                        
                        const headers: any = { 'Content-Type': 'application/json' };
                        if (zapiSecurityToken) {

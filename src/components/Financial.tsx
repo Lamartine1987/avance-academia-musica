@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../firebase';
-import { collection, query, getDocs, doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
+import { collection, query, getDocs, doc, getDoc, setDoc, updateDoc, where } from 'firebase/firestore';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { Payment, IntegrationsSettings } from '../types';
 import { Loader2, DollarSign, Wallet, AlertCircle, Save, CheckCircle2, PlayCircle, Search, Filter } from 'lucide-react';
@@ -9,8 +9,8 @@ import { ptBR } from 'date-fns/locale';
 import ConfirmModal from './ConfirmModal';
 import FeedbackModal from './FeedbackModal';
 
-export default function Financial() {
-  const [activeTab, setActiveTab] = useState<'panel' | 'payments'>('panel');
+export default function Financial({ profile }: { profile?: any }) {
+  const [activeTab, setActiveTab] = useState<'panel' | 'payments'>(profile?.role === 'student' ? 'payments' : 'panel');
   const [payments, setPayments] = useState<Payment[]>([]);
   const [settings, setSettings] = useState<IntegrationsSettings>({ zapiInstance: '', zapiToken: '' });
   const [loading, setLoading] = useState(true);
@@ -54,8 +54,11 @@ export default function Financial() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      // Fetch Payments
-      const pSnap = await getDocs(query(collection(db, 'payments')));
+      let q = query(collection(db, 'payments'));
+      if (profile?.role === 'student' && profile?.studentId) {
+        q = query(collection(db, 'payments'), where('studentId', '==', profile.studentId));
+      }
+      const pSnap = await getDocs(q);
       const pList: Payment[] = [];
       pSnap.forEach(d => pList.push({ id: d.id, ...d.data() } as Payment));
       setPayments(pList.sort((a, b) => b.createdAt?.toDate().getTime() - a.createdAt?.toDate().getTime()));
@@ -144,22 +147,24 @@ export default function Financial() {
 
   return (
     <div className="space-y-6">
-      <div className="bg-white rounded-[32px] ring-1 ring-zinc-950/5 p-2 shadow-sm flex flex-col sm:flex-row gap-2">
-        <button 
-          onClick={() => setActiveTab('panel')}
-          className={`px-6 py-3 rounded-2xl text-sm font-bold transition-all flex items-center justify-center gap-2 ${activeTab === 'panel' ? 'bg-zinc-950 text-white shadow-xl shadow-black/10' : 'text-zinc-500 hover:text-black hover:bg-zinc-100'}`}
-        >
-          <Wallet className="w-4 h-4" />
-          Painel Resumo
-        </button>
-        <button 
-          onClick={() => setActiveTab('payments')}
-          className={`px-6 py-3 rounded-2xl text-sm font-bold transition-all flex items-center justify-center gap-2 ${activeTab === 'payments' ? 'bg-zinc-950 text-white shadow-xl shadow-black/10' : 'text-zinc-500 hover:text-black hover:bg-zinc-100'}`}
-        >
-          <DollarSign className="w-4 h-4" />
-          Mensalidades
-        </button>
-      </div>
+      {profile?.role !== 'student' && (
+        <div className="bg-white rounded-[32px] ring-1 ring-zinc-950/5 p-2 shadow-sm flex flex-col sm:flex-row gap-2">
+          <button 
+            onClick={() => setActiveTab('panel')}
+            className={`px-6 py-3 rounded-2xl text-sm font-bold transition-all flex items-center justify-center gap-2 ${activeTab === 'panel' ? 'bg-zinc-950 text-white shadow-xl shadow-black/10' : 'text-zinc-500 hover:text-black hover:bg-zinc-100'}`}
+          >
+            <Wallet className="w-5 h-5" />
+            Painel Geral
+          </button>
+          <button 
+            onClick={() => setActiveTab('payments')}
+            className={`px-6 py-3 rounded-2xl text-sm font-bold transition-all flex items-center justify-center gap-2 ${activeTab === 'payments' ? 'bg-zinc-950 text-white shadow-xl shadow-black/10' : 'text-zinc-500 hover:text-black hover:bg-zinc-100'}`}
+          >
+            <CheckCircle2 className="w-5 h-5" />
+            Todas as Faturas
+          </button>
+        </div>
+      )}
 
       {activeTab === 'panel' && (
         <div className="space-y-6">
@@ -261,7 +266,9 @@ export default function Financial() {
                   <th className="py-4 px-6 text-xs font-semibold uppercase tracking-widest text-zinc-400">Vencimento</th>
                   <th className="py-4 px-6 text-xs font-semibold uppercase tracking-widest text-zinc-400">Notificações</th>
                   <th className="py-4 px-6 text-xs font-semibold uppercase tracking-widest text-zinc-400">Status</th>
-                  <th className="py-4 px-6 text-xs font-semibold uppercase tracking-widest text-zinc-400 text-right">Ação</th>
+                  {profile?.role !== 'student' && (
+                    <th className="py-4 px-6 text-xs font-semibold uppercase tracking-widest text-zinc-400 text-right">Ação</th>
+                  )}
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-50">
@@ -298,21 +305,23 @@ export default function Financial() {
                          payment.status === 'overdue' ? 'Atrasado' : 'Pendente'}
                       </span>
                     </td>
-                    <td className="py-4 px-6 text-right">
-                      {payment.status !== 'paid' && (
-                        <button 
-                          onClick={() => markAsPaid(payment.id)}
-                          className="text-xs font-bold text-emerald-600 hover:text-emerald-700 bg-emerald-50 hover:bg-emerald-100 transition-colors px-3 py-1.5 rounded-lg"
-                        >
-                          Marcar Pago
-                        </button>
-                      )}
-                    </td>
+                    {profile?.role !== 'student' && (
+                      <td className="py-4 px-6 text-right">
+                        {payment.status !== 'paid' && (
+                          <button 
+                            onClick={() => markAsPaid(payment.id)}
+                            className="text-xs font-bold text-emerald-600 hover:text-emerald-700 bg-emerald-50 hover:bg-emerald-100 transition-colors px-3 py-1.5 rounded-lg"
+                          >
+                            Marcar Pago
+                          </button>
+                        )}
+                      </td>
+                    )}
                   </tr>
                 ))}
                 {filteredPayments.length === 0 && (
                   <tr>
-                    <td colSpan={6} className="py-12 text-center text-sm text-zinc-400">Nenhuma mensalidade encontrada.</td>
+                    <td colSpan={profile?.role === 'student' ? 5 : 6} className="py-12 text-center text-sm text-zinc-400">Nenhuma mensalidade encontrada.</td>
                   </tr>
                 )}
               </tbody>

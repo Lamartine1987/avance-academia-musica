@@ -33,7 +33,9 @@ import {
   X,
   Wallet,
   MessageSquareText,
-  Bell
+  Bell,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { auth, db } from './firebase';
@@ -43,6 +45,7 @@ import { cn } from './lib/utils';
 import { ErrorBoundary } from './components/ErrorBoundary';
 
 // Components
+import ForcePasswordChange from './components/ForcePasswordChange';
 import Dashboard from './components/Dashboard';
 import Students from './components/Students';
 import Teachers from './components/Teachers';
@@ -67,6 +70,7 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [currentView, setCurrentView] = useState<View>('dashboard');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isDesktopMenuExpanded, setIsDesktopMenuExpanded] = useState(true);
   
   // Auth states
   const [email, setEmail] = useState('');
@@ -140,6 +144,9 @@ export default function App() {
 
   useEffect(() => {
     if (profile && profile.role === 'teacher' && currentView !== 'schedule') {
+      setCurrentView('schedule');
+    }
+    if (profile && profile.role === 'student' && currentView !== 'schedule' && currentView !== 'financial' && currentView !== 'profile') {
       setCurrentView('schedule');
     }
   }, [profile, currentView]);
@@ -265,16 +272,20 @@ export default function App() {
 
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['admin'] },
-    { id: 'schedule', label: 'Agenda', icon: Calendar, roles: ['admin', 'teacher'] },
+    { id: 'schedule', label: 'Minha Agenda', icon: Calendar, roles: ['admin', 'teacher', 'student'] },
     { id: 'students', label: 'Alunos', icon: Users, roles: ['admin'] },
     { id: 'teachers', label: 'Professores', icon: Music, roles: ['admin'] },
     { id: 'instruments', label: 'Instrumentos', icon: Music2, roles: ['admin'] },
-    { id: 'financial', label: 'Financeiro', icon: Wallet, roles: ['admin'] },
+    { id: 'financial', label: 'Meu Histórico Financeiro', icon: Wallet, roles: ['admin', 'student'] },
     { id: 'communication', label: 'Comunicação', icon: MessageSquareText, roles: ['admin'] },
   ].filter(item => item.roles.includes(profile.role));
 
   return (
     <ErrorBoundary>
+      {profile.mustChangePassword ? (
+        <ForcePasswordChange user={user} setProfile={setProfile} />
+      ) : null}
+      
       <div className="min-h-screen bg-zinc-50 flex flex-col md:flex-row">
       {/* Mobile Header */}
       <div className="md:hidden bg-zinc-950 text-white p-4 flex items-center justify-between sticky top-0 z-40 border-b border-white/5">
@@ -291,25 +302,34 @@ export default function App() {
 
       {/* Sidebar */}
       <aside className={cn(
-        "fixed md:sticky top-0 left-0 h-screen w-72 bg-zinc-950 text-zinc-50 flex flex-col p-6 z-50 transition-transform duration-300 ease-in-out md:translate-x-0 border-r border-white/5 shadow-2xl shadow-black/50",
-        isMobileMenuOpen ? "translate-x-0" : "-translate-x-full"
+        "fixed md:sticky top-0 left-0 h-screen bg-zinc-950 text-zinc-50 flex flex-col p-4 md:p-6 z-50 transition-all duration-300 ease-in-out border-r border-white/5 shadow-2xl shadow-black/50 overflow-visible shrink-0",
+        isMobileMenuOpen ? "translate-x-0 w-72" : "-translate-x-full md:translate-x-0",
+        !isMobileMenuOpen && (isDesktopMenuExpanded ? "md:w-72" : "md:w-24")
       )}>
-        <div className="flex items-center justify-between mb-12 px-2">
+        {/* Desktop Toggle Button */}
+        <button 
+          onClick={() => setIsDesktopMenuExpanded(!isDesktopMenuExpanded)} 
+          className="hidden md:flex absolute -right-4 top-8 w-8 h-8 bg-zinc-800 text-white rounded-full items-center justify-center ring-4 ring-zinc-50 hover:bg-orange-500 transition-colors z-50"
+        >
+          {isDesktopMenuExpanded ? <ChevronLeft className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+        </button>
+
+        <div className={cn("flex items-center justify-between mb-12", isDesktopMenuExpanded ? "px-2" : "px-0 md:justify-center")}>
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-orange-500 rounded-xl flex items-center justify-center shadow-lg shadow-orange-500/20">
+            <div className="w-10 h-10 bg-orange-500 rounded-xl flex items-center justify-center shrink-0 shadow-lg shadow-orange-500/20">
               <Music2 className="w-6 h-6 text-white" />
             </div>
-            <div className="flex flex-col">
+            <div className={cn("flex flex-col", !isDesktopMenuExpanded && "md:hidden")}>
               <span className="text-xl font-bold tracking-tight display-font leading-none">Avance</span>
               <span className="text-[10px] uppercase tracking-widest text-orange-500 font-semibold mt-1">Academia de Música</span>
             </div>
           </div>
-          <button onClick={() => setIsMobileMenuOpen(false)} className="md:hidden p-2 text-zinc-400 hover:text-white">
+          <button onClick={() => setIsMobileMenuOpen(false)} className="md:hidden p-2 text-zinc-400 hover:text-white shrink-0">
             <X className="w-6 h-6" />
           </button>
         </div>
 
-        <nav className="flex-1 space-y-2 overflow-y-auto">
+        <nav className="flex-1 space-y-2 overflow-y-auto overflow-x-hidden">
           {navItems.map((item) => (
             <button
               key={item.id}
@@ -317,15 +337,17 @@ export default function App() {
                 setCurrentView(item.id as View);
                 setIsMobileMenuOpen(false);
               }}
+              title={!isDesktopMenuExpanded ? item.label : undefined}
               className={cn(
                 "w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all active:scale-[0.98]",
                 currentView === item.id 
                   ? "bg-gradient-to-r from-orange-500 to-amber-500 text-white shadow-lg shadow-orange-500/20" 
-                  : "text-zinc-400 hover:bg-white/5 hover:text-white"
+                  : "text-zinc-400 hover:bg-white/5 hover:text-white",
+                !isDesktopMenuExpanded && "md:justify-center md:px-0"
               )}
             >
-              <item.icon className="w-5 h-5" />
-              {item.label}
+              <item.icon className="w-5 h-5 shrink-0" />
+              <span className={cn("truncate", !isDesktopMenuExpanded && "md:hidden")}>{item.label}</span>
             </button>
           ))}
         </nav>
@@ -336,26 +358,34 @@ export default function App() {
               setCurrentView('profile');
               setIsMobileMenuOpen(false);
             }}
-            className="w-full flex items-center gap-3 px-4 py-3 mb-4 rounded-xl hover:bg-white/5 transition-all text-left active:scale-[0.98]"
+            title={!isDesktopMenuExpanded ? "Meu Perfil" : undefined}
+            className={cn(
+              "w-full flex items-center gap-3 px-4 py-3 mb-4 rounded-xl hover:bg-white/5 transition-all text-left active:scale-[0.98]",
+              !isDesktopMenuExpanded && "md:justify-center md:px-0"
+            )}
           >
             <div className="w-10 h-10 bg-white/10 rounded-full flex items-center justify-center overflow-hidden shrink-0">
               {user.photoURL ? (
                 <img src={user.photoURL} alt={user.displayName || ''} className="w-full h-full object-cover" />
               ) : (
-                <UserCircle className="w-6 h-6 text-zinc-400" />
+                <UserCircle className="w-6 h-6 text-zinc-400 shrink-0" />
               )}
             </div>
-            <div className="flex-1 min-w-0">
+            <div className={cn("flex-1 min-w-0", !isDesktopMenuExpanded && "md:hidden")}>
               <p className="text-sm font-medium text-white truncate">{user.displayName}</p>
               <p className="text-xs text-zinc-400 truncate capitalize">{profile.role}</p>
             </div>
           </button>
           <button
             onClick={handleLogout}
-            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-orange-500 hover:bg-orange-500/10 transition-all"
+            title={!isDesktopMenuExpanded ? "Sair" : undefined}
+            className={cn(
+              "w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-orange-500 hover:bg-orange-500/10 transition-all",
+              !isDesktopMenuExpanded && "md:justify-center md:px-0"
+            )}
           >
-            <LogOut className="w-5 h-5" />
-            Sair
+            <LogOut className="w-5 h-5 shrink-0" />
+            <span className={cn(!isDesktopMenuExpanded && "md:hidden")}>Sair</span>
           </button>
         </div>
       </aside>
@@ -456,9 +486,9 @@ export default function App() {
             {currentView === 'dashboard' && profile.role === 'admin' && <Dashboard profile={profile} />}
             {currentView === 'students' && profile.role === 'admin' && <Students profile={profile} />}
             {currentView === 'teachers' && profile.role === 'admin' && <Teachers profile={profile} />}
-            {currentView === 'schedule' && (profile.role === 'admin' || profile.role === 'teacher') && <Schedule profile={profile} />}
+            {currentView === 'schedule' && (profile.role === 'admin' || profile.role === 'teacher' || profile.role === 'student') && <Schedule profile={profile} />}
             {currentView === 'instruments' && profile.role === 'admin' && <Instruments profile={profile} />}
-            {currentView === 'financial' && profile.role === 'admin' && <Financial />}
+            {currentView === 'financial' && (profile.role === 'admin' || profile.role === 'student') && <Financial profile={profile} />}
             {currentView === 'communication' && profile.role === 'admin' && <Communication />}
             {currentView === 'profile' && <Profile user={user} profile={profile} />}
           </motion.div>

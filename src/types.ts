@@ -6,6 +6,8 @@ export interface UserProfile {
   displayName?: string;
   role: UserRole;
   teacherId?: string;
+  studentId?: string;
+  mustChangePassword?: boolean;
   createdAt: any;
 }
 

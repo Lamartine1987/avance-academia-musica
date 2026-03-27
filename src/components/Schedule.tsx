@@ -70,6 +70,8 @@ export default function Schedule({ profile }: { profile: UserProfile }) {
     
     if (profile.role === 'teacher' && profile.teacherId) {
       q = query(q, where('teacherId', '==', profile.teacherId));
+    } else if (profile.role === 'student' && profile.studentId) {
+      q = query(q, where('studentId', '==', profile.studentId));
     }
 
     const unsubscribeLessons = onSnapshot(q, (snapshot) => {
@@ -1010,15 +1012,16 @@ export default function Schedule({ profile }: { profile: UserProfile }) {
 
       {/* Settings Modal */}
       {isSettingsModalOpen && (
-        <div className="fixed inset-0 bg-zinc-950/40 backdrop-blur-md flex items-center justify-center p-6 z-50">
-          <div className="bg-white w-full max-w-md rounded-[32px] p-8 shadow-2xl shadow-black/10 ring-1 ring-zinc-950/5">
-            <div className="flex items-center justify-between mb-8">
-              <h3 className="text-2xl font-medium">Configurações da Agenda</h3>
+        <div className="fixed inset-0 bg-zinc-950/40 backdrop-blur-md flex items-center justify-center p-4 sm:p-6 z-50">
+          <div className="bg-white w-full max-w-md rounded-[32px] shadow-2xl shadow-black/10 ring-1 ring-zinc-950/5 flex flex-col max-h-[100dvh] sm:max-h-[90vh]">
+            <div className="flex items-center justify-between p-5 sm:p-8 border-b border-zinc-100 shrink-0">
+              <h3 className="text-xl sm:text-2xl font-medium">Configurações da Agenda</h3>
               <button onClick={() => setIsSettingsModalOpen(false)} className="text-zinc-400 hover:text-black transition-colors">
                 <X className="w-6 h-6" />
               </button>
             </div>
-            <form onSubmit={handleSaveSettings} className="space-y-6">
+            <div className="overflow-y-auto p-5 sm:p-8">
+              <form onSubmit={handleSaveSettings} className="space-y-6">
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-zinc-700 mb-2">Hora Inicial</label>
@@ -1084,28 +1087,30 @@ export default function Schedule({ profile }: { profile: UserProfile }) {
               <p className="text-xs text-zinc-400 italic">
                 Ajuste o intervalo de horas e os dias da semana exibidos na grade.
               </p>
-              <button 
-                type="submit"
-                className="w-full bg-orange-500 text-white py-4 rounded-2xl font-bold hover:bg-orange-600 transition-all shadow-md shadow-orange-500/20"
-              >
-                Salvar Configurações
-              </button>
-            </form>
+                <button 
+                  type="submit"
+                  className="w-full bg-orange-500 text-white py-4 rounded-2xl font-bold hover:bg-orange-600 transition-all shadow-md shadow-orange-500/20 mt-4"
+                >
+                  Salvar Configurações
+                </button>
+              </form>
+            </div>
           </div>
         </div>
       )}
 
       {/* Modal */}
       {isModalOpen && (
-        <div className="fixed inset-0 bg-zinc-950/40 backdrop-blur-md flex items-center justify-center p-6 z-50">
-          <div className="bg-white w-full max-w-md rounded-[32px] p-8 shadow-2xl shadow-black/10 ring-1 ring-zinc-950/5">
-            <div className="flex items-center justify-between mb-8">
-              <h3 className="text-2xl font-medium">Agendar Aula</h3>
+        <div className="fixed inset-0 bg-zinc-950/40 backdrop-blur-md flex items-center justify-center p-4 sm:p-6 z-50">
+          <div className="bg-white w-full max-w-md rounded-[32px] shadow-2xl shadow-black/10 ring-1 ring-zinc-950/5 flex flex-col max-h-[100dvh] sm:max-h-[90vh]">
+            <div className="flex items-center justify-between p-5 sm:p-8 border-b border-zinc-100 shrink-0">
+              <h3 className="text-xl sm:text-2xl font-medium">Agendar Aula</h3>
               <button onClick={() => { setIsModalOpen(false); setFormError(null); }} className="text-zinc-400 hover:text-black transition-colors">
                 <X className="w-6 h-6" />
               </button>
             </div>
-            <form onSubmit={handleAddLesson} className="space-y-6">
+            <div className="overflow-y-auto p-5 sm:p-8">
+              <form onSubmit={handleAddLesson} className="space-y-6">
               {formError && (
                 <div className="p-3 bg-red-50 border border-red-100 text-red-600 rounded-xl text-sm font-medium">
                   {formError}
@@ -1157,28 +1162,30 @@ export default function Schedule({ profile }: { profile: UserProfile }) {
                   />
                 </div>
               </div>
-              <button 
-                type="submit"
-                className="w-full bg-gradient-to-r from-orange-500 to-amber-500 text-white py-4 rounded-2xl font-bold hover:from-orange-600 hover:to-amber-600 transition-all shadow-lg shadow-orange-500/25 active:scale-[0.98]"
-              >
-                Confirmar Agendamento
-              </button>
-            </form>
+                <button 
+                  type="submit"
+                  className="w-full bg-gradient-to-r from-orange-500 to-amber-500 text-white py-4 rounded-2xl font-bold hover:from-orange-600 hover:to-amber-600 transition-all shadow-lg shadow-orange-500/25 active:scale-[0.98] mt-4"
+                >
+                  Confirmar Agendamento
+                </button>
+              </form>
+            </div>
           </div>
         </div>
       )}
 
       {/* Block Time Modal */}
       {isBlockModalOpen && (
-        <div className="fixed inset-0 bg-zinc-950/40 backdrop-blur-md flex items-center justify-center p-6 z-50">
-          <div className="bg-white w-full max-w-md rounded-[32px] p-8 shadow-2xl shadow-black/10 ring-1 ring-zinc-950/5">
-            <div className="flex items-center justify-between mb-8">
-              <h3 className="text-2xl font-bold display-font text-red-500">Bloquear Horário</h3>
+        <div className="fixed inset-0 bg-zinc-950/40 backdrop-blur-md flex items-center justify-center p-4 sm:p-6 z-50">
+          <div className="bg-white w-full max-w-md rounded-[32px] shadow-2xl shadow-black/10 ring-1 ring-zinc-950/5 flex flex-col max-h-[100dvh] sm:max-h-[90vh]">
+            <div className="flex items-center justify-between p-5 sm:p-8 border-b border-zinc-100 shrink-0">
+              <h3 className="text-xl sm:text-2xl font-bold display-font text-red-500">Bloquear Horário</h3>
               <button onClick={() => setIsBlockModalOpen(false)} className="text-zinc-400 hover:text-black transition-colors">
                 <X className="w-6 h-6" />
               </button>
             </div>
-            <form onSubmit={handleAddBlockedTime} className="space-y-6">
+            <div className="overflow-y-auto p-5 sm:p-8">
+              <form onSubmit={handleAddBlockedTime} className="space-y-6">
               {profile.role === 'admin' && (
                 <div>
                   <label className="block text-sm font-medium text-zinc-700 mb-2">Professor</label>
@@ -1237,13 +1244,14 @@ export default function Schedule({ profile }: { profile: UserProfile }) {
                   />
                 </div>
               </div>
-              <button 
-                type="submit"
-                className="w-full bg-red-500 text-white py-4 rounded-2xl font-bold hover:bg-red-600 transition-all shadow-md shadow-red-500/20"
-              >
-                Confirmar Bloqueio
-              </button>
-            </form>
+                <button 
+                  type="submit"
+                  className="w-full bg-red-500 text-white py-4 rounded-2xl font-bold hover:bg-red-600 transition-all shadow-md shadow-red-500/20 mt-4"
+                >
+                  Confirmar Bloqueio
+                </button>
+              </form>
+            </div>
           </div>
         </div>
       )}
@@ -1294,25 +1302,26 @@ export default function Schedule({ profile }: { profile: UserProfile }) {
       )}
 
       {isAbsenceModalOpen && (
-        <div className="fixed inset-0 bg-zinc-950/40 backdrop-blur-md flex items-center justify-center p-6 z-50 overflow-y-auto">
-          <div className="bg-white w-full max-w-2xl rounded-[32px] p-8 shadow-2xl shadow-black/10 ring-1 ring-zinc-950/5 my-8">
-            <div className="flex items-center justify-between mb-8">
+        <div className="fixed inset-0 bg-zinc-950/40 backdrop-blur-md flex items-center justify-center p-4 sm:p-6 z-50">
+          <div className="bg-white w-full max-w-2xl rounded-[32px] shadow-2xl shadow-black/10 ring-1 ring-zinc-950/5 flex flex-col max-h-[100dvh] sm:max-h-[90vh]">
+            <div className="flex items-start sm:items-center justify-between p-5 sm:p-8 pb-4 sm:pb-6 border-b border-zinc-100 shrink-0 gap-4">
               <div>
-                <h3 className="text-2xl font-bold display-font text-red-500 flex items-center gap-2">
-                  <AlertCircle className="w-6 h-6" />
+                <h3 className="text-xl sm:text-2xl font-bold display-font text-red-500 flex items-center gap-2">
+                  <AlertCircle className="w-6 h-6 shrink-0" />
                   Registrar Ausência em Massa
                 </h3>
                 <p className="text-sm text-zinc-500 mt-1">Suspende as aulas do período e gera links mágicos de remarcação.</p>
               </div>
               <button 
                 onClick={() => setIsAbsenceModalOpen(false)} 
-                className="text-zinc-400 hover:text-black transition-colors w-10 h-10 flex items-center justify-center rounded-full hover:bg-zinc-100"
+                className="text-zinc-400 hover:text-black transition-colors w-10 h-10 flex items-center justify-center rounded-full hover:bg-zinc-100 shrink-0"
               >
                 <X className="w-6 h-6" />
               </button>
             </div>
 
-             <form onSubmit={handleRegisterAbsence} className="space-y-6">
+            <div className="overflow-y-auto p-5 sm:p-8 pt-4 sm:pt-6">
+              <form onSubmit={handleRegisterAbsence} className="space-y-6">
                 <div>
                   <label className="block text-sm font-medium text-zinc-700 mb-2">Professor Ausente</label>
                   <select 
@@ -1326,7 +1335,7 @@ export default function Schedule({ profile }: { profile: UserProfile }) {
                   </select>
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-zinc-700 mb-2">Data Inicial da Falta</label>
                     <input 
@@ -1369,33 +1378,33 @@ export default function Schedule({ profile }: { profile: UserProfile }) {
                    </h4>
                    <p className="text-[11px] text-zinc-500 mb-4 uppercase tracking-wider font-semibold">Adicione os dias e horários que o professor fará a reposição.</p>
                    
-                   <div className="flex items-end gap-2 mb-4">
-                      <div className="flex-1">
+                   <div className="flex flex-col sm:flex-row items-start sm:items-end gap-3 sm:gap-2 mb-4">
+                      <div className="w-full sm:flex-1">
                         <label className="block text-[10px] uppercase font-bold text-zinc-500 mb-1">Data</label>
                         <input type="date" value={tempSlot.date} onChange={e=>setTempSlot({...tempSlot, date: e.target.value})} className="w-full bg-white border border-zinc-200 rounded-xl px-3 py-2 text-sm text-black" />
                       </div>
-                      <div className="w-24 border-l pl-2 border-zinc-200">
+                      <div className="w-full sm:w-24 sm:border-l sm:pl-2 border-zinc-200">
                         <label className="block text-[10px] uppercase font-bold text-zinc-500 mb-1">Hora</label>
                         <input type="time" value={tempSlot.time} onChange={e=>setTempSlot({...tempSlot, time: e.target.value})} className="w-full bg-white border border-zinc-200 rounded-xl px-3 py-2 text-sm text-black" />
                       </div>
-                      <div className="w-24 border-l pl-2 border-zinc-200">
+                      <div className="w-full sm:w-24 sm:border-l sm:pl-2 border-zinc-200">
                         <label className="block text-[10px] uppercase font-bold text-zinc-500 mb-1" title="Capacidade máxima de alunos">Capacidade</label>
                         <input type="number" min="1" value={tempSlot.maxCapacity} onChange={e=>setTempSlot({...tempSlot, maxCapacity: parseInt(e.target.value)||1})} className="w-full bg-white border border-zinc-200 rounded-xl px-3 py-2 text-sm text-black" />
                       </div>
-                      <button type="button" onClick={addCustomSlot} className="bg-zinc-900 text-white rounded-xl px-4 py-2 text-sm font-bold hover:bg-zinc-800 transition-colors h-[38px]">
+                      <button type="button" onClick={addCustomSlot} className="w-full sm:w-auto bg-zinc-900 text-white rounded-xl px-4 py-3 sm:py-2 text-sm font-bold hover:bg-zinc-800 transition-colors sm:h-[38px]">
                         Adicionar
                       </button>
                    </div>
 
                    <div className="space-y-2 max-h-40 overflow-y-auto pr-1 mt-6">
                       {newAbsence.customSlots.map((slot, idx) => (
-                         <div key={idx} className="flex flex-wrap items-center justify-between bg-white p-3 rounded-xl border border-zinc-200 shadow-sm">
-                           <div>
+                         <div key={idx} className="flex flex-wrap items-center justify-between bg-white p-3 rounded-xl border border-zinc-200 shadow-sm gap-2">
+                           <div className="flex flex-wrap items-center gap-2">
                              <span className="font-bold text-sm text-black">{slot.dateLabel}</span>
-                             <span className="text-[13px] text-orange-600 font-black ml-2">{slot.time}</span>
-                             <span className="text-xs text-zinc-400 font-medium ml-2 uppercase tracking-wider bg-zinc-100 px-2 py-0.5 rounded-full">{slot.maxCapacity} Vagas</span>
+                             <span className="text-[13px] text-orange-600 font-black">{slot.time}</span>
+                             <span className="text-xs text-zinc-400 font-medium uppercase tracking-wider bg-zinc-100 px-2 py-0.5 rounded-full">{slot.maxCapacity} Vagas</span>
                            </div>
-                           <button type="button" onClick={() => setNewAbsence(prev => ({...prev, customSlots: prev.customSlots.filter((_, i) => i !== idx)}))} className="text-red-500 hover:text-red-700 p-2 hover:bg-red-50 rounded-lg transition-colors">
+                           <button type="button" onClick={() => setNewAbsence(prev => ({...prev, customSlots: prev.customSlots.filter((_, i) => i !== idx)}))} className="text-red-500 hover:text-red-700 p-2 hover:bg-red-50 rounded-lg transition-colors ml-auto sm:ml-0">
                              <Trash2 className="w-4 h-4" />
                            </button>
                          </div>
@@ -1421,17 +1430,18 @@ export default function Schedule({ profile }: { profile: UserProfile }) {
                   </div>
                 )}
 
-                <div className="pt-4 border-t border-zinc-100 flex justify-end gap-3 mt-8">
-                   <button type="button" onClick={() => setIsAbsenceModalOpen(false)} className="px-6 py-3 rounded-2xl text-sm font-bold text-zinc-600 hover:bg-zinc-100 transition-colors">Cancelar</button>
+                <div className="pt-4 mt-8 border-t border-zinc-100 flex flex-col-reverse sm:flex-row sm:justify-end gap-3">
+                   <button type="button" onClick={() => setIsAbsenceModalOpen(false)} className="w-full sm:w-auto px-6 py-3 rounded-2xl text-sm font-bold text-zinc-600 hover:bg-zinc-100 transition-colors text-center">Cancelar</button>
                    <button 
                      type="submit" 
                      disabled={isSubmittingAbsence}
-                     className="bg-red-500 text-white px-8 py-3 rounded-2xl font-bold flex items-center gap-2 hover:bg-red-600 transition-all shadow-lg shadow-red-500/20 disabled:opacity-50"
+                     className="w-full sm:w-auto justify-center bg-red-500 text-white px-8 py-3 rounded-2xl font-bold flex items-center gap-2 hover:bg-red-600 transition-all shadow-lg shadow-red-500/20 disabled:opacity-50"
                    >
                      {isSubmittingAbsence ? 'Montando Links...' : 'Registrar Falta e Notificar Alunos'}
                    </button>
                 </div>
-             </form>
+              </form>
+            </div>
           </div>
         </div>
       )}

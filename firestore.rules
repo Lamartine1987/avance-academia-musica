@@ -90,6 +90,10 @@ service cloud.firestore {
       return isTeacher() && getTeacherId() == teacherId;
     }
 
+    function isLessonStudent(studentId) {
+      return isAuthenticated() && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.studentId == studentId;
+    }
+
     function isValidEmail(email) {
       return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
     }
@@ -102,11 +106,13 @@ service cloud.firestore {
     // Domain Validators
     // ===============================================================
     function isValidUser(data) {
-      return hasOnlyAllowedFields(['uid', 'email', 'displayName', 'role', 'teacherId', 'createdAt']) &&
+      return hasOnlyAllowedFields(['uid', 'email', 'displayName', 'role', 'teacherId', 'studentId', 'mustChangePassword', 'createdAt']) &&
              data.uid is string && data.uid.size() > 0 &&
              data.email is string && isValidEmail(data.email) &&
              data.role in ['admin', 'teacher', 'student'] &&
              (!('teacherId' in data) || data.teacherId is string) &&
+             (!('studentId' in data) || data.studentId is string) &&
+             (!('mustChangePassword' in data) || data.mustChangePassword is bool) &&
              (!('displayName' in data) || data.displayName is string) &&
              (!('createdAt' in data) || data.createdAt is timestamp);
     }
@@ -216,7 +222,7 @@ service cloud.firestore {
     }
 
     match /lessons/{lessonId} {
-      allow read: if isAdmin() || (isAuthenticated() && (resource == null || isLessonTeacher(resource.data.teacherId)));
+      allow read: if isAdmin() || (isAuthenticated() && (resource == null || isLessonTeacher(resource.data.teacherId) || isLessonStudent(resource.data.studentId)));
       allow create, update: if (isAdmin() || isLessonTeacher(request.resource.data.teacherId)) && isValidLesson(request.resource.data);
       allow delete: if isAdmin();
     }
