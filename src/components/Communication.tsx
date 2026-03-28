@@ -2,8 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { db } from '../firebase';
 import { collection, query, getDocs, doc, getDoc, setDoc, addDoc, deleteDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { MessageTemplate, IntegrationsSettings } from '../types';
-import { Loader2, MessageSquareText, Settings, Plus, Save, Trash2, Edit2, X } from 'lucide-react';
+import { Loader2, MessageSquareText, Settings, Plus, Save, Trash2, Edit2, X, Bold, Italic, Strikethrough, Link as LinkIcon, Smile, Play } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 
 export default function Communication() {
   const [activeTab, setActiveTab] = useState<'templates' | 'settings'>('templates');
@@ -11,15 +12,22 @@ export default function Communication() {
   const [settings, setSettings] = useState<IntegrationsSettings>({ 
     zapiInstance: '', zapiToken: '', zapiSecurityToken: '',
     remindersEnabled: true, reminderDaysBefore: true, reminderDaysBeforeCount: 3, 
-    sendOnDue: true, reminderDaysAfter: true, reminderDaysAfterCount: 1 
+    sendOnDue: true, reminderDaysAfter: true, reminderDaysAfterCount: 1,
+    evaluationCycleDays: 90, notifyTeacherDaysBefore: 1
   });
   const [loading, setLoading] = useState(true);
   const [savingConfig, setSavingConfig] = useState(false);
+  const [testingRoutine, setTestingRoutine] = useState(false);
 
   // Template Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [currentTemplate, setCurrentTemplate] = useState<Partial<MessageTemplate>>({ type: 'welcome', isAutomatic: false });
   const [savingTemplate, setSavingTemplate] = useState(false);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+
+  const COMMON_EMOJIS = [
+    '😀','😃','😄','😁','😅','😂','🤣','😊','😇','🙂','😉','😍','🥰','😘','😋','😛','😜','🤪','🤓','😎','🤩','🥳','😏','😒','😞','😔','😟','😕','🙁','☹️','😣','😖','😫','😩','🥺','😢','😭','😤','😠','😡','🤬','🤯','😳','🥵','🥶','😱','😨','😰','😥','😓','🤗','🤔','🤭','🤫','🤥','😶','😐','😑','😬','🙄','😯','😦','😧','😮','😲','🥱','😴','🤤','😪','😵','🤐','🥴','🤢','🤮','🤧','😷','🤒','🤕','🤑','🤠','😈','👿','👹','👺','🤡','💩','👻','💀','👽','👾','🤖','🎃','😺','😸','😹','😻','😼','😽','🙀','😿','😾','🙌','👐','🤲','🤝','🙏','✍️','💅','🤳','💪','🦾','🦵','🦿','🦶','👂','🦻','👃','🧠','🦷','🦴','👀','👁️','👅','👄','💋','🩸','👍','👎','✊','👊','🤛','🤜','🤞','✌️','🤟','🤘','👌','🤏','👈','👉','👆','👇','☝️','✋','🤚','🖐️','🖖','👋','🤙','🎵','🎶','🎸','🎹','🎺','🎻','🥁','✅','❌','⚠️','🔔','📅','📱','💬','✨','🔥','🌟','💯','⏰'
+  ];
 
   useEffect(() => {
     fetchData();
@@ -62,16 +70,19 @@ export default function Communication() {
     e.preventDefault();
     setSavingTemplate(true);
     try {
+      const isAuto = currentTemplate.type === 'pedagogic_reminder' ? true : currentTemplate.isAutomatic;
+      
       if (currentTemplate.id) {
         await updateDoc(doc(db, 'templates', currentTemplate.id), {
           title: currentTemplate.title,
           content: currentTemplate.content,
           type: currentTemplate.type,
-          isAutomatic: currentTemplate.isAutomatic
+          isAutomatic: isAuto
         });
       } else {
         await addDoc(collection(db, 'templates'), {
           ...currentTemplate,
+          isAutomatic: isAuto,
           createdAt: serverTimestamp()
         });
       }
@@ -95,6 +106,67 @@ export default function Communication() {
     }
   };
 
+  const insertFormatting = (prefix: string, suffix: string = '') => {
+    const textarea = document.getElementById('template-content') as HTMLTextAreaElement;
+    if (!textarea) return;
+    
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const current = currentTemplate.content || '';
+    
+    const selectedText = current.substring(start, end);
+    const textToInsert = selectedText.length > 0 ? selectedText : 'texto';
+    
+    const newText = current.substring(0, start) + prefix + textToInsert + suffix + current.substring(end);
+    
+    setCurrentTemplate({ ...currentTemplate, content: newText });
+    
+    setTimeout(() => {
+      textarea.focus();
+      textarea.setSelectionRange(start + prefix.length, start + prefix.length + textToInsert.length);
+    }, 0);
+  };
+
+  const insertEmoji = (emoji: string) => {
+    const textarea = document.getElementById('template-content') as HTMLTextAreaElement;
+    if (!textarea) return;
+    
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const current = currentTemplate.content || '';
+    
+    const newText = current.substring(0, start) + emoji + current.substring(end);
+    
+    setCurrentTemplate({ ...currentTemplate, content: newText });
+    setShowEmojiPicker(false);
+    
+    setTimeout(() => {
+      textarea.focus();
+      textarea.setSelectionRange(start + emoji.length, start + emoji.length);
+    }, 0);
+  };
+
+  const testPedagogicalRoutine = async () => {
+    if (!window.confirm('Isto disparará a varredura manual em todos os alunos ativos e pode enviar mensagens no WhatsApp dos professores imediatamente. Deseja prosseguir?')) return;
+    
+    setTestingRoutine(true);
+    try {
+      const functions = getFunctions();
+      const manualRoutine = httpsCallable(functions, 'manualPedagogicalRoutine');
+      const result = await manualRoutine();
+      const data = result.data as any;
+      if (data.success) {
+        alert('✅ Varredura Executada. Professores Notificados!');
+      } else {
+        alert('Erro retornado: ' + data.reason);
+      }
+    } catch (e: any) {
+      console.error(e);
+      alert('Erro de Execução: ' + e.message);
+    }
+    setTestingRoutine(false);
+  };
+
   if (loading) {
     return (
       <div className="flex justify-center p-12">
@@ -111,6 +183,8 @@ export default function Communication() {
       case 'reminder_predue': return 'Aviso Antecipado';
       case 'reminder_due': return 'Vencimento Hoje';
       case 'reminder_overdue': return 'Mensalidade Atrasada';
+      case 'evaluation': return 'Aviso de Nova Avaliação';
+      case 'pedagogic_reminder': return 'Lembrete Pedagógico (Professores)';
       case 'custom': return 'Outros';
       default: return type;
     }
@@ -369,6 +443,66 @@ export default function Communication() {
               )}
             </div>
 
+            <div className="pt-8 border-t border-zinc-100">
+              <div className="flex items-center justify-between mb-6">
+                <div>
+                  <h3 className="text-lg font-bold text-black">Ciclo Pedagógico de Boletins</h3>
+                  <p className="text-sm text-zinc-500 mt-1">Configure o período ideal para gerar novas avaliações dos alunos.</p>
+                </div>
+              </div>
+
+              <div className="space-y-6 bg-orange-50/50 p-6 rounded-2xl border border-orange-100/50">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="font-bold text-zinc-900">Período de Avaliação</p>
+                    <p className="text-sm text-zinc-500">A cada quantos dias o aluno deve ser avaliado?</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input 
+                      type="number" 
+                      min="1" max="365"
+                      value={settings.evaluationCycleDays || 90}
+                      onChange={(e) => setSettings({...settings, evaluationCycleDays: Number(e.target.value)})}
+                      className="w-20 bg-white border border-zinc-200 rounded-xl px-2 py-2 text-center text-sm font-bold focus:ring-2 focus:ring-orange-500 outline-none"
+                    />
+                    <span className="text-sm text-zinc-500 font-medium">dias</span>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between border-t border-orange-200/30 pt-4">
+                  <div>
+                    <p className="font-bold text-zinc-900">Aviso Prévio ao Professor</p>
+                    <p className="text-sm text-zinc-500">Notificar via Z-API quantos dias antes da aula?</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input 
+                      type="number" 
+                      min="1" max="15"
+                      value={settings.notifyTeacherDaysBefore || 1}
+                      onChange={(e) => setSettings({...settings, notifyTeacherDaysBefore: Number(e.target.value)})}
+                      className="w-16 bg-white border border-zinc-200 rounded-xl px-2 py-2 text-center text-sm font-bold focus:ring-2 focus:ring-orange-500 outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between border-t border-orange-200/30 pt-4">
+                  <div>
+                    <p className="font-bold text-zinc-900">Teste do Robô Pedagógico</p>
+                    <p className="text-sm text-zinc-500">Acione manualmente a varredura para alertar os professores agora mesmo.</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={testPedagogicalRoutine}
+                    disabled={testingRoutine || !settings.zapiInstance || !settings.zapiToken}
+                    className="px-6 py-2.5 bg-orange-500 hover:bg-orange-600 disabled:opacity-50 text-white font-bold rounded-xl transition-all flex items-center gap-2 shadow-sm shadow-orange-500/20"
+                  >
+                    {testingRoutine ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
+                    Forçar Varredura Agora
+                  </button>
+                </div>
+              </div>
+            </div>
+
             <button
               disabled={savingConfig}
               className="px-8 py-4 bg-black text-white rounded-2xl font-bold hover:bg-zinc-800 transition-all flex items-center gap-2"
@@ -435,6 +569,8 @@ export default function Communication() {
                       <option value="reminder_predue">Aviso Antecipado (Cobrança)</option>
                       <option value="reminder_due">Vencimento Hoje (Cobrança)</option>
                       <option value="reminder_overdue">Mensalidade Atrasada (Cobrança)</option>
+                      <option value="evaluation">Aviso de Nova Avaliação</option>
+                      <option value="pedagogic_reminder">Lembrete Pedagógico (Professores)</option>
                       <option value="custom">Outros</option>
                     </select>
                   </div>
@@ -483,9 +619,69 @@ export default function Communication() {
                           <li><strong>{'{link}'}</strong> - Link seguro onde o aluno fará sua remarcação (OBRIGATÓRIO).</li>
                         </>
                       )}
+                      {currentTemplate.type === 'evaluation' && (
+                        <>
+                          <li><strong>{'{professor}'}</strong> - O nome do professor que realizou a avaliação;</li>
+                          <li><strong>{'{link}'}</strong> - Link para o Portal do Aluno acessar a aba de avaliações.</li>
+                        </>
+                      )}
+                      {currentTemplate.type === 'pedagogic_reminder' && (
+                        <>
+                          <li><strong>{'{aluno}'}</strong> - O primeiro nome do aluno que fará a avaliação;</li>
+                          <li><strong>{'{professor}'}</strong> - O primeiro nome do professor que ministrará a aula;</li>
+                          <li><strong>{'{dias}'}</strong> - Quantidade de dias da última avaliação até a data atual.</li>
+                        </>
+                      )}
                     </ul>
                   </div>
+                  
+                  <div className="flex items-center gap-1 mb-2 bg-zinc-100 p-1.5 rounded-xl border border-zinc-200 w-fit relative">
+                    <button type="button" onClick={() => insertFormatting('*', '*')} className="p-1.5 hover:bg-white rounded-lg text-zinc-600 hover:text-black hover:shadow-sm transition-all" title="Negrito">
+                      <Bold className="w-4 h-4" />
+                    </button>
+                    <button type="button" onClick={() => insertFormatting('_', '_')} className="p-1.5 hover:bg-white rounded-lg text-zinc-600 hover:text-black hover:shadow-sm transition-all" title="Itálico">
+                      <Italic className="w-4 h-4" />
+                    </button>
+                    <button type="button" onClick={() => insertFormatting('~', '~')} className="p-1.5 hover:bg-white rounded-lg text-zinc-600 hover:text-black hover:shadow-sm transition-all" title="Tachado">
+                      <Strikethrough className="w-4 h-4" />
+                    </button>
+                    <div className="w-px h-4 bg-zinc-300 mx-1"></div>
+                    <button type="button" onClick={() => insertFormatting('🔗 ')} className="p-1.5 hover:bg-white rounded-lg text-zinc-600 hover:text-black hover:shadow-sm transition-all" title="Inserir Link">
+                      <LinkIcon className="w-4 h-4" />
+                    </button>
+                    <div className="w-px h-4 bg-zinc-300 mx-1"></div>
+                    <button type="button" onClick={() => setShowEmojiPicker(!showEmojiPicker)} className={`p-1.5 rounded-lg transition-all ${showEmojiPicker ? 'bg-orange-100 text-orange-600 shadow-sm' : 'hover:bg-white text-zinc-600 hover:text-black hover:shadow-sm'}`} title="Inserir Emoji">
+                      <Smile className="w-4 h-4" />
+                    </button>
+                    
+                    {showEmojiPicker && (
+                      <div className="absolute top-full left-0 mt-2 bg-white rounded-2xl shadow-xl shadow-black/10 ring-1 ring-zinc-950/5 p-3 w-64 z-50">
+                        <div className="flex justify-between items-center mb-2">
+                          <span className="text-xs font-bold text-zinc-500 uppercase tracking-wider">Emojis Comuns</span>
+                          <button type="button" onClick={() => setShowEmojiPicker(false)} className="text-zinc-400 hover:text-black">
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                        <div className="grid grid-cols-7 gap-1 h-48 overflow-y-auto pr-1">
+                          {COMMON_EMOJIS.map((emoji, idx) => (
+                            <button
+                              key={idx}
+                              type="button"
+                              onClick={() => insertEmoji(emoji)}
+                              className="text-lg hover:bg-zinc-100 rounded-lg p-1 transition-colors flex items-center justify-center"
+                            >
+                              {emoji}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    
+                    <span className="text-xs text-zinc-400 ml-2 mr-2 hidden sm:inline">Formatação para WhatsApp</span>
+                  </div>
+
                   <textarea
+                    id="template-content"
                     required
                     rows={6}
                     value={currentTemplate.content || ''}

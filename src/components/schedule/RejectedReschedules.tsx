@@ -24,7 +24,7 @@ export default function RejectedReschedules({}: RejectedRescheduleProps) {
   useEffect(() => {
     const q = query(
       collection(db, 'reschedule_tokens'), 
-      where('status', '==', 'rejected_slots')
+      where('status', 'in', ['rejected_slots', 'pending'])
     );
     
     const unsubscribe = onSnapshot(q, async (snap) => {
@@ -109,45 +109,81 @@ export default function RejectedReschedules({}: RejectedRescheduleProps) {
         <div className="w-16 h-16 bg-zinc-50 rounded-full flex items-center justify-center mx-auto mb-4">
           <AlertCircle className="w-8 h-8 text-zinc-300" />
         </div>
-        <p className="text-zinc-500 font-medium">Não há reposições aguardando novos horários.</p>
+        <p className="text-zinc-500 font-medium">Não há reposições pendentes ou rejeitadas no momento.</p>
       </div>
     );
   }
+
+  const rejectedTokens = tokens.filter(t => t.status === 'rejected_slots');
+  const pendingTokens = tokens.filter(t => t.status === 'pending');
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
       {/* Lista de Alunos Pendentes */}
       <div className="bg-white rounded-[32px] p-6 shadow-sm ring-1 ring-zinc-950/5">
-        <h3 className="text-lg font-bold display-font mb-4 flex items-center gap-2">
-          <AlertCircle className="w-5 h-5 text-amber-500" />
-          Aguardando Novos Horários
-        </h3>
-        
-        <div className="space-y-3">
-          {tokens.map(token => (
-            <button
-              key={token.id}
-              onClick={() => setSelectedToken(token)}
-              className={`w-full text-left p-4 rounded-2xl border-2 transition-all ${
-                selectedToken?.id === token.id 
-                ? 'border-amber-500 bg-amber-50' 
-                : 'border-zinc-100 hover:border-amber-200 hover:bg-zinc-50'
-              }`}
-            >
-              <div className="flex justify-between items-start mb-2">
-                <span className="font-bold text-zinc-900">{token.studentName}</span>
-                <span className="text-[10px] font-bold uppercase tracking-wider text-amber-600 bg-amber-100 px-2 py-1 rounded-full">
-                  Falta de {token.teacherName}
-                </span>
-              </div>
-              {token.studentObservation ? (
-                <p className="text-sm text-zinc-600 bg-white/50 p-2 rounded-xl italic">"{token.studentObservation}"</p>
-              ) : (
-                <p className="text-sm text-zinc-500 italic">Nenhuma observação informada.</p>
-              )}
-            </button>
-          ))}
-        </div>
+        {rejectedTokens.length > 0 && (
+          <div className="mb-8">
+            <h3 className="text-lg font-bold display-font mb-4 flex items-center gap-2">
+              <AlertCircle className="w-5 h-5 text-amber-500" />
+              Rejeitaram as Opções (Necessita Ação)
+            </h3>
+            
+            <div className="space-y-3">
+              {rejectedTokens.map(token => (
+                <button
+                  key={token.id}
+                  onClick={() => setSelectedToken(token)}
+                  className={`w-full text-left p-4 rounded-2xl border-2 transition-all ${
+                    selectedToken?.id === token.id 
+                    ? 'border-amber-500 bg-amber-50' 
+                    : 'border-zinc-100 hover:border-amber-200 hover:bg-zinc-50'
+                  }`}
+                >
+                  <div className="flex justify-between items-start mb-2">
+                    <span className="font-bold text-zinc-900">{token.studentName}</span>
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-amber-600 bg-amber-100 px-2 py-1 rounded-full">
+                      Falta de {token.teacherName}
+                    </span>
+                  </div>
+                  {token.studentObservation ? (
+                    <p className="text-sm text-zinc-600 bg-white/50 p-2 rounded-xl italic">"{token.studentObservation}"</p>
+                  ) : (
+                    <p className="text-sm text-zinc-500 italic">Nenhuma observação informada.</p>
+                  )}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Lista de Pendentes */}
+        {pendingTokens.length > 0 && (
+          <div>
+            <h3 className="text-lg font-bold display-font mb-4 flex items-center gap-2">
+              <Clock className="w-5 h-5 text-blue-500" />
+              Aguardando o Aluno Agendar
+            </h3>
+            
+            <div className="space-y-3">
+              {pendingTokens.map(token => (
+                <div
+                  key={token.id}
+                  className="w-full text-left p-4 rounded-2xl border-2 border-zinc-100 bg-zinc-50/50 flex flex-col sm:flex-row justify-between sm:items-center gap-2"
+                >
+                  <div>
+                    <span className="font-bold text-zinc-900 flex items-center gap-2">
+                      <User className="w-4 h-4 text-zinc-400" />
+                      {token.studentName}
+                    </span>
+                  </div>
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-blue-600 bg-blue-100 px-2 py-1 rounded-full whitespace-nowrap self-start sm:self-auto">
+                    Falta de {token.teacherName}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Painel de Cadastro de Novos Horários */}

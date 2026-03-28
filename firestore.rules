@@ -136,9 +136,10 @@ service cloud.firestore {
     }
 
     function isValidTeacher(data) {
-      return hasOnlyAllowedFields(['name', 'email', 'instruments', 'bio', 'role', 'maxStudents', 'createdAt']) &&
+      return hasOnlyAllowedFields(['name', 'email', 'phone', 'instruments', 'bio', 'role', 'maxStudents', 'createdAt']) &&
              data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
              (!('email' in data) || isValidEmail(data.email)) &&
+             (!('phone' in data) || data.phone is string) &&
              (!('instruments' in data) || data.instruments is list) &&
              (!('bio' in data) || data.bio is string) &&
              (!('role' in data) || data.role in ['admin', 'teacher']) &&
@@ -193,8 +194,29 @@ service cloud.firestore {
       return hasOnlyAllowedFields(['title', 'content', 'type', 'isAutomatic', 'createdAt']) &&
              data.title is string && data.title.size() > 0 &&
              data.content is string && data.content.size() > 0 &&
-             data.type in ['welcome', 'promo', 'reminder_predue', 'reminder_due', 'reminder_overdue', 'custom', 'reschedule'] &&
+             data.type in ['welcome', 'promo', 'reminder_predue', 'reminder_due', 'reminder_overdue', 'custom', 'reschedule', 'evaluation', 'pedagogic_reminder'] &&
              data.isAutomatic is bool &&
+             (!('createdAt' in data) || data.createdAt is timestamp);
+    }
+
+    function isValidMaterial(data) {
+      return hasOnlyAllowedFields(['title', 'url', 'type', 'description', 'teacherId', 'teacherName', 'studentIds', 'createdAt']) &&
+             data.title is string && data.title.size() > 0 &&
+             data.url is string && data.url.size() > 0 &&
+             data.type in ['pdf', 'audio', 'video', 'link'] &&
+             (!('description' in data) || data.description is string) &&
+             data.teacherId is string && data.teacherName is string &&
+             data.studentIds is list &&
+             (!('createdAt' in data) || data.createdAt is timestamp);
+    }
+
+    function isValidEvaluation(data) {
+      return hasOnlyAllowedFields(['studentId', 'studentName', 'teacherId', 'teacherName', 'instrument', 'date', 'metrics', 'notes', 'createdAt']) &&
+             data.studentId is string && data.studentName is string &&
+             data.teacherId is string && data.teacherName is string &&
+             data.instrument is string && data.date is string &&
+             data.metrics is list &&
+             (!('notes' in data) || data.notes is string) &&
              (!('createdAt' in data) || data.createdAt is timestamp);
     }
 
@@ -270,6 +292,24 @@ service cloud.firestore {
     match /reschedule_tokens/{tokenId} {
       allow read: if isAuthenticated();
       allow write: if isAdmin();
+    }
+
+    match /materials/{materialId} {
+      allow read: if isAdmin() || isTeacher() || (
+        isAuthenticated() && (
+          resource.data.studentIds.size() == 0 || 
+          (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.studentId in resource.data.studentIds)
+        )
+      );
+      allow create, update: if (isAdmin() || isTeacher()) && isValidMaterial(request.resource.data);
+      allow delete: if isAdmin() || (isTeacher() && resource.data.teacherId == getTeacherId());
+    }
+
+    match /evaluations/{evaluationId} {
+      allow read: if isAdmin() || isTeacher() || isLessonStudent(resource.data.studentId);
+      allow create, update: if (isAdmin() || isTeacher()) && isValidEvaluation(request.resource.data);
+      allow delete: if isAdmin() || (isTeacher() && resource.data.teacherId == getTeacherId());
     }
   }
 }

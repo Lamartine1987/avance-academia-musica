@@ -35,7 +35,9 @@ import {
   MessageSquareText,
   Bell,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  BookOpen,
+  Award
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { auth, db } from './firebase';
@@ -56,8 +58,10 @@ import Profile from './components/Profile';
 import Financial from './components/Financial';
 import Communication from './components/Communication';
 import ReschedulePortal from './components/ReschedulePortal';
+import Materials from './components/Materials';
+import Evaluations from './components/Evaluations';
 
-type View = 'dashboard' | 'students' | 'teachers' | 'schedule' | 'instruments' | 'profile' | 'financial' | 'communication';
+type View = 'dashboard' | 'students' | 'teachers' | 'schedule' | 'instruments' | 'profile' | 'financial' | 'communication' | 'materials' | 'evaluations';
 
 export default function App() {
   const pathname = window.location.pathname;
@@ -160,10 +164,10 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (profile && profile.role === 'teacher' && currentView !== 'schedule') {
+    if (profile && profile.role === 'teacher' && !['schedule', 'profile', 'materials', 'evaluations'].includes(currentView)) {
       setCurrentView('schedule');
     }
-    if (profile && profile.role === 'student' && currentView !== 'schedule' && currentView !== 'financial' && currentView !== 'profile') {
+    if (profile && profile.role === 'student' && !['schedule', 'financial', 'profile', 'materials', 'evaluations'].includes(currentView)) {
       setCurrentView('schedule');
     }
   }, [profile, currentView]);
@@ -380,6 +384,8 @@ export default function App() {
     { id: 'students', label: 'Alunos', icon: Users, roles: ['admin'] },
     { id: 'teachers', label: 'Professores', icon: Music, roles: ['admin'] },
     { id: 'instruments', label: 'Instrumentos', icon: Music2, roles: ['admin'] },
+    { id: 'materials', label: 'Materiais', icon: BookOpen, roles: ['admin', 'teacher', 'student'] },
+    { id: 'evaluations', label: 'Avaliações', icon: Award, roles: ['admin', 'teacher', 'student'] },
     { id: 'financial', label: 'Meu Histórico Financeiro', icon: Wallet, roles: ['admin', 'student'] },
     { id: 'communication', label: 'Comunicação', icon: MessageSquareText, roles: ['admin'] },
   ].filter(item => item.roles.includes(profile.role));
@@ -594,6 +600,8 @@ export default function App() {
             {currentView === 'instruments' && profile.role === 'admin' && <Instruments profile={profile} />}
             {currentView === 'financial' && (profile.role === 'admin' || profile.role === 'student') && <Financial profile={profile} />}
             {currentView === 'communication' && profile.role === 'admin' && <Communication />}
+            {currentView === 'materials' && <Materials profile={profile} />}
+            {currentView === 'evaluations' && <Evaluations profile={profile} />}
             {currentView === 'profile' && <Profile user={user} profile={profile} />}
           </motion.div>
         </AnimatePresence>

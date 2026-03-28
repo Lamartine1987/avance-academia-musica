@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.requestPasswordResetWhatsApp = exports.createStudentUser = exports.provideNewRescheduleSlots = exports.rejectRescheduleSlots = exports.confirmReschedule = exports.getRescheduleData = exports.registerTeacherAbsence = exports.manualFinancialRoutine = exports.financialRoutineDaily = void 0;
+exports.onUserDeleted = exports.manualPedagogicalRoutine = exports.pedagogicalRoutineDaily = exports.notifyStudentEvaluation = exports.requestPasswordResetWhatsApp = exports.createStudentUser = exports.provideNewRescheduleSlots = exports.rejectRescheduleSlots = exports.confirmReschedule = exports.getRescheduleData = exports.registerTeacherAbsence = exports.manualFinancialRoutine = exports.financialRoutineDaily = void 0;
 const functions = require("firebase-functions/v1");
 const admin = require("firebase-admin");
 const firestore_1 = require("firebase-admin/firestore");
@@ -686,6 +686,190 @@ exports.requestPasswordResetWhatsApp = functions.https.onCall(async (data, conte
     catch (error) {
         console.error('Erro ao processar requestPasswordResetWhatsApp', error);
         throw new functions.https.HttpsError('internal', error.message || 'Falha ao processar a troca de senha.');
+    }
+});
+exports.notifyStudentEvaluation = functions.https.onCall(async (data, context) => {
+    if (!context.auth)
+        throw new functions.https.HttpsError('unauthenticated', 'Acesso negado');
+    const { evaluationId, originUrl } = data;
+    if (!evaluationId)
+        throw new functions.https.HttpsError('invalid-argument', 'evaluationId é obrigatório');
+    const evalDoc = await db.collection('evaluations').doc(evaluationId).get();
+    if (!evalDoc.exists)
+        throw new functions.https.HttpsError('not-found', 'Avaliação não encontrada');
+    const evalData = evalDoc.data();
+    const studentDoc = await db.collection('students').doc(evalData.studentId).get();
+    if (!studentDoc.exists)
+        throw new functions.https.HttpsError('not-found', 'Aluno não encontrado');
+    const studentData = studentDoc.data();
+    if (!studentData.phone)
+        return { success: false, reason: 'Aluno sem telefone' };
+    // Get templates
+    const templateSnap = await db.collection('templates').where('type', '==', 'evaluation').limit(1).get();
+    const customTemplate = templateSnap.empty ? null : templateSnap.docs[0].data().content;
+    // Settings
+    const settingsSnap = await db.collection('settings').doc('integrations').get();
+    const settings = settingsSnap.exists ? settingsSnap.data() : null;
+    if ((settings === null || settings === void 0 ? void 0 : settings.zapiInstance) && (settings === null || settings === void 0 ? void 0 : settings.zapiToken)) {
+        const phone = studentData.phone.replace(/\D/g, '');
+        const link = `${originUrl || 'https://sistema-avance.web.app'}`; // Standard dashboard URL
+        const studentName = studentData.name.split(' ')[0];
+        const teacherName = evalData.teacherName || 'Professor';
+        let msg = '';
+        if (customTemplate) {
+            msg = customTemplate
+                .replace(/{nome}/g, studentName)
+                .replace(/{professor}/g, teacherName)
+                .replace(/{link}/g, link);
+            msg = `🔔 *Aviso do Sistema Avance*\n\n${msg}`;
+        }
+        else {
+            msg = `🔔 *Aviso do Sistema Avance*\n\nOlá, ${studentName}! O professor *${teacherName}* acabou de liberar o seu novo Boletim de Avaliação Niveladora.\n\nAcesse o Portal do Aluno para conferir as notas e o feedback do professor:\n🔗 ${link}`;
+        }
+        const number = phone.length <= 11 ? `55${phone}` : phone;
+        const url = `https://api.z-api.io/instances/${settings.zapiInstance}/token/${settings.zapiToken}/send-text`;
+        const headers = { 'Content-Type': 'application/json' };
+        if (settings.zapiSecurityToken)
+            headers['Client-Token'] = settings.zapiSecurityToken;
+        try {
+            await fetch(url, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify({ phone: number, message: msg })
+            });
+            return { success: true };
+        }
+        catch (e) {
+            console.error('[EVAL_NOTIFY] Z-API Error', e);
+            return { success: false, reason: 'Falha na Z-API' };
+        }
+    }
+    return { success: false, reason: 'Z-API não configurada' };
+});
+async function runPedagogicalRoutine() {
+    var _a, _b;
+    try {
+        const settingsDoc = await db.collection('settings').doc('integrations').get();
+        if (!settingsDoc.exists) {
+            console.log('[PEDAGOGICAL] Configurações não encontradas.');
+            return;
+        }
+        const settings = settingsDoc.data();
+        if (!(settings === null || settings === void 0 ? void 0 : settings.zapiInstance) || !(settings === null || settings === void 0 ? void 0 : settings.zapiToken)) {
+            console.log('[PEDAGOGICAL] Z-API não configurada.');
+            return;
+        }
+        const cycleDays = settings.evaluationCycleDays || 90;
+        const notifyDaysBefore = settings.notifyTeacherDaysBefore || 1;
+        // We check for lessons that happen tomorrow (if notifyDaysBefore = 1), zeroed out.
+        const today = new Date();
+        // Use UTC-3 for Brazil
+        const brlOffset = -3 * 60; // offset in minutes
+        const nowUtc = new Date(today.getTime() + today.getTimezoneOffset() * 60000);
+        const brlTime = new Date(nowUtc.getTime() + brlOffset * 60000);
+        // Calculate the target day
+        const targetDay = new Date(brlTime);
+        targetDay.setDate(targetDay.getDate() + notifyDaysBefore);
+        targetDay.setHours(0, 0, 0, 0);
+        const targetDayEnd = new Date(targetDay);
+        targetDayEnd.setHours(23, 59, 59, 999);
+        console.log(`[PEDAGOGICAL] Varrendo alunos. Data alvo das aulas: ${targetDay.toISOString()}`);
+        const studentsSnap = await db.collection('students').where('status', '==', 'active').get();
+        // Fetch custom template for the teacher if available
+        const templateSnap = await db.collection('templates').where('type', '==', 'pedagogic_reminder').where('isAutomatic', '==', true).limit(1).get();
+        const customTemplate = templateSnap.empty ? null : templateSnap.docs[0].data();
+        // For each student, check if they are due
+        for (const sDoc of studentsSnap.docs) {
+            const student = Object.assign({ id: sDoc.id }, sDoc.data());
+            const baseDateStr = student.lastEvaluationDate || (((_a = student.createdAt) === null || _a === void 0 ? void 0 : _a.toDate) ? student.createdAt.toDate().toISOString().split('T')[0] : null);
+            if (!baseDateStr)
+                continue;
+            const baseDate = new Date(baseDateStr + 'T12:00:00'); // No timezone trickery, roughly midday.
+            // Assuming today is basically BRL time midday
+            const diffTime = Math.abs(brlTime.getTime() - baseDate.getTime());
+            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+            if (diffDays >= cycleDays) {
+                // Due! Let's see if they have a lesson in `targetDay`
+                const lessonsSnap = await db.collection('lessons')
+                    .where('studentId', '==', student.id)
+                    .where('status', '==', 'scheduled')
+                    .where('startTime', '>=', admin.firestore.Timestamp.fromDate(targetDay))
+                    .where('startTime', '<=', admin.firestore.Timestamp.fromDate(targetDayEnd))
+                    .get();
+                if (lessonsSnap.empty)
+                    continue;
+                // Has lesson!
+                const lesson = lessonsSnap.docs[0].data();
+                const teacherId = lesson.teacherId;
+                const teacherDoc = await db.collection('teachers').doc(teacherId).get();
+                if (!teacherDoc.exists)
+                    continue;
+                const teacher = teacherDoc.data();
+                const teacherFirstName = teacher.name.split(' ')[0];
+                const studentFirstName = student.name.split(' ')[0];
+                // Format message
+                let msg = '';
+                if (customTemplate) {
+                    msg = customTemplate.content
+                        .replace(/{aluno}/g, studentFirstName)
+                        .replace(/{professor}/g, teacherFirstName)
+                        .replace(/{dias}/g, diffDays.toString());
+                    msg = `🔔 *Aviso do Sistema Avance*\n\n${msg}`;
+                }
+                else {
+                    msg = `🔔 *Aviso do Sistema Avance*\n\nOlá, Prof(a). *${teacherFirstName}*! Tudo bem?\n\nPassando para lembrar que amanhã você tem aula agendada com o aluno *${studentFirstName}*. O ciclo pedagógico deste aluno está *fechado* (já se passaram ${diffDays} dias desde a marcação anterior).\n\nQue tal focar em avaliar o nível de progressão dele na aula de amanhã e registrar um Novo Boletim no sistema? 😉`;
+                }
+                const teacherHasPhone = !!teacher.phone;
+                let numberToSend = teacherHasPhone ? teacher.phone.replace(/\D/g, '') : (settings.schoolPhone ? settings.schoolPhone.replace(/\D/g, '') : null);
+                if (!numberToSend) {
+                    console.log(`[PEDAGOGICAL] Ninguém para avisar sobre ${studentFirstName}. Prof e Escola sem WhatsApp configurado.`);
+                    continue;
+                }
+                if (!teacherHasPhone && numberToSend === ((_b = settings.schoolPhone) === null || _b === void 0 ? void 0 : _b.replace(/\D/g, ''))) {
+                    msg = `🔔 *Aviso Interno Pedagógico*\n\nAdmin, o professor *${teacherFirstName}* tem aula amanhã com o aluno *${studentFirstName}* e precisa realizar a *Avaliação de Nivelamento* atrasada (ciclo fechou há ${diffDays} dias). O professor em questão não possui telefone cadastrado!`;
+                }
+                const formattedNumber = numberToSend.length <= 11 ? `55${numberToSend}` : numberToSend;
+                const url = `https://api.z-api.io/instances/${settings.zapiInstance}/token/${settings.zapiToken}/send-text`;
+                const headers = { 'Content-Type': 'application/json' };
+                if (settings.zapiSecurityToken)
+                    headers['Client-Token'] = settings.zapiSecurityToken;
+                try {
+                    await fetch(url, { method: 'POST', headers, body: JSON.stringify({ phone: formattedNumber, message: msg }) });
+                    console.log(`[PEDAGOGICAL] Avaliação sugerida de ${studentFirstName} enviada para ${formattedNumber}`);
+                }
+                catch (e) {
+                    console.error(`[PEDAGOGICAL] Falha no disparo a ${formattedNumber}:`, e);
+                }
+            }
+        }
+    }
+    catch (err) {
+        console.error('[PEDAGOGICAL_ROUTINE] Error:', err);
+    }
+}
+exports.pedagogicalRoutineDaily = functions.pubsub.schedule('0 9 * * *').timeZone('America/Sao_Paulo').onRun(async (context) => {
+    await runPedagogicalRoutine();
+});
+exports.manualPedagogicalRoutine = functions.https.onCall(async (data, context) => {
+    try {
+        if (!context.auth) {
+            throw new functions.https.HttpsError('unauthenticated', 'Apenas usuários autenticados podem rodar isso.');
+        }
+        await runPedagogicalRoutine();
+        return { success: true, message: 'Varredura pedagógica executada.' };
+    }
+    catch (err) {
+        throw new functions.https.HttpsError('internal', err.message);
+    }
+});
+exports.onUserDeleted = functions.firestore.document('users/{userId}').onDelete(async (snap, context) => {
+    const uid = context.params.userId;
+    try {
+        await admin.auth().deleteUser(uid);
+        console.log(`[AUTH CLEANUP] Credencial do Auth deletada para o usuário ${uid}`);
+    }
+    catch (error) {
+        console.error(`[AUTH CLEANUP] Erro ao deletar o Auth do usuário ${uid}:`, error);
     }
 });
 //# sourceMappingURL=index.js.map

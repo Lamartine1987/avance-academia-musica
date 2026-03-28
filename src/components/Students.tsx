@@ -4,7 +4,7 @@ import { db } from '../firebase';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { UserProfile, Student, Teacher, Instrument, CourseEnrollment } from '../types';
 import { handleFirestoreError, OperationType } from '../lib/error-handler';
-import { Plus, Trash2, X, Calendar, Clock, User, Pencil, Eye } from 'lucide-react';
+import { Plus, Trash2, X, Calendar, Clock, User, Pencil, Eye, Loader2 } from 'lucide-react';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, getDay, setHours, setMinutes, isAfter, addYears } from 'date-fns';
 import { cn } from '../lib/utils';
 import ConfirmModal from './ConfirmModal';
@@ -37,6 +37,7 @@ export default function Students({ profile }: { profile: UserProfile }) {
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
   const [studentToDelete, setStudentToDelete] = useState<string | null>(null);
   const [editingStudentId, setEditingStudentId] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [viewingStudent, setViewingStudent] = useState<Student | null>(null);
   const [schoolSettings, setSchoolSettings] = useState({ defaultMaxStudents: 1 });
   const [filterName, setFilterName] = useState('');
@@ -183,6 +184,20 @@ export default function Students({ profile }: { profile: UserProfile }) {
     const start = startOfMonth(new Date());
     const end = endOfMonth(addYears(new Date(), 1));
     const days = eachDayOfInterval({ start, end });
+    
+    // Fetch existing future lessons to avoid duplicates
+    const now = new Date();
+    const futureLessonsQuery = query(
+      collection(db, 'lessons'),
+      where('studentId', '==', studentId)
+    );
+    const existingSnap = await getDocs(futureLessonsQuery);
+    const existingMatches = existingSnap.docs.map(d => {
+       const data = d.data();
+       const st = data.startTime?.toDate();
+       return st && st > now ? `${data.teacherId}_${data.instrument}_${st.getTime()}` : null;
+    }).filter(Boolean);
+
     const batch = writeBatch(db);
     let count = 0;
 
@@ -199,17 +214,20 @@ export default function Students({ profile }: { profile: UserProfile }) {
 
           // Only generate lessons that are in the future
           if (isAfter(lessonStart, new Date())) {
-            const lessonRef = doc(collection(db, 'lessons'));
-            batch.set(lessonRef, {
-              studentId,
-              teacherId: enrollment.teacherId,
-              instrument: enrollment.instrument,
-              startTime: Timestamp.fromDate(lessonStart),
-              endTime: Timestamp.fromDate(lessonEnd),
-              status: 'scheduled',
-              createdAt: serverTimestamp()
-            });
-            count++;
+            const matchKey = `${enrollment.teacherId}_${enrollment.instrument}_${lessonStart.getTime()}`;
+            if (!existingMatches.includes(matchKey)) {
+              const lessonRef = doc(collection(db, 'lessons'));
+              batch.set(lessonRef, {
+                studentId,
+                teacherId: enrollment.teacherId,
+                instrument: enrollment.instrument,
+                startTime: Timestamp.fromDate(lessonStart),
+                endTime: Timestamp.fromDate(lessonEnd),
+                status: 'scheduled',
+                createdAt: serverTimestamp()
+              });
+              count++;
+            }
           }
         }
       }
@@ -253,6 +271,7 @@ export default function Students({ profile }: { profile: UserProfile }) {
       }
     }
 
+    setIsSubmitting(true);
     try {
       const payload = {
         ...newStudent,
@@ -264,11 +283,11 @@ export default function Students({ profile }: { profile: UserProfile }) {
         await updateDoc(doc(db, 'students', editingStudentId), payload);
 
         // Delete all future scheduled lessons for this student
+        // Also delete any future lesson that does not match the new enrollments anymore
         const now = new Date();
         const futureLessonsQuery = query(
           collection(db, 'lessons'),
-          where('studentId', '==', editingStudentId),
-          where('status', '==', 'scheduled')
+          where('studentId', '==', editingStudentId)
         );
         const futureLessonsSnapshot = await getDocs(futureLessonsQuery);
         
@@ -276,10 +295,27 @@ export default function Students({ profile }: { profile: UserProfile }) {
         let hasDeletes = false;
         
         futureLessonsSnapshot.docs.forEach((docSnap) => {
-          const startTime = docSnap.data().startTime?.toDate();
+          const lesson = docSnap.data();
+          const startTime = lesson.startTime?.toDate();
+          
           if (startTime && startTime > now) {
-            deleteBatch.delete(docSnap.ref);
-            hasDeletes = true;
+            if (lesson.status === 'scheduled') {
+              // Always refresh future 'scheduled' lessons
+              deleteBatch.delete(docSnap.ref);
+              hasDeletes = true;
+            } else {
+              // If the class has notes/completed/makeup status in the future,
+              // we only delete it if the student is no longer enrolled with that teacher/instrument!
+              const matchesEnrollment = newStudent.enrollments.some(e => 
+                e.teacherId === lesson.teacherId && 
+                e.instrument === lesson.instrument
+              );
+              
+              if (!matchesEnrollment) {
+                deleteBatch.delete(docSnap.ref);
+                hasDeletes = true;
+              }
+            }
           }
         });
         
@@ -439,6 +475,8 @@ export default function Students({ profile }: { profile: UserProfile }) {
       });
     } catch (error) {
       handleFirestoreError(error, editingStudentId ? OperationType.UPDATE : OperationType.CREATE, 'students');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -1087,9 +1125,11 @@ export default function Students({ profile }: { profile: UserProfile }) {
 
               <button 
                 type="submit"
-                className="w-full bg-gradient-to-r from-orange-500 to-amber-500 text-white py-4 rounded-2xl font-bold hover:from-orange-600 hover:to-amber-600 transition-all shadow-lg shadow-orange-500/25 active:scale-[0.98]"
+                disabled={isSubmitting}
+                className="w-full justify-center flex items-center gap-2 bg-gradient-to-r from-orange-500 to-amber-500 text-white py-4 rounded-2xl font-bold hover:from-orange-600 hover:to-amber-600 transition-all shadow-lg shadow-orange-500/25 active:scale-[0.98] disabled:opacity-70 disabled:cursor-wait"
               >
-                {editingStudentId ? 'Salvar Alterações' : 'Confirmar Matrícula e Gerar Aulas'}
+                {isSubmitting && <Loader2 className="w-5 h-5 animate-spin" />}
+                {isSubmitting ? 'Salvando dados e agenda...' : (editingStudentId ? 'Salvar Alterações' : 'Confirmar Matrícula e Gerar Aulas')}
               </button>
             </form>
           </div>

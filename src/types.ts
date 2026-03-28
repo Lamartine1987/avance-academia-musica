@@ -37,6 +37,7 @@ export interface Student {
   status: 'active' | 'inactive';
   courseValue?: number;
   dueDate?: number;
+  lastEvaluationDate?: string;
   createdAt: any;
 }
 
@@ -44,6 +45,7 @@ export interface Teacher {
   id: string;
   name: string;
   email?: string;
+  phone?: string;
   instruments: string[];
   bio?: string;
   role?: 'admin' | 'teacher';
@@ -103,13 +105,47 @@ export interface IntegrationsSettings {
   sendOnDue?: boolean;
   reminderDaysAfter?: boolean;
   reminderDaysAfterCount?: number;
+  evaluationCycleDays?: number;
+  notifyTeacherDaysBefore?: number;
 }
 
 export interface MessageTemplate {
   id: string;
   title: string;
   content: string;
-  type: 'welcome' | 'promo' | 'reminder_predue' | 'reminder_due' | 'reminder_overdue' | 'custom';
+  type: 'welcome' | 'promo' | 'reminder_predue' | 'reminder_due' | 'reminder_overdue' | 'custom' | 'reschedule' | 'evaluation' | 'pedagogic_reminder';
   isAutomatic: boolean;
+  createdAt: any;
+}
+
+export type MaterialType = 'pdf' | 'audio' | 'video' | 'link';
+
+export interface Material {
+  id: string;
+  title: string;
+  url: string;
+  type: MaterialType;
+  description?: string;
+  teacherId: string;
+  teacherName: string;
+  studentIds: string[]; // empty means global
+  createdAt: any;
+}
+
+export interface EvaluationMetric {
+  name: string;
+  score: number; // 1 to 5
+}
+
+export interface Evaluation {
+  id: string;
+  studentId: string;
+  studentName: string;
+  teacherId: string;
+  teacherName: string;
+  instrument: string;
+  date: string; // YYYY-MM-DD
+  metrics: EvaluationMetric[];
+  notes?: string;
   createdAt: any;
 }

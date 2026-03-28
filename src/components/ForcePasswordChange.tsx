@@ -54,7 +54,7 @@ export default function ForcePasswordChange({ user, setProfile }: ForcePasswordC
   };
 
   return (
-    <div className="absolute inset-0 bg-black/80 flex items-center justify-center p-6 z-50 backdrop-blur-md">
+    <div className="fixed inset-0 min-h-screen bg-black/80 flex items-center justify-center p-4 md:p-6 z-[100] backdrop-blur-md overflow-hidden">
       <motion.div 
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}

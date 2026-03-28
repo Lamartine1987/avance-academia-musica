@@ -1,9 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { collection, onSnapshot, addDoc, Timestamp, query, orderBy, getDocs, where, serverTimestamp, setDoc, doc, deleteDoc, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
-import { UserProfile, Lesson, Student, Teacher, BlockedTime } from '../types';
+import { UserProfile, Lesson, Student, Teacher, BlockedTime, IntegrationsSettings } from '../types';
 import { handleFirestoreError, OperationType } from '../lib/error-handler';
-import { Plus, X, Clock, User, Music, RefreshCw, CheckCircle2, LayoutGrid, List as ListIcon, ChevronLeft, ChevronRight, Settings, AlertCircle, Trash2, CalendarDays } from 'lucide-react';
+import { Plus, X, Clock, User, Music, RefreshCw, CheckCircle2, LayoutGrid, List as ListIcon, ChevronLeft, ChevronRight, Settings, AlertCircle, Trash2, CalendarDays, FileText, Star } from 'lucide-react';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, getDay, setHours, setMinutes, isAfter, isSameDay, startOfWeek, addDays, subWeeks, addWeeks, addYears } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { getFunctions, httpsCallable } from 'firebase/functions';
@@ -19,6 +19,10 @@ export default function Schedule({ profile }: { profile: UserProfile }) {
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isBlockModalOpen, setIsBlockModalOpen] = useState(false);
+  
+  const [isLessonLogModalOpen, setIsLessonLogModalOpen] = useState(false);
+  const [selectedLessonForLog, setSelectedLessonForLog] = useState<Lesson | null>(null);
+  const [lessonLogNotes, setLessonLogNotes] = useState('');
   
   const [isAbsenceModalOpen, setIsAbsenceModalOpen] = useState(false);
   const [isSubmittingAbsence, setIsSubmittingAbsence] = useState(false);
@@ -49,6 +53,7 @@ export default function Schedule({ profile }: { profile: UserProfile }) {
     availableDays: [1, 2, 3, 4, 5], // Default Mon-Fri
     defaultMaxStudents: 1
   });
+  const [integrationsSettings, setIntegrationsSettings] = useState<IntegrationsSettings | null>(null);
   const [newLesson, setNewLesson] = useState({
     studentId: '',
     teacherId: '',
@@ -105,6 +110,12 @@ export default function Schedule({ profile }: { profile: UserProfile }) {
       setBlockedTimes(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as BlockedTime)));
     });
 
+    const unsubscribeIntegrations = onSnapshot(doc(db, 'settings', 'integrations'), (snapshot) => {
+      if (snapshot.exists()) {
+        setIntegrationsSettings(snapshot.data() as IntegrationsSettings);
+      }
+    });
+
     const unsubscribeRejections = onSnapshot(query(collection(db, 'reschedule_tokens'), where('status', '==', 'rejected_slots')), (snapshot) => {
       setPendingRejections(snapshot.size);
     });
@@ -125,8 +136,51 @@ export default function Schedule({ profile }: { profile: UserProfile }) {
       unsubscribeBlockedTimes();
       unsubscribeRejections();
       unsubscribeTemplate();
+      unsubscribeIntegrations();
     };
   }, []);
+
+  const affectedLessonsCount = useMemo(() => {
+    if (!newAbsence.teacherId || !newAbsence.startDate || !newAbsence.endDate) return 0;
+    
+    // Convert target dates to Date objects at start/end of day
+    const [sYr, sMo, sDa] = newAbsence.startDate.split('-').map(Number);
+    const startObj = new Date(sYr, sMo - 1, sDa, 0, 0, 0);
+
+    const [eYr, eMo, eDa] = newAbsence.endDate.split('-').map(Number);
+    const endObj = new Date(eYr, eMo - 1, eDa, 23, 59, 59, 999);
+    
+    return lessons.filter(l => 
+      l.teacherId === newAbsence.teacherId &&
+      l.status === 'scheduled' &&
+      l.startTime?.toDate() >= startObj &&
+      l.startTime?.toDate() <= endObj
+    ).length;
+  }, [newAbsence.teacherId, newAbsence.startDate, newAbsence.endDate, lessons]);
+  
+  const createdSlotsCapacity = useMemo(() => {
+    return newAbsence.customSlots.reduce((acc, slot) => acc + (Number(slot.maxCapacity) || 0), 0);
+  }, [newAbsence.customSlots]);
+  
+  const hasEnoughSlots = createdSlotsCapacity >= affectedLessonsCount;
+
+  const checkEvaluationDue = (studentId: string, lessonStart: Date) => {
+    if (!integrationsSettings?.evaluationCycleDays) return false;
+    const student = students.find(s => s.id === studentId);
+    if (!student || student.status !== 'active') return false;
+
+    const baseDateStr = student.lastEvaluationDate || (student.createdAt?.toDate ? format(student.createdAt.toDate(), 'yyyy-MM-dd') : null);
+    if (!baseDateStr) return true;
+
+    const baseDate = new Date(baseDateStr + 'T12:00:00');
+    // Only flag if lesson is after the base date
+    if (lessonStart.getTime() < baseDate.getTime()) return false;
+
+    const diffTime = Math.abs(lessonStart.getTime() - baseDate.getTime());
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    
+    return diffDays >= integrationsSettings.evaluationCycleDays;
+  };
 
   const safeFormat = (date: Date | any, formatStr: string, options?: any) => {
     try {
@@ -155,9 +209,9 @@ export default function Schedule({ profile }: { profile: UserProfile }) {
       { bg: 'bg-emerald-50', border: 'border-emerald-100', text: 'text-emerald-700' },
       { bg: 'bg-violet-50', border: 'border-violet-100', text: 'text-violet-700' },
       { bg: 'bg-amber-50', border: 'border-amber-100', text: 'text-amber-700' },
-      { bg: 'bg-rose-50', border: 'border-rose-100', text: 'text-rose-700' },
+      { bg: 'bg-teal-50', border: 'border-teal-100', text: 'text-teal-700' },
       { bg: 'bg-cyan-50', border: 'border-cyan-100', text: 'text-cyan-700' },
-      { bg: 'bg-orange-50', border: 'border-orange-100', text: 'text-orange-700' },
+      { bg: 'bg-sky-50', border: 'border-sky-100', text: 'text-sky-700' },
       { bg: 'bg-fuchsia-50', border: 'border-fuchsia-100', text: 'text-fuchsia-700' },
       { bg: 'bg-lime-50', border: 'border-lime-100', text: 'text-lime-700' },
       { bg: 'bg-indigo-50', border: 'border-indigo-100', text: 'text-indigo-700' },
@@ -286,6 +340,21 @@ export default function Schedule({ profile }: { profile: UserProfile }) {
   const handleSlotClick = (date: Date, time: string, teacherId?: string) => {
     if (!isBlockingMode) return;
     setBlockingSlot({ date, time, teacherId });
+  };
+
+  const handleSlotDoubleClick = (date: Date, time: string, tId?: string) => {
+    if (isBlockingMode) return;
+    if (profile.role !== 'admin' && profile.role !== 'teacher') return;
+    
+    setNewLesson(prev => ({
+      ...prev,
+      date: format(date, 'yyyy-MM-dd'),
+      time: time,
+      teacherId: tId || '',
+      studentId: '' // reset student
+    }));
+    setFormError(null);
+    setIsModalOpen(true);
   };
 
   const confirmBlockSlot = async () => {
@@ -424,6 +493,24 @@ export default function Schedule({ profile }: { profile: UserProfile }) {
       setFeedback({ isOpen: true, type: 'error', title: 'Erro', message: 'Erro ao registrar ausência: ' + err.message });
     } finally {
       setIsSubmittingAbsence(false);
+    }
+  };
+
+  const handleSaveLessonLog = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedLessonForLog) return;
+    try {
+      await setDoc(doc(db, 'lessons', selectedLessonForLog.id), {
+        status: 'completed',
+        notes: lessonLogNotes
+      }, { merge: true });
+      setFeedback({ isOpen: true, type: 'success', title: 'Diário Salvo!', message: 'Anotações da aula guardadas com sucesso.' });
+      setIsLessonLogModalOpen(false);
+      setSelectedLessonForLog(null);
+      setLessonLogNotes('');
+    } catch (err: any) {
+      console.error(err);
+      setFeedback({ isOpen: true, type: 'error', title: 'Erro', message: 'Erro ao salvar: ' + err.message });
     }
   };
 
@@ -700,12 +787,25 @@ export default function Schedule({ profile }: { profile: UserProfile }) {
           <div className="space-y-4">
             {filteredLessons.map(lesson => {
               const tColor = getTeacherColor(lesson.teacherId);
+              const lessonStart = toDate(lesson.startTime);
+              const needsEvaluation = lessonStart ? checkEvaluationDue(lesson.studentId, lessonStart) : false;
               return (
-                <div key={lesson.id} className={cn(
+                <div 
+                  key={lesson.id} 
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (profile.role === 'admin' || profile.role === 'teacher' || (profile.role === 'student' && lesson.notes)) {
+                      setSelectedLessonForLog(lesson);
+                      setLessonLogNotes(lesson.notes || '');
+                      setIsLessonLogModalOpen(true);
+                    }
+                  }}
+                  className={cn(
                   "flex flex-col md:flex-row md:items-center gap-4 md:gap-6 p-4 md:p-6 rounded-2xl border transition-all relative overflow-hidden",
                   tColor.bg,
                   tColor.border,
-                  "hover:shadow-md"
+                  needsEvaluation ? 'ring-2 ring-amber-400 shadow-amber-400/20' : '',
+                  "cursor-pointer hover:shadow-md hover:scale-[1.01]"
                 )}>
                   <div className={cn("absolute left-0 top-0 bottom-0 w-1.5 opacity-50", tColor.text.replace('text-', 'bg-'))} />
                   
@@ -737,8 +837,9 @@ export default function Schedule({ profile }: { profile: UserProfile }) {
                       <User className="w-5 h-5 text-zinc-400" />
                       <div>
                         <p className="text-xs text-zinc-400 uppercase tracking-wider font-medium">Aluno</p>
-                        <p className="font-bold text-black">
+                        <p className="font-bold text-black flex items-center gap-1">
                           {getStudentName(lesson.studentId)}
+                          {needsEvaluation && <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-500 animate-pulse" title="Avaliação de Nivelamento Recomendada" />}
                           <span className="ml-2 text-xs text-zinc-400 font-normal">
                             ({lesson.instrument || 'N/A'})
                           </span>
@@ -829,9 +930,10 @@ export default function Schedule({ profile }: { profile: UserProfile }) {
                         <div 
                           key={dayIdx} 
                           onClick={() => handleSlotClick(day, time)}
+                          onDoubleClick={() => handleSlotDoubleClick(day, time, profile.role === 'teacher' ? profile.teacherId : undefined)}
                           className={cn(
-                            "p-1 border-r border-zinc-100 last:border-r-0 min-h-[80px] relative transition-colors",
-                            isBlockingMode ? "cursor-pointer hover:bg-red-50" : "group-hover:bg-zinc-50/20"
+                            "p-1 border-r border-zinc-100 last:border-r-0 min-h-[80px] relative transition-colors select-none",
+                            isBlockingMode ? "cursor-pointer hover:bg-red-50" : "cursor-pointer group-hover:bg-zinc-50/20"
                           )}
                         >
                           {dayBlockedTimes.map(bt => (
@@ -859,9 +961,20 @@ export default function Schedule({ profile }: { profile: UserProfile }) {
                           ))}
                           {dayLessons.map(lesson => {
                             const tColor = getTeacherColor(lesson.teacherId);
+                            const lessonStart = toDate(lesson.startTime);
+                            const needsEvaluation = lessonStart ? checkEvaluationDue(lesson.studentId, lessonStart) : false;
+                            
                             return (
                               <div 
                                 key={lesson.id}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (profile.role === 'admin' || profile.role === 'teacher' || (profile.role === 'student' && lesson.notes)) {
+                                    setSelectedLessonForLog(lesson);
+                                    setLessonLogNotes(lesson.notes || '');
+                                    setIsLessonLogModalOpen(true);
+                                  }
+                                }}
                                 title={
                                   lesson.status === 'needs_reschedule' ? 'Aula suspensa aguardando reposição pelo aluno.' :
                                   lesson.status === 'rescheduled' ? 'Aula antiga já reagendada para nova data.' :
@@ -874,12 +987,19 @@ export default function Schedule({ profile }: { profile: UserProfile }) {
                                   lesson.status === 'needs_reschedule' ? "bg-red-100 border-red-300 text-red-800" :
                                   lesson.status === 'rescheduled' ? "bg-zinc-100 border-zinc-200 text-zinc-400 opacity-60 line-through" :
                                   `${tColor.bg} ${tColor.border} ${tColor.text}`,
+                                  needsEvaluation && !['cancelled', 'rescheduled'].includes(lesson.status) && 'ring-2 ring-amber-400 shadow-amber-400/20 z-10 scale-[1.02]',
                                   lesson.status === 'cancelled' && "opacity-50 grayscale"
                                 )}
                               >
                                 <div className="flex items-center justify-between gap-1">
-                                  <p className="font-bold truncate">{getStudentName(lesson.studentId)}</p>
-                                  {lesson.status === 'completed' && <CheckCircle2 className="w-2.5 h-2.5 shrink-0" />}
+                                  <p className="font-bold truncate flex items-center gap-1">
+                                    {getStudentName(lesson.studentId)}
+                                    {needsEvaluation && !['cancelled', 'rescheduled'].includes(lesson.status) && <Star className="w-2.5 h-2.5 text-amber-500 fill-amber-500 animate-pulse shrink-0" title="Ciclo Fechado: Avaliar Aluno" />}
+                                  </p>
+                                  <div className="flex items-center gap-1">
+                                    {lesson.notes && <FileText className="w-2.5 h-2.5 shrink-0 text-orange-500" title="Possui anotações" />}
+                                    {lesson.status === 'completed' && <CheckCircle2 className="w-2.5 h-2.5 shrink-0" />}
+                                  </div>
                                 </div>
                                 <div className="flex flex-col gap-0.5 mt-1 opacity-70">
                                   <p className="truncate flex items-center gap-1">
@@ -939,9 +1059,10 @@ export default function Schedule({ profile }: { profile: UserProfile }) {
                             <div 
                               key={teacher.id} 
                               onClick={() => handleSlotClick(selectedDate, time, teacher.id)}
+                              onDoubleClick={() => handleSlotDoubleClick(selectedDate, time, teacher.id)}
                               className={cn(
-                                "p-1 border-r border-zinc-100 last:border-r-0 min-h-[80px] relative transition-colors",
-                                isBlockingMode ? "cursor-pointer hover:bg-red-50" : "group-hover:bg-zinc-50/20"
+                                "p-1 border-r border-zinc-100 last:border-r-0 min-h-[80px] relative transition-colors select-none",
+                                isBlockingMode ? "cursor-pointer hover:bg-red-50" : "cursor-pointer group-hover:bg-zinc-50/20"
                               )}
                             >
                               {teacherBlockedTimes.map(bt => (
@@ -968,9 +1089,20 @@ export default function Schedule({ profile }: { profile: UserProfile }) {
                               ))}
                               {teacherDayLessons.map(lesson => {
                                 const tColor = getTeacherColor(lesson.teacherId);
+                                const lessonStart = toDate(lesson.startTime);
+                                const needsEvaluation = lessonStart ? checkEvaluationDue(lesson.studentId, lessonStart) : false;
+                                
                                 return (
                                   <div 
                                     key={lesson.id}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      if (profile.role === 'admin' || profile.role === 'teacher' || (profile.role === 'student' && lesson.notes)) {
+                                        setSelectedLessonForLog(lesson);
+                                        setLessonLogNotes(lesson.notes || '');
+                                        setIsLessonLogModalOpen(true);
+                                      }
+                                    }}
                                     title={
                                       lesson.status === 'needs_reschedule' ? 'Aula suspensa aguardando reposição pelo aluno.' :
                                       lesson.status === 'rescheduled' ? 'Aula antiga já reagendada para nova data.' :
@@ -983,12 +1115,19 @@ export default function Schedule({ profile }: { profile: UserProfile }) {
                                       lesson.status === 'needs_reschedule' ? "bg-red-100 border-red-300 text-red-800" :
                                       lesson.status === 'rescheduled' ? "bg-zinc-100 border-zinc-200 text-zinc-400 opacity-60 line-through" :
                                       `${tColor.bg} ${tColor.border} ${tColor.text}`,
+                                      needsEvaluation && !['cancelled', 'rescheduled'].includes(lesson.status) && 'ring-2 ring-amber-400 shadow-amber-400/20 z-10 scale-[1.02]',
                                       lesson.status === 'cancelled' && "opacity-50 grayscale"
                                     )}
                                   >
                                     <div className="flex items-center justify-between gap-1">
-                                      <p className="font-bold truncate">{getStudentName(lesson.studentId)}</p>
-                                      {lesson.status === 'completed' && <CheckCircle2 className="w-2.5 h-2.5 shrink-0" />}
+                                      <p className="font-bold truncate flex items-center gap-1">
+                                        {getStudentName(lesson.studentId)}
+                                        {needsEvaluation && !['cancelled', 'rescheduled'].includes(lesson.status) && <Star className="w-2.5 h-2.5 text-amber-500 fill-amber-500 animate-pulse shrink-0" title="Ciclo Fechado: Avaliar Aluno" />}
+                                      </p>
+                                      <div className="flex items-center gap-1">
+                                        {lesson.notes && <FileText className="w-2.5 h-2.5 shrink-0 text-orange-500" title="Possui anotações" />}
+                                        {lesson.status === 'completed' && <CheckCircle2 className="w-2.5 h-2.5 shrink-0" />}
+                                      </div>
                                     </div>
                                     <div className="flex flex-col gap-0.5 mt-1 opacity-70">
                                       <p className="truncate flex items-center gap-1">
@@ -1121,7 +1260,21 @@ export default function Schedule({ profile }: { profile: UserProfile }) {
                 <select 
                   required
                   value={newLesson.studentId}
-                  onChange={e => setNewLesson({...newLesson, studentId: e.target.value})}
+                  onChange={e => {
+                    const selectedStudentId = e.target.value;
+                    const student = students.find(s => s.id === selectedStudentId);
+                    let autoTeacherId = newLesson.teacherId;
+                    
+                    if (student && student.enrollments && student.enrollments.length > 0) {
+                      autoTeacherId = student.enrollments[0].teacherId;
+                    }
+                    
+                    setNewLesson({
+                      ...newLesson, 
+                      studentId: selectedStudentId,
+                      teacherId: autoTeacherId
+                    });
+                  }}
                   className="w-full bg-zinc-50 border border-zinc-100 rounded-2xl px-6 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 transition-all"
                 >
                   <option value="">Selecione um aluno</option>
@@ -1396,6 +1549,21 @@ export default function Schedule({ profile }: { profile: UserProfile }) {
                       </button>
                    </div>
 
+                   {newAbsence.teacherId && affectedLessonsCount > 0 && (
+                     <div className={cn("mb-4 rounded-xl p-3 border text-sm flex items-start gap-2", hasEnoughSlots ? "bg-emerald-50 border-emerald-200 text-emerald-800" : "bg-amber-50 border-amber-200 text-amber-800")}>
+                        {hasEnoughSlots ? (
+                          <CheckCircle2 className="w-5 h-5 shrink-0 text-emerald-600" />
+                        ) : (
+                          <AlertCircle className="w-5 h-5 shrink-0 text-amber-600" />
+                        )}
+                        <div>
+                          <strong>{hasEnoughSlots ? "Excelente!" : "Atenção:"}</strong> O professor possui <strong>{affectedLessonsCount} alunos</strong> agendados neste período. 
+                          Você já disponibilizou <strong>{createdSlotsCapacity} vagas</strong> de reposição.
+                          {!hasEnoughSlots && <p className="text-xs mt-1 text-amber-900 opacity-90">Abra mais vagas para habilitar o salvamento.</p>}
+                        </div>
+                     </div>
+                   )}
+
                    <div className="space-y-2 max-h-40 overflow-y-auto pr-1 mt-6">
                       {newAbsence.customSlots.map((slot, idx) => (
                          <div key={idx} className="flex flex-wrap items-center justify-between bg-white p-3 rounded-xl border border-zinc-200 shadow-sm gap-2">
@@ -1434,8 +1602,9 @@ export default function Schedule({ profile }: { profile: UserProfile }) {
                    <button type="button" onClick={() => setIsAbsenceModalOpen(false)} className="w-full sm:w-auto px-6 py-3 rounded-2xl text-sm font-bold text-zinc-600 hover:bg-zinc-100 transition-colors text-center">Cancelar</button>
                    <button 
                      type="submit" 
-                     disabled={isSubmittingAbsence}
-                     className="w-full sm:w-auto justify-center bg-red-500 text-white px-8 py-3 rounded-2xl font-bold flex items-center gap-2 hover:bg-red-600 transition-all shadow-lg shadow-red-500/20 disabled:opacity-50"
+                     disabled={isSubmittingAbsence || (affectedLessonsCount > 0 && !hasEnoughSlots)}
+                     title={affectedLessonsCount > 0 && !hasEnoughSlots ? "Crie vagas suficientes para prosseguir!" : ""}
+                     className="w-full sm:w-auto justify-center bg-red-500 text-white px-8 py-3 rounded-2xl font-bold flex items-center gap-2 hover:bg-red-600 transition-all shadow-lg shadow-red-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
                    >
                      {isSubmittingAbsence ? 'Montando Links...' : 'Registrar Falta e Notificar Alunos'}
                    </button>
@@ -1455,6 +1624,74 @@ export default function Schedule({ profile }: { profile: UserProfile }) {
         confirmText="Remover"
       />
     </div>
+
+      {/* Lesson Log Modal */}
+      {isLessonLogModalOpen && selectedLessonForLog && (
+        <div className="fixed inset-0 bg-zinc-950/40 backdrop-blur-md flex items-center justify-center p-4 sm:p-6 z-[60]">
+          <div className="bg-white w-full max-w-lg rounded-[32px] shadow-2xl shadow-black/10 ring-1 ring-zinc-950/5 flex flex-col max-h-[100dvh] sm:max-h-[90vh]">
+            <div className="flex items-center justify-between p-5 sm:p-8 border-b border-zinc-100 shrink-0">
+              <h3 className="text-xl sm:text-2xl font-bold display-font text-orange-500">Diário de Aula</h3>
+              <button 
+                onClick={() => {
+                  setIsLessonLogModalOpen(false);
+                  setSelectedLessonForLog(null);
+                  setLessonLogNotes('');
+                }} 
+                className="text-zinc-400 hover:text-black transition-colors"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            
+            <div className="overflow-y-auto p-5 sm:p-8">
+              <div className="bg-zinc-50 p-4 rounded-2xl mb-6 border border-zinc-100 flex flex-col gap-1">
+                <p className="font-bold text-black text-lg">{getStudentName(selectedLessonForLog.studentId)}</p>
+                <p className="text-sm font-medium text-zinc-500 flex items-center gap-2">
+                  <Music className="w-4 h-4" /> {selectedLessonForLog.instrument || 'Instrumento'}
+                </p>
+                <div className="flex items-center gap-2 mt-2 text-xs font-bold text-zinc-400">
+                   <Clock className="w-4 h-4" />
+                   {safeFormat(toDate(selectedLessonForLog.startTime), 'dd/MM/yyyy HH:mm')}
+                </div>
+              </div>
+
+              <form onSubmit={handleSaveLessonLog} className="space-y-6">
+                <div>
+                  <label className="block text-sm font-medium text-zinc-700 mb-2">Resumo da Aula (O que foi estudado?)</label>
+                  {profile.role === 'student' ? (
+                    <div className="bg-orange-50 p-6 rounded-2xl italic text-amber-900 border border-orange-100 min-h-[100px] whitespace-pre-wrap">
+                      "{lessonLogNotes}"
+                    </div>
+                  ) : (
+                    <>
+                      <textarea 
+                        autoFocus
+                        required
+                        value={lessonLogNotes}
+                        onChange={e => setLessonLogNotes(e.target.value)}
+                        placeholder="Ex: Focamos na transição entre acordes maiores e menores, compasso 4/4 e postura da mão direita."
+                        className="w-full bg-zinc-50 border border-zinc-100 rounded-2xl px-6 py-4 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 transition-all min-h-[150px] resize-y"
+                      />
+                      <p className="text-xs text-zinc-400 mt-2">As anotações serão salvas no histórico da aula. O status será marcado como <strong>Concluída</strong>.</p>
+                    </>
+                  )}
+                </div>
+
+                {profile.role !== 'student' && (
+                  <div className="pt-4 border-t border-zinc-100 flex gap-3">
+                    <button 
+                      type="submit"
+                      className="w-full bg-gradient-to-r from-orange-500 to-amber-500 text-white py-4 rounded-2xl font-bold hover:from-orange-600 hover:to-amber-600 transition-all shadow-lg shadow-orange-500/25 active:scale-[0.98]"
+                    >
+                      Salvar Relatório e Concluir Aula
+                    </button>
+                  </div>
+                )}
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, onSnapshot, addDoc, serverTimestamp, deleteDoc, doc, updateDoc, setDoc, query, where, getDocs } from 'firebase/firestore';
+import { collection, onSnapshot, addDoc, serverTimestamp, deleteDoc, doc, updateDoc, setDoc, query, where, getDocs, writeBatch } from 'firebase/firestore';
 import { initializeApp } from 'firebase/app';
 import { getAuth, createUserWithEmailAndPassword, signOut } from 'firebase/auth';
 import firebaseConfig from '../../firebase-applet-config.json';
@@ -23,6 +23,7 @@ export default function Teachers({ profile }: { profile: UserProfile }) {
     password: '',
     instruments: [] as string[],
     bio: '',
+    phone: '',
     role: 'teacher' as 'teacher' | 'admin',
     maxStudents: undefined as number | undefined
   });
@@ -65,6 +66,7 @@ export default function Teachers({ profile }: { profile: UserProfile }) {
         await updateDoc(doc(db, 'teachers', editingTeacherId), {
           name: newTeacher.name,
           email: newTeacher.email,
+          phone: newTeacher.phone,
           instruments: newTeacher.instruments,
           bio: newTeacher.bio,
           role: newTeacher.role
@@ -94,6 +96,7 @@ export default function Teachers({ profile }: { profile: UserProfile }) {
         const teacherRef = await addDoc(collection(db, 'teachers'), {
           name: newTeacher.name,
           email: newTeacher.email,
+          phone: newTeacher.phone,
           instruments: newTeacher.instruments,
           bio: newTeacher.bio,
           role: newTeacher.role,
@@ -112,10 +115,22 @@ export default function Teachers({ profile }: { profile: UserProfile }) {
       }
       setIsModalOpen(false);
       setEditingTeacherId(null);
-      setNewTeacher({ name: '', email: '', password: '', instruments: [], bio: '', role: 'teacher' });
+      setNewTeacher({ name: '', email: '', password: '', phone: '', instruments: [], bio: '', role: 'teacher' });
     } catch (error: any) {
-      handleFirestoreError(error, editingTeacherId ? OperationType.UPDATE : OperationType.CREATE, 'teachers');
-      if (error.message) alert(error.message);
+      if (error && error.code && error.code.startsWith('auth/')) {
+        let msg = 'Erro ao criar credenciais de acesso.';
+        if (error.code === 'auth/email-already-in-use') msg = 'Este e-mail já está em uso por outro usuário no sistema.';
+        if (error.code === 'auth/weak-password') msg = 'A senha informada é muito curta (mínimo de 6 caracteres).';
+        if (error.code === 'auth/invalid-email') msg = 'O formato do e-mail é inválido.';
+        alert(msg);
+        return;
+      }
+      
+      try {
+        handleFirestoreError(error, editingTeacherId ? OperationType.UPDATE : OperationType.CREATE, 'teachers');
+      } catch (err: any) {
+        alert('Erro ao salvar professor. Verifique sua conexão.');
+      }
     }
   };
 
@@ -125,6 +140,7 @@ export default function Teachers({ profile }: { profile: UserProfile }) {
       name: teacher.name,
       email: teacher.email || '',
       password: '',
+      phone: teacher.phone || '',
       instruments: teacher.instruments,
       bio: teacher.bio || '',
       role: teacher.role || 'teacher',
@@ -135,7 +151,7 @@ export default function Teachers({ profile }: { profile: UserProfile }) {
 
   const openAddModal = () => {
     setEditingTeacherId(null);
-    setNewTeacher({ name: '', email: '', password: '', instruments: [], bio: '', role: 'teacher', maxStudents: undefined });
+    setNewTeacher({ name: '', email: '', password: '', phone: '', instruments: [], bio: '', role: 'teacher', maxStudents: undefined });
     setIsModalOpen(true);
   };
 
@@ -156,8 +172,17 @@ export default function Teachers({ profile }: { profile: UserProfile }) {
   const confirmDelete = async () => {
     if (!teacherToDelete) return;
     try {
-      await deleteDoc(doc(db, 'teachers', teacherToDelete));
+      const batch = writeBatch(db);
+      
+      const q = query(collection(db, 'users'), where('teacherId', '==', teacherToDelete));
+      const snaps = await getDocs(q);
+      snaps.forEach(d => batch.delete(d.ref));
+      
+      batch.delete(doc(db, 'teachers', teacherToDelete));
+      await batch.commit();
+      
       setTeacherToDelete(null);
+      setIsConfirmOpen(false);
     } catch (error) {
       handleFirestoreError(error, OperationType.DELETE, `teachers/${teacherToDelete}`);
     }
@@ -252,6 +277,23 @@ export default function Teachers({ profile }: { profile: UserProfile }) {
                   onChange={e => setNewTeacher({...newTeacher, email: e.target.value})}
                   className="w-full bg-zinc-50 border border-zinc-100 rounded-2xl px-6 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 transition-all"
                   placeholder="exemplo@email.com"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-zinc-700 mb-2">Telefone / WhatsApp</label>
+                <input 
+                  type="tel" 
+                  value={newTeacher.phone}
+                  onChange={e => {
+                    let val = e.target.value.replace(/\D/g, '');
+                    if (val.length > 11) val = val.substring(0, 11);
+                    if (val.length > 10) val = val.replace(/^(\d{2})(\d{5})(\d{4})$/, '($1) $2-$3');
+                    else if (val.length > 6) val = val.replace(/^(\d{2})(\d{4})(\d{0,4})$/, '($1) $2-$3');
+                    else if (val.length > 2) val = val.replace(/^(\d{2})(\d{0,5})$/, '($1) $2');
+                    setNewTeacher({...newTeacher, phone: val});
+                  }}
+                  className="w-full bg-zinc-50 border border-zinc-100 rounded-2xl px-6 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 transition-all"
+                  placeholder="(11) 99999-9999"
                 />
               </div>
               {!editingTeacherId && (
