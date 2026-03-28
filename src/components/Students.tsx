@@ -19,6 +19,15 @@ const DAYS_OF_WEEK = [
   { label: 'Sáb', value: 6 },
 ];
 
+const applyCpfMask = (value: string) => {
+  return value
+    .replace(/\D/g, '') // remove tudo que não for número
+    .replace(/(\d{3})(\d)/, '$1.$2') // coloca o primeiro ponto
+    .replace(/(\d{3})(\d)/, '$1.$2') // coloca o segundo ponto
+    .replace(/(\d{3})(\d{1,2})/, '$1-$2') // coloca o hífen
+    .replace(/(-\d{2})\d+?$/, '$1'); // limita ao tamanho máximo do CPF
+};
+
 export default function Students({ profile }: { profile: UserProfile }) {
   const [students, setStudents] = useState<Student[]>([]);
   const [teachers, setTeachers] = useState<Teacher[]>([]);
@@ -39,6 +48,7 @@ export default function Students({ profile }: { profile: UserProfile }) {
     name: '',
     email: '',
     phone: '',
+    cpf: '',
     birthDate: '',
     fatherName: '',
     motherName: '',
@@ -417,6 +427,7 @@ export default function Students({ profile }: { profile: UserProfile }) {
         name: '', 
         email: '',
         phone: '',
+        cpf: '',
         birthDate: '',
         fatherName: '',
         motherName: '',
@@ -437,6 +448,7 @@ export default function Students({ profile }: { profile: UserProfile }) {
       name: student.name,
       email: student.email || '',
       phone: student.phone || '',
+      cpf: student.cpf || '',
       birthDate: student.birthDate || '',
       fatherName: student.fatherName || '',
       motherName: student.motherName || '',
@@ -455,6 +467,7 @@ export default function Students({ profile }: { profile: UserProfile }) {
       name: '', 
       email: '',
       phone: '',
+      cpf: '',
       birthDate: '',
       fatherName: '',
       motherName: '',
@@ -850,6 +863,16 @@ export default function Students({ profile }: { profile: UserProfile }) {
                     />
                   </div>
                   <div>
+                    <label className="block text-sm font-medium text-zinc-700 mb-2">CPF</label>
+                    <input 
+                      type="text" 
+                      value={newStudent.cpf}
+                      onChange={e => setNewStudent({...newStudent, cpf: applyCpfMask(e.target.value)})}
+                      placeholder="000.000.000-00"
+                      className="w-full bg-zinc-50 border border-zinc-100 rounded-2xl px-6 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 transition-all font-medium"
+                    />
+                  </div>
+                  <div>
                     <label className="block text-sm font-medium text-zinc-700 mb-2">Nome da Mãe</label>
                     <input 
                       type="text" 
@@ -1117,6 +1140,12 @@ export default function Students({ profile }: { profile: UserProfile }) {
                     <div>
                       <span className="text-xs font-semibold uppercase tracking-widest text-zinc-400 block mb-1">Telefone</span>
                       <span className="font-medium">{viewingStudent.phone}</span>
+                    </div>
+                  )}
+                  {viewingStudent.cpf && (
+                    <div>
+                      <span className="text-xs font-semibold uppercase tracking-widest text-zinc-400 block mb-1">CPF</span>
+                      <span className="font-medium">{viewingStudent.cpf}</span>
                     </div>
                   )}
                   {viewingStudent.email && (

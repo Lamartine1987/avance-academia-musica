@@ -28,6 +28,7 @@ export interface Student {
   name: string;
   email?: string;
   phone?: string;
+  cpf?: string;
   birthDate?: string;
   fatherName?: string;
   motherName?: string;

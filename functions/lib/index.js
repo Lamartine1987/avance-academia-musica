@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.createStudentUser = exports.provideNewRescheduleSlots = exports.rejectRescheduleSlots = exports.confirmReschedule = exports.getRescheduleData = exports.registerTeacherAbsence = exports.manualFinancialRoutine = exports.financialRoutineDaily = void 0;
+exports.requestPasswordResetWhatsApp = exports.createStudentUser = exports.provideNewRescheduleSlots = exports.rejectRescheduleSlots = exports.confirmReschedule = exports.getRescheduleData = exports.registerTeacherAbsence = exports.manualFinancialRoutine = exports.financialRoutineDaily = void 0;
 const functions = require("firebase-functions/v1");
 const admin = require("firebase-admin");
 const firestore_1 = require("firebase-admin/firestore");
@@ -365,6 +365,7 @@ exports.confirmReschedule = functions.https.onCall(async (data, context) => {
     if (!token || !slotIds || !Array.isArray(slotIds) || slotIds.length === 0)
         throw new functions.https.HttpsError('invalid-argument', 'Missing token or slotIds');
     const txResult = await db.runTransaction(async (transaction) => {
+        var _a;
         // 1. ALL READS FIRST
         const tokensSnap = await transaction.get(db.collection('reschedule_tokens').where('token', '==', token));
         if (tokensSnap.empty)
@@ -438,23 +439,42 @@ exports.confirmReschedule = functions.https.onCall(async (data, context) => {
         return {
             success: true,
             studentName,
+            studentPhone: studentDoc.exists ? (_a = studentDoc.data()) === null || _a === void 0 ? void 0 : _a.phone : null,
             settings: settingsSnap.exists ? settingsSnap.data() : {},
             datesSelected
         };
     });
-    const { success, studentName, settings, datesSelected } = txResult;
-    if (success && (settings === null || settings === void 0 ? void 0 : settings.zapiInstance) && (settings === null || settings === void 0 ? void 0 : settings.zapiToken) && (settings === null || settings === void 0 ? void 0 : settings.schoolPhone)) {
-        const phone = settings.schoolPhone.replace(/\D/g, '');
-        const msg = `🔔 *Aviso do Sistema Avance*\n\nO aluno *${studentName}* acaba de realizar o reagendamento automático de reposição para as seguintes datas:\n\n${datesSelected}`;
+    const { success, studentName, studentPhone, settings, datesSelected } = txResult;
+    if (success && (settings === null || settings === void 0 ? void 0 : settings.zapiInstance) && (settings === null || settings === void 0 ? void 0 : settings.zapiToken)) {
         const url = `https://api.z-api.io/instances/${settings.zapiInstance}/token/${settings.zapiToken}/send-text`;
         const headers = { 'Content-Type': 'application/json' };
         if (settings.zapiSecurityToken)
             headers['Client-Token'] = settings.zapiSecurityToken;
-        fetch(url, {
-            method: 'POST',
-            headers,
-            body: JSON.stringify({ phone: phone.length <= 11 ? `55${phone}` : phone, message: msg })
-        }).catch(e => console.error('[CONFIRM_RESCHEDULE] Z-API Error', e));
+        const notificationPromises = [];
+        // 1. Notify School Admin
+        if (settings.schoolPhone) {
+            const adminPhone = settings.schoolPhone.replace(/\D/g, '');
+            const adminMsg = `🔔 *Aviso do Sistema Avance*\n\nO aluno *${studentName}* acaba de realizar o reagendamento automático de reposição para as seguintes datas:\n\n${datesSelected}`;
+            const adminPromise = fetch(url, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify({ phone: adminPhone.length <= 11 ? `55${adminPhone}` : adminPhone, message: adminMsg })
+            }).catch(e => console.error('[CONFIRM_RESCHEDULE] Z-API Error (Admin)', e));
+            notificationPromises.push(adminPromise);
+        }
+        // 2. Notify Student
+        if (studentPhone) {
+            const sPhone = studentPhone.replace(/\D/g, '');
+            const firstName = studentName.split(' ')[0];
+            const studentMsg = `🔔 *Aviso do Sistema Avance*\n\nOlá, ${firstName}! Sua reposição foi agendada com sucesso para as seguintes datas/horários:\n\n${datesSelected}\nQualquer dúvida, estamos à disposição!`;
+            const studentPromise = fetch(url, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify({ phone: sPhone.length <= 11 ? `55${sPhone}` : sPhone, message: studentMsg })
+            }).catch(e => console.error('[CONFIRM_RESCHEDULE] Z-API Error (Student)', e));
+            notificationPromises.push(studentPromise);
+        }
+        await Promise.all(notificationPromises);
     }
     return { success: true };
 });
@@ -504,7 +524,7 @@ exports.rejectRescheduleSlots = functions.https.onCall(async (data, context) => 
         const headers = { 'Content-Type': 'application/json' };
         if (settings.zapiSecurityToken)
             headers['Client-Token'] = settings.zapiSecurityToken;
-        fetch(url, {
+        await fetch(url, {
             method: 'POST',
             headers,
             body: JSON.stringify({ phone: phone.length <= 11 ? `55${phone}` : phone, message: msg })
@@ -564,7 +584,7 @@ exports.provideNewRescheduleSlots = functions.https.onCall(async (data, context)
         const headers = { 'Content-Type': 'application/json' };
         if (settings.zapiSecurityToken)
             headers['Client-Token'] = settings.zapiSecurityToken;
-        fetch(url, {
+        await fetch(url, {
             method: 'POST',
             headers,
             body: JSON.stringify({ phone: phone.length <= 11 ? `55${phone}` : phone, message: msg })
@@ -608,6 +628,64 @@ exports.createStudentUser = functions.https.onCall(async (data, context) => {
         console.error('Erro ao gerar Auth para Aluno', error);
         // If the email already exists, Firebase throws 'auth/email-already-exists'. Handle gracefully?
         throw new functions.https.HttpsError('internal', error.message || 'Erro ao criar conta no Firebase Auth');
+    }
+});
+exports.requestPasswordResetWhatsApp = functions.https.onCall(async (data, context) => {
+    const { cpf } = data;
+    if (!cpf || cpf.length < 11) {
+        throw new functions.https.HttpsError('invalid-argument', 'CPF inválido fornecido.');
+    }
+    const studentsSnap = await db.collection('students').where('cpf', '==', cpf).limit(1).get();
+    if (studentsSnap.empty) {
+        throw new functions.https.HttpsError('not-found', 'Nenhum aluno encontrado com este CPF.');
+    }
+    const studentDoc = studentsSnap.docs[0];
+    const studentData = studentDoc.data();
+    if (!studentData.authUid) {
+        throw new functions.https.HttpsError('failed-precondition', 'Este aluno não possui uma conta de acesso configurada.');
+    }
+    if (!studentData.phone) {
+        throw new functions.https.HttpsError('failed-precondition', 'Este aluno não possui telefone cadastrado para receber a senha.');
+    }
+    const randNum = Math.floor(1000 + Math.random() * 9000);
+    const tempPassword = `Avance#${randNum}`;
+    try {
+        // 1. Update Password in Firebase Auth
+        await admin.auth().updateUser(studentData.authUid, { password: tempPassword });
+        // 2. Force password change on next login
+        await db.collection('users').doc(studentData.authUid).update({
+            mustChangePassword: true
+        });
+        // 3. Send WhatsApp via Z-API
+        const settingsSnap = await db.collection('settings').doc('integrations').get();
+        if (!settingsSnap.exists) {
+            throw new functions.https.HttpsError('internal', 'Configuração de WhatsApp não encontrada no sistema.');
+        }
+        const { zapiInstance, zapiToken, zapiSecurityToken } = settingsSnap.data();
+        if (!zapiInstance || !zapiToken) {
+            throw new functions.https.HttpsError('internal', 'Credenciais do WhatsApp estão incompletas.');
+        }
+        const cleanPhone = studentData.phone.replace(/\D/g, '');
+        if (cleanPhone.length < 10) {
+            throw new functions.https.HttpsError('invalid-argument', 'Telefone cadastrado parece estar incorreto.');
+        }
+        const number = cleanPhone.length <= 11 ? `55${cleanPhone}` : cleanPhone;
+        const firstName = studentData.name.split(' ')[0];
+        const msg = `🔔 *Aviso do Sistema Avance*\n\nOlá, ${firstName}! Recebemos um pedido de recuperação da sua senha.\n\nSua nova senha provisória é:\n*${tempPassword}*\n\nPor motivos de segurança, o sistema pedirá que você crie uma nova senha de sua escolha assim que realizar o login com esta senha provisória.`;
+        const url = `https://api.z-api.io/instances/${zapiInstance}/token/${zapiToken}/send-text`;
+        const headers = { 'Content-Type': 'application/json' };
+        if (zapiSecurityToken)
+            headers['Client-Token'] = zapiSecurityToken;
+        await fetch(url, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({ phone: number, message: msg })
+        });
+        return { success: true };
+    }
+    catch (error) {
+        console.error('Erro ao processar requestPasswordResetWhatsApp', error);
+        throw new functions.https.HttpsError('internal', error.message || 'Falha ao processar a troca de senha.');
     }
 });
 //# sourceMappingURL=index.js.map

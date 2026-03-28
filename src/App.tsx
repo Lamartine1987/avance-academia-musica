@@ -39,6 +39,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { auth, db } from './firebase';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 import { UserProfile, UserRole } from './types';
 import { cn } from './lib/utils';
 
@@ -77,6 +78,22 @@ export default function App() {
   const [password, setPassword] = useState('');
   const [authError, setAuthError] = useState<string | null>(null);
   const [authLoading, setAuthLoading] = useState(false);
+
+  // Reset password states
+  const [isResetting, setIsResetting] = useState(false);
+  const [resetCpf, setResetCpf] = useState('');
+  const [resetLoading, setResetLoading] = useState(false);
+  const [resetSuccess, setResetSuccess] = useState(false);
+  const [resetError, setResetError] = useState<string | null>(null);
+
+  const applyCpfMask = (value: string) => {
+    return value
+      .replace(/\D/g, '')
+      .replace(/(\d{3})(\d)/, '$1.$2')
+      .replace(/(\d{3})(\d)/, '$1.$2')
+      .replace(/(\d{3})(\d{1,2})/, '$1-$2')
+      .replace(/(-\d{2})\d+?$/, '$1');
+  };
 
   const [notifications, setNotifications] = useState<any[]>([]);
   const [showNotifications, setShowNotifications] = useState(false);
@@ -196,6 +213,25 @@ export default function App() {
 
   const handleLogout = () => signOut(auth);
 
+  const handleResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setResetError(null);
+    setResetSuccess(false);
+    setResetLoading(true);
+
+    try {
+      const fn = getFunctions();
+      const requestPasswordResetWhatsApp = httpsCallable(fn, 'requestPasswordResetWhatsApp');
+      await requestPasswordResetWhatsApp({ cpf: resetCpf });
+      setResetSuccess(true);
+    } catch (err: any) {
+      console.error(err);
+      setResetError(err.message || 'Erro ao tentar recuperar a senha.');
+    } finally {
+      setResetLoading(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[#f5f5f5]">
@@ -225,46 +261,114 @@ export default function App() {
             </p>
           </div>
 
-          <form onSubmit={handleAuth} className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-zinc-700 mb-1 ml-1">E-mail</label>
-              <input
-                type="email"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 transition-all"
-                placeholder="seu@email.com"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-zinc-700 mb-1 ml-1">Senha</label>
-              <input
-                type="password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 transition-all"
-                placeholder="••••••••"
-              />
-            </div>
-
-            {authError && (
-              <p className="text-red-500 text-xs mt-2 ml-1">{authError}</p>
-            )}
-
-            <button
-              type="submit"
-              disabled={authLoading}
-              className="w-full bg-gradient-to-r from-orange-500 to-amber-500 text-white rounded-2xl py-4 font-bold hover:from-orange-600 hover:to-amber-600 transition-all flex items-center justify-center gap-3 disabled:opacity-50 mt-6 shadow-lg shadow-orange-500/25 active:scale-[0.98]"
-            >
-              {authLoading ? (
-                <Loader2 className="w-5 h-5 animate-spin" />
+          {isResetting ? (
+            <div className="space-y-4">
+              {resetSuccess ? (
+                <div className="bg-emerald-50 text-emerald-600 p-4 rounded-2xl border border-emerald-100/50 text-sm text-center">
+                  <p className="font-bold mb-1">Sucesso!</p>
+                  <p>Iniciamos a recuperação da sua conta. Se o CPF for válido e você possuir WhatsApp cadastrado, uma senha provisória chegará no seu número em até 2 minutos.</p>
+                  <button 
+                    onClick={() => {
+                      setIsResetting(false);
+                      setResetSuccess(false);
+                      setResetCpf('');
+                    }}
+                    className="mt-4 text-emerald-700 font-bold hover:underline"
+                  >
+                    Voltar para o Login
+                  </button>
+                </div>
               ) : (
-                'Entrar'
+                <form onSubmit={handleResetPassword} className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-zinc-700 mb-1 ml-1">Criei minha conta com CPF</label>
+                    <input
+                      type="text"
+                      required
+                      value={resetCpf}
+                      onChange={(e) => setResetCpf(applyCpfMask(e.target.value))}
+                      className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 transition-all font-medium"
+                      placeholder="000.000.000-00"
+                    />
+                  </div>
+                  
+                  {resetError && (
+                    <p className="text-red-500 text-xs mt-2 ml-1">{resetError}</p>
+                  )}
+
+                  <button
+                    type="submit"
+                    disabled={resetLoading || resetCpf.length < 14}
+                    className="w-full bg-zinc-900 text-white rounded-2xl py-4 font-bold hover:bg-black transition-all flex items-center justify-center gap-3 disabled:opacity-50 mt-6 shadow-lg shadow-black/25 active:scale-[0.98]"
+                  >
+                    {resetLoading ? (
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                    ) : (
+                      'Recuperar via WhatsApp'
+                    )}
+                  </button>
+                  <button 
+                    type="button"
+                    onClick={() => setIsResetting(false)}
+                    className="w-full text-zinc-400 font-medium text-sm hover:text-zinc-600 py-2"
+                  >
+                    Voltar
+                  </button>
+                </form>
               )}
-            </button>
-          </form>
+            </div>
+          ) : (
+            <form onSubmit={handleAuth} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-zinc-700 mb-1 ml-1">E-mail</label>
+                <input
+                  type="email"
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 transition-all"
+                  placeholder="seu@email.com"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-zinc-700 mb-1 ml-1">Senha</label>
+                <input
+                  type="password"
+                  required
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 transition-all"
+                  placeholder="••••••••"
+                />
+              </div>
+
+              {authError && (
+                <p className="text-red-500 text-xs mt-2 ml-1">{authError}</p>
+              )}
+
+              <button
+                type="submit"
+                disabled={authLoading}
+                className="w-full bg-gradient-to-r from-orange-500 to-amber-500 text-white rounded-2xl py-4 font-bold hover:from-orange-600 hover:to-amber-600 transition-all flex items-center justify-center gap-3 disabled:opacity-50 mt-6 shadow-lg shadow-orange-500/25 active:scale-[0.98]"
+              >
+                {authLoading ? (
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                ) : (
+                  'Entrar'
+                )}
+              </button>
+              
+              <div className="text-center pt-2">
+                <button 
+                  type="button" 
+                  onClick={() => setIsResetting(true)}
+                  className="text-orange-500/80 hover:text-orange-600 text-sm font-medium transition-colors"
+                >
+                  Esqueci minha senha
+                </button>
+              </div>
+            </form>
+          )}
         </motion.div>
       </div>
     );

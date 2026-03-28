@@ -118,12 +118,14 @@ service cloud.firestore {
     }
 
     function isValidStudent(data) {
-      return hasOnlyAllowedFields(['name', 'email', 'phone', 'birthDate', 'fatherName', 'motherName', 'level', 'enrollments', 'status', 'courseValue', 'dueDate', 'createdAt']) &&
+      return hasOnlyAllowedFields(['name', 'email', 'phone', 'cpf', 'birthDate', 'fatherName', 'motherName', 'level', 'enrollments', 'status', 'courseValue', 'dueDate', 'createdAt', 'authUid']) &&
              data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
              data.enrollments is list && data.enrollments.size() > 0 &&
              (!('level' in data) || data.level in ['beginner', 'intermediate', 'advanced']) &&
              (!('email' in data) || data.email == null || isValidEmail(data.email) || data.email == '') &&
              (!('phone' in data) || data.phone is string) &&
+             (!('cpf' in data) || data.cpf is string) &&
+             (!('authUid' in data) || data.authUid is string) &&
              (!('birthDate' in data) || data.birthDate is string) &&
              (!('fatherName' in data) || data.fatherName is string) &&
              (!('motherName' in data) || data.motherName is string) &&
