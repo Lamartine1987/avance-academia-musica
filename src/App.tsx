@@ -482,7 +482,7 @@ export default function App() {
               )}
             </div>
             <div className={cn("flex-1 min-w-0", !isDesktopMenuExpanded && "md:hidden")}>
-              <p className="text-sm font-medium text-white truncate">{user.displayName}</p>
+              <p className="text-sm font-medium text-white truncate">{profile?.displayName || user.displayName || 'Usuário'}</p>
               <p className="text-xs text-zinc-400 truncate capitalize">{profile.role}</p>
             </div>
           </button>
@@ -515,7 +515,7 @@ export default function App() {
             <h2 className="text-2xl md:text-3xl font-bold display-font tracking-tight text-black capitalize">
               {currentView === 'profile' ? 'Seu Perfil' : navItems.find(i => i.id === currentView)?.label}
             </h2>
-            <p className="text-zinc-500 mt-1 text-sm md:text-base">Bem-vindo de volta, {user.displayName?.split(' ')[0]}.</p>
+            <p className="text-zinc-500 mt-1 text-sm md:text-base">Bem-vindo de volta, {(profile?.displayName || user.displayName || '').split(' ')[0]}.</p>
           </div>
           
           <div className="flex items-center gap-2 md:gap-4 w-full md:w-auto">

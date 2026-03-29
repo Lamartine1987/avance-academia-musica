@@ -4,6 +4,7 @@ import { db } from '../firebase';
 import { UserProfile, Material, Student } from '../types';
 import { BookOpen, Plus, Trash2, X, FileText, Video, Headphones, ExternalLink, Users, PlayCircle, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 import ConfirmModal from './ConfirmModal';
 
 interface MaterialsProps {
@@ -121,7 +122,23 @@ export default function Materials({ profile }: MaterialsProps) {
         createdAt: serverTimestamp()
       };
 
-      await addDoc(collection(db, 'materials'), materialData);
+      const result = await addDoc(collection(db, 'materials'), materialData);
+      
+      try {
+        const functions = getFunctions();
+        const notifyNewMaterial = httpsCallable(functions, 'notifyNewMaterial');
+        const studentsToNotify = shareWithAll ? students.map(s => s.id) : selectedStudentIds;
+        
+        if (studentsToNotify.length > 0) {
+          await notifyNewMaterial({
+             materialId: result.id,
+             studentIds: studentsToNotify,
+             originUrl: window.location.origin
+          });
+        }
+      } catch (notifyErr) {
+        console.error('Error notifying students', notifyErr);
+      }
       
       setShowForm(false);
       resetForm();

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { collection, onSnapshot, addDoc, serverTimestamp, deleteDoc, doc, updateDoc, setDoc, query, where, getDocs, writeBatch } from 'firebase/firestore';
-import { initializeApp } from 'firebase/app';
+import { initializeApp, getApps } from 'firebase/app';
 import { getAuth, createUserWithEmailAndPassword, signOut } from 'firebase/auth';
 import firebaseConfig from '../../firebase-applet-config.json';
 import { auth, db } from '../firebase';
@@ -85,7 +85,7 @@ export default function Teachers({ profile }: { profile: UserProfile }) {
         }
       } else {
         // Create user with secondary app
-        const secondaryApp = initializeApp(firebaseConfig, "Secondary");
+        const secondaryApp = getApps().find(app => app.name === 'Secondary') || initializeApp(firebaseConfig, 'Secondary');
         const secondaryAuth = getAuth(secondaryApp);
         
         const userCredential = await createUserWithEmailAndPassword(secondaryAuth, newTeacher.email, newTeacher.password);

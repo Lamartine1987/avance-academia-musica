@@ -11,7 +11,7 @@ interface ProfileProps {
 }
 
 export default function Profile({ user, profile }: ProfileProps) {
-  const [displayName, setDisplayName] = useState(user.displayName || '');
+  const [displayName, setDisplayName] = useState(profile.displayName || user.displayName || '');
   const [newPassword, setNewPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState({ type: '', text: '' });
@@ -66,7 +66,7 @@ export default function Profile({ user, profile }: ProfileProps) {
             )}
           </div>
           <div>
-            <h2 className="text-2xl font-bold tracking-tight text-black display-font">{displayName || 'Usuário'}</h2>
+            <h2 className="text-2xl font-bold tracking-tight text-black display-font">{profile.displayName || user.displayName || 'Usuário'}</h2>
             <div className="flex items-center gap-2 mt-2">
               <span className="px-3 py-1 bg-zinc-100 text-zinc-600 rounded-full text-xs font-semibold uppercase tracking-wider">
                 {profile.role}

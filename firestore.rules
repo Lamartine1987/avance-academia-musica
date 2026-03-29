@@ -148,11 +148,13 @@ service cloud.firestore {
     }
 
     function isValidLesson(data) {
-      return hasOnlyAllowedFields(['studentId', 'teacherId', 'instrument', 'startTime', 'endTime', 'status', 'notes', 'createdAt']) &&
+      return hasOnlyAllowedFields(['studentId', 'teacherId', 'instrument', 'startTime', 'endTime', 'status', 'notes', 'createdAt', 'isMakeup', 'absenceId']) &&
              data.studentId is string && data.teacherId is string && data.instrument is string &&
              data.startTime is timestamp && data.endTime is timestamp &&
-             (!('status' in data) || data.status in ['scheduled', 'completed', 'cancelled']) &&
+             (!('status' in data) || data.status in ['scheduled', 'completed', 'cancelled', 'needs_reschedule', 'rescheduled']) &&
              (!('notes' in data) || data.notes is string) &&
+             (!('isMakeup' in data) || data.isMakeup is bool) &&
+             (!('absenceId' in data) || data.absenceId is string) &&
              (!('createdAt' in data) || data.createdAt is timestamp);
     }
 
@@ -194,7 +196,7 @@ service cloud.firestore {
       return hasOnlyAllowedFields(['title', 'content', 'type', 'isAutomatic', 'createdAt']) &&
              data.title is string && data.title.size() > 0 &&
              data.content is string && data.content.size() > 0 &&
-             data.type in ['welcome', 'promo', 'reminder_predue', 'reminder_due', 'reminder_overdue', 'custom', 'reschedule', 'evaluation', 'pedagogic_reminder'] &&
+             data.type in ['welcome', 'promo', 'reminder_predue', 'reminder_due', 'reminder_overdue', 'custom', 'reschedule', 'evaluation', 'pedagogic_reminder', 'material_added'] &&
              data.isAutomatic is bool &&
              (!('createdAt' in data) || data.createdAt is timestamp);
     }
@@ -231,6 +233,7 @@ service cloud.firestore {
         (isAdmin() && isValidUser(request.resource.data))
       );
       allow update: if isAuthenticated() && (isAdmin() || (isOwner(uid) && request.resource.data.role == resource.data.role && isValidUser(request.resource.data)));
+      allow delete: if isAdmin();
     }
 
     match /students/{studentId} {

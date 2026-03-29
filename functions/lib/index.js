@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.onUserDeleted = exports.manualPedagogicalRoutine = exports.pedagogicalRoutineDaily = exports.notifyStudentEvaluation = exports.requestPasswordResetWhatsApp = exports.createStudentUser = exports.provideNewRescheduleSlots = exports.rejectRescheduleSlots = exports.confirmReschedule = exports.getRescheduleData = exports.registerTeacherAbsence = exports.manualFinancialRoutine = exports.financialRoutineDaily = void 0;
+exports.notifyNewMaterial = exports.onUserDeleted = exports.manualPedagogicalRoutine = exports.pedagogicalRoutineDaily = exports.notifyStudentEvaluation = exports.requestPasswordResetWhatsApp = exports.createStudentUser = exports.provideNewRescheduleSlots = exports.rejectRescheduleSlots = exports.confirmReschedule = exports.getRescheduleData = exports.registerTeacherAbsence = exports.manualFinancialRoutine = exports.financialRoutineDaily = void 0;
 const functions = require("firebase-functions/v1");
 const admin = require("firebase-admin");
 const firestore_1 = require("firebase-admin/firestore");
@@ -871,5 +871,62 @@ exports.onUserDeleted = functions.firestore.document('users/{userId}').onDelete(
     catch (error) {
         console.error(`[AUTH CLEANUP] Erro ao deletar o Auth do usuário ${uid}:`, error);
     }
+});
+exports.notifyNewMaterial = functions.https.onCall(async (data, context) => {
+    if (!context.auth)
+        throw new functions.https.HttpsError('unauthenticated', 'Acesso negado');
+    const { materialId, studentIds, originUrl } = data;
+    if (!materialId || !studentIds || !Array.isArray(studentIds))
+        throw new functions.https.HttpsError('invalid-argument', 'Parâmetros inválidos');
+    const materialDoc = await db.collection('materials').doc(materialId).get();
+    if (!materialDoc.exists)
+        throw new functions.https.HttpsError('not-found', 'Material não encontrado');
+    const materialData = materialDoc.data();
+    // Settings
+    const settingsSnap = await db.collection('settings').doc('integrations').get();
+    const settings = settingsSnap.exists ? settingsSnap.data() : null;
+    if (!(settings === null || settings === void 0 ? void 0 : settings.zapiInstance) || !(settings === null || settings === void 0 ? void 0 : settings.zapiToken)) {
+        return { success: false, reason: 'Z-API não configurada' };
+    }
+    // Get templates
+    const templateSnap = await db.collection('templates').where('type', '==', 'material_added').limit(1).get();
+    const customTemplate = templateSnap.empty ? null : templateSnap.docs[0].data().content;
+    const teacherName = materialData.teacherName || 'Professor';
+    const link = `${originUrl || 'https://sistema-avance.web.app'}`;
+    const studentPromises = studentIds.map(async (studentId) => {
+        const studentDoc = await db.collection('students').doc(studentId).get();
+        if (!studentDoc.exists)
+            return;
+        const studentData = studentDoc.data();
+        if (!studentData.phone)
+            return;
+        const phone = studentData.phone.replace(/\D/g, '');
+        const studentName = studentData.name.split(' ')[0];
+        let msg = '';
+        if (customTemplate) {
+            msg = customTemplate
+                .replace(/{aluno}/g, studentName)
+                .replace(/{professor}/g, teacherName)
+                .replace(/{material}/g, materialData.title)
+                .replace(/{link}/g, link);
+            msg = `🔔 *Aviso do Sistema Avance*\n\n${msg}`;
+        }
+        else {
+            msg = `🔔 *Aviso do Sistema Avance*\n\nOlá, ${studentName}! O professor *${teacherName}* acabou de compartilhar um novo material didático com você: *${materialData.title}*.\n\nAcesse o Portal do Aluno para conferir e baixar:\n🔗 ${link}`;
+        }
+        const number = phone.length <= 11 ? `55${phone}` : phone;
+        const url = `https://api.z-api.io/instances/${settings.zapiInstance}/token/${settings.zapiToken}/send-text`;
+        const headers = { 'Content-Type': 'application/json' };
+        if (settings.zapiSecurityToken)
+            headers['Client-Token'] = settings.zapiSecurityToken;
+        try {
+            await fetch(url, { method: 'POST', headers, body: JSON.stringify({ phone: number, message: msg }) });
+        }
+        catch (e) {
+            console.error('[MATERIAL_NOTIFY] Z-API Error', e);
+        }
+    });
+    await Promise.all(studentPromises);
+    return { success: true };
 });
 //# sourceMappingURL=index.js.map

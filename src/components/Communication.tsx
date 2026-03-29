@@ -184,6 +184,7 @@ export default function Communication() {
       case 'reminder_due': return 'Vencimento Hoje';
       case 'reminder_overdue': return 'Mensalidade Atrasada';
       case 'evaluation': return 'Aviso de Nova Avaliação';
+      case 'material_added': return 'Novo Material Didático';
       case 'pedagogic_reminder': return 'Lembrete Pedagógico (Professores)';
       case 'custom': return 'Outros';
       default: return type;
@@ -570,6 +571,7 @@ export default function Communication() {
                       <option value="reminder_due">Vencimento Hoje (Cobrança)</option>
                       <option value="reminder_overdue">Mensalidade Atrasada (Cobrança)</option>
                       <option value="evaluation">Aviso de Nova Avaliação</option>
+                      <option value="material_added">Novo Material Didático</option>
                       <option value="pedagogic_reminder">Lembrete Pedagógico (Professores)</option>
                       <option value="custom">Outros</option>
                     </select>
@@ -623,6 +625,14 @@ export default function Communication() {
                         <>
                           <li><strong>{'{professor}'}</strong> - O nome do professor que realizou a avaliação;</li>
                           <li><strong>{'{link}'}</strong> - Link para o Portal do Aluno acessar a aba de avaliações.</li>
+                        </>
+                      )}
+                      {currentTemplate.type === 'material_added' && (
+                        <>
+                          <li><strong>{'{aluno}'}</strong> - O primeiro nome do aluno que recebeu o material;</li>
+                          <li><strong>{'{professor}'}</strong> - O nome do professor que enviou o material;</li>
+                          <li><strong>{'{material}'}</strong> - O título do material enviado;</li>
+                          <li><strong>{'{link}'}</strong> - Link para o Portal do Aluno acessar a aba de materiais.</li>
                         </>
                       )}
                       {currentTemplate.type === 'pedagogic_reminder' && (

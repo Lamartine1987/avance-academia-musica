@@ -116,6 +116,7 @@ export default function Students({ profile }: { profile: UserProfile }) {
     const endMinutes = startMinutes + duration;
 
     let overlappingStudentsCount = 0;
+    let overlappingNames: string[] = [];
 
     // Check conflicts with other students' recurring schedules
     for (const student of students) {
@@ -145,11 +146,13 @@ export default function Students({ profile }: { profile: UserProfile }) {
 
       if (studentOverlaps) {
         overlappingStudentsCount++;
+        overlappingNames.push(student.name.split(' ')[0]);
       }
     }
 
     if (overlappingStudentsCount >= capacity) {
-      return `Lotado (${overlappingStudentsCount}/${capacity} vagas Ocupadas)`;
+      const namesString = overlappingNames.length > 0 ? ` (${overlappingNames.join(', ')})` : '';
+      return `Lotado (${overlappingStudentsCount}/${capacity} vagas)${namesString}`;
     }
 
     // Check conflicts with blocked times
@@ -299,8 +302,8 @@ export default function Students({ profile }: { profile: UserProfile }) {
           const startTime = lesson.startTime?.toDate();
           
           if (startTime && startTime > now) {
-            if (lesson.status === 'scheduled') {
-              // Always refresh future 'scheduled' lessons
+            if (lesson.status === 'scheduled' && !lesson.isMakeup) {
+              // Always refresh future 'scheduled' lessons, EXCEPT makeup classes
               deleteBatch.delete(docSnap.ref);
               hasDeletes = true;
             } else {

@@ -113,7 +113,7 @@ export interface MessageTemplate {
   id: string;
   title: string;
   content: string;
-  type: 'welcome' | 'promo' | 'reminder_predue' | 'reminder_due' | 'reminder_overdue' | 'custom' | 'reschedule' | 'evaluation' | 'pedagogic_reminder';
+  type: 'welcome' | 'promo' | 'reminder_predue' | 'reminder_due' | 'reminder_overdue' | 'custom' | 'reschedule' | 'evaluation' | 'pedagogic_reminder' | 'material_added';
   isAutomatic: boolean;
   createdAt: any;
 }
