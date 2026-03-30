@@ -3,15 +3,18 @@ import { db } from '../firebase';
 import { collection, query, getDocs, doc, getDoc, setDoc, updateDoc, where } from 'firebase/firestore';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { Payment, IntegrationsSettings } from '../types';
-import { Loader2, DollarSign, Wallet, AlertCircle, Save, CheckCircle2, PlayCircle, Search, Filter } from 'lucide-react';
-import { format, isThisMonth, isPast } from 'date-fns';
+import { Loader2, DollarSign, Wallet, AlertCircle, Save, CheckCircle2, PlayCircle, Search, Filter, BarChart3, Users as UsersIcon, TrendingUp } from 'lucide-react';
+import { format, isThisMonth, isPast, subMonths } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, Legend } from 'recharts';
 import ConfirmModal from './ConfirmModal';
 import FeedbackModal from './FeedbackModal';
 
 export default function Financial({ profile }: { profile?: any }) {
-  const [activeTab, setActiveTab] = useState<'panel' | 'payments'>(profile?.role === 'student' ? 'payments' : 'panel');
+  const [activeTab, setActiveTab] = useState<'panel' | 'payments' | 'reports'>(profile?.role === 'student' ? 'payments' : 'panel');
   const [payments, setPayments] = useState<Payment[]>([]);
+  const [reportStats, setReportStats] = useState({ totalActiveStudents: 0, totalMRR: 0, averageTicket: 0 });
+  const [chartPeriod, setChartPeriod] = useState<6 | 12>(6);
   const [settings, setSettings] = useState<IntegrationsSettings>({ zapiInstance: '', zapiToken: '' });
   const [loading, setLoading] = useState(true);
   const [savingConfig, setSavingConfig] = useState(false);
@@ -62,6 +65,22 @@ export default function Financial({ profile }: { profile?: any }) {
       const pList: Payment[] = [];
       pSnap.forEach(d => pList.push({ id: d.id, ...d.data() } as Payment));
       setPayments(pList.sort((a, b) => b.createdAt?.toDate().getTime() - a.createdAt?.toDate().getTime()));
+
+      if (profile?.role === 'admin') {
+        const sSnap = await getDocs(query(collection(db, 'students'), where('status', '==', 'active')));
+        let activeCount = 0;
+        let mrr = 0;
+        sSnap.forEach(d => {
+          const data = d.data();
+          activeCount++;
+          mrr += (Number(data.courseValue) || 0);
+        });
+        setReportStats({
+          totalActiveStudents: activeCount,
+          totalMRR: mrr,
+          averageTicket: activeCount > 0 ? mrr / activeCount : 0
+        });
+      }
     } catch (e) {
       console.error(e);
     }
@@ -143,7 +162,34 @@ export default function Financial({ profile }: { profile?: any }) {
   const thisMonthPayments = payments.filter(p => isThisMonth(new Date(p.dueDate + 'T12:00:00')));
   const totalReceived = thisMonthPayments.filter(p => p.status === 'paid').reduce((acc, curr) => acc + curr.amount, 0);
   const totalPending = thisMonthPayments.filter(p => p.status === 'pending').reduce((acc, curr) => acc + curr.amount, 0);
+  const totalExpectedThisMonth = thisMonthPayments.filter(p => p.status !== 'cancelled').reduce((acc, curr) => acc + curr.amount, 0);
   const totalOverdue = payments.filter(p => p.status === 'overdue' || (p.status === 'pending' && isPast(new Date(p.dueDate + 'T12:00:00')))).reduce((acc, curr) => acc + curr.amount, 0);
+
+  const defaultRate = totalExpectedThisMonth > 0 ? (totalOverdue / totalExpectedThisMonth) * 100 : 0;
+
+  const generateChartData = () => {
+    const data = [];
+    const now = new Date();
+    for (let i = chartPeriod - 1; i >= 0; i--) {
+      const targetMonth = subMonths(now, i);
+      const monthStr = format(targetMonth, 'yyyy-MM');
+      const monthPayments = payments.filter(p => p.dueDate.startsWith(monthStr));
+      
+      const esperado = monthPayments.filter(p => p.status !== 'cancelled').reduce((acc, curr) => acc + curr.amount, 0);
+      const recebido = monthPayments.filter(p => p.status === 'paid').reduce((acc, curr) => acc + curr.amount, 0);
+
+      data.push({
+        name: format(targetMonth, 'MMM/yy', { locale: ptBR }).toUpperCase(),
+        Esperado: esperado,
+        Recebido: recebido
+      });
+    }
+    return data;
+  };
+
+  const formatCurrency = (value: number) => {
+    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
+  };
 
   return (
     <div className="space-y-6">
@@ -162,6 +208,13 @@ export default function Financial({ profile }: { profile?: any }) {
           >
             <CheckCircle2 className="w-5 h-5" />
             Todas as Faturas
+          </button>
+          <button 
+            onClick={() => setActiveTab('reports')}
+            className={`px-6 py-3 rounded-2xl text-sm font-bold transition-all flex items-center justify-center gap-2 ${activeTab === 'reports' ? 'bg-zinc-950 text-white shadow-xl shadow-black/10' : 'text-zinc-500 hover:text-black hover:bg-zinc-100'}`}
+          >
+            <BarChart3 className="w-5 h-5" />
+            Relatórios
           </button>
         </div>
       )}
@@ -182,23 +235,131 @@ export default function Financial({ profile }: { profile?: any }) {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div className="bg-emerald-50 rounded-[32px] p-8 border border-emerald-100 flex flex-col items-center justify-center text-center">
               <span className="text-emerald-600 font-semibold mb-2 text-sm tracking-widest uppercase">Recebido este Mês</span>
-            <span className="text-4xl font-black text-emerald-950">
-              {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalReceived)}
-            </span>
-          </div>
-          <div className="bg-orange-50 rounded-[32px] p-8 border border-orange-100 flex flex-col items-center justify-center text-center">
-            <span className="text-orange-600 font-semibold mb-2 text-sm tracking-widest uppercase">Pendente este Mês</span>
-            <span className="text-4xl font-black text-orange-950">
-              {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalPending)}
-            </span>
-          </div>
-          <div className="bg-red-50 rounded-[32px] p-8 border border-red-100 flex flex-col items-center justify-center text-center">
-            <span className="text-red-600 font-semibold mb-2 text-sm tracking-widest uppercase">Atrasado (Geral)</span>
-            <span className="text-4xl font-black text-red-950">
-              {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalOverdue)}
-            </span>
+              <span className="text-4xl font-black text-emerald-950">
+                {formatCurrency(totalReceived)}
+              </span>
+            </div>
+            <div className="bg-orange-50 rounded-[32px] p-8 border border-orange-100 flex flex-col items-center justify-center text-center">
+              <span className="text-orange-600 font-semibold mb-2 text-sm tracking-widest uppercase">Pendente este Mês</span>
+              <span className="text-4xl font-black text-orange-950">
+                {formatCurrency(totalPending)}
+              </span>
+            </div>
+            <div className="bg-red-50 rounded-[32px] p-8 border border-red-100 flex flex-col items-center justify-center text-center">
+              <span className="text-red-600 font-semibold mb-2 text-sm tracking-widest uppercase">Atrasado (Geral)</span>
+              <span className="text-4xl font-black text-red-950">
+                {formatCurrency(totalOverdue)}
+              </span>
+            </div>
           </div>
         </div>
+      )}
+
+      {activeTab === 'reports' && profile?.role !== 'student' && (
+        <div className="space-y-6">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="bg-white rounded-3xl p-6 ring-1 ring-zinc-950/5 shadow-sm">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 rounded-xl bg-orange-100 text-orange-600 flex items-center justify-center">
+                  <UsersIcon className="w-5 h-5" />
+                </div>
+                <h3 className="font-bold text-zinc-500 text-sm">Alunos Ativos</h3>
+              </div>
+              <p className="text-3xl font-black text-zinc-900">{reportStats.totalActiveStudents}</p>
+            </div>
+            
+            <div className="bg-white rounded-3xl p-6 ring-1 ring-zinc-950/5 shadow-sm">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-600 flex items-center justify-center">
+                  <TrendingUp className="w-5 h-5" />
+                </div>
+                <h3 className="font-bold text-zinc-500 text-sm">MRR (Recorrente)</h3>
+              </div>
+              <p className="text-3xl font-black text-zinc-900">{formatCurrency(reportStats.totalMRR)}</p>
+            </div>
+
+            <div className="bg-white rounded-3xl p-6 ring-1 ring-zinc-950/5 shadow-sm">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 rounded-xl bg-blue-100 text-blue-600 flex items-center justify-center">
+                  <DollarSign className="w-5 h-5" />
+                </div>
+                <h3 className="font-bold text-zinc-500 text-sm">Ticket Médio</h3>
+              </div>
+              <p className="text-3xl font-black text-zinc-900">{formatCurrency(reportStats.averageTicket)}</p>
+            </div>
+
+            <div className="bg-white rounded-3xl p-6 ring-1 ring-zinc-950/5 shadow-sm">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 rounded-xl bg-red-100 text-red-600 flex items-center justify-center">
+                  <AlertCircle className="w-5 h-5" />
+                </div>
+                <h3 className="font-bold text-zinc-500 text-sm">Inadimplência</h3>
+              </div>
+              <p className="text-3xl font-black text-zinc-900">{defaultRate.toFixed(1)}%</p>
+              <p className="text-xs text-zinc-400 mt-1">do faturamento deste mês</p>
+            </div>
+          </div>
+
+          <div className="bg-white p-6 rounded-[32px] ring-1 ring-zinc-950/5 shadow-xl">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8 gap-4">
+              <div>
+                <h2 className="text-xl font-bold display-font text-zinc-900">Evolução do Faturamento</h2>
+                <p className="text-sm text-zinc-500">Comparativo do que era esperado vs o que foi pago.</p>
+              </div>
+              <div className="bg-zinc-100 p-1 rounded-xl flex">
+                <button
+                  onClick={() => setChartPeriod(6)}
+                  className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${chartPeriod === 6 ? 'bg-white text-black shadow-sm' : 'text-zinc-500 hover:text-black'}`}
+                >
+                  6 Meses
+                </button>
+                <button
+                  onClick={() => setChartPeriod(12)}
+                  className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${chartPeriod === 12 ? 'bg-white text-black shadow-sm' : 'text-zinc-500 hover:text-black'}`}
+                >
+                  12 Meses
+                </button>
+              </div>
+            </div>
+
+            <div className="h-96 w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={generateChartData()} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="colorRecebido" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
+                      <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                    </linearGradient>
+                    <linearGradient id="colorEsperado" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#f97316" stopOpacity={0.1}/>
+                      <stop offset="95%" stopColor="#f97316" stopOpacity={0}/>
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f4f4f5" />
+                  <XAxis 
+                    dataKey="name" 
+                    axisLine={false} 
+                    tickLine={false} 
+                    tick={{ fill: '#71717a', fontSize: 12, fontWeight: 600 }}
+                    dy={10}
+                  />
+                  <YAxis 
+                    axisLine={false} 
+                    tickLine={false} 
+                    tick={{ fill: '#71717a', fontSize: 12 }}
+                    tickFormatter={(value) => `R$ ${value}`}
+                  />
+                  <RechartsTooltip 
+                    formatter={(value: number) => [formatCurrency(value), '']}
+                    contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1)', fontWeight: 'bold' }}
+                  />
+                  <Legend verticalAlign="top" height={36} iconType="circle" wrapperStyle={{ fontWeight: 600, fontSize: '13px', paddingTop: '10px' }} />
+                  <Area type="monotone" dataKey="Esperado" stroke="#f97316" strokeWidth={3} fillOpacity={1} fill="url(#colorEsperado)" />
+                  <Area type="monotone" dataKey="Recebido" stroke="#10b981" strokeWidth={3} fillOpacity={1} fill="url(#colorRecebido)" />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
         </div>
       )}
 
@@ -276,7 +437,7 @@ export default function Financial({ profile }: { profile?: any }) {
                   <tr key={payment.id} className="hover:bg-zinc-50 transition-colors">
                     <td className="py-4 px-6 font-medium text-sm">{payment.studentName}</td>
                     <td className="py-4 px-6 font-bold text-sm text-black">
-                      {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(payment.amount)}
+                      {formatCurrency(payment.amount)}
                     </td>
                     <td className="py-4 px-6 text-sm">
                       {format(new Date(payment.dueDate + 'T12:00:00'), "dd/MM/yyyy", { locale: ptBR })}

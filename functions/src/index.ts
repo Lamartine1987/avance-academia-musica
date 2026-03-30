@@ -1056,3 +1056,67 @@ export const notifyNewMaterial = functions.https.onCall(async (data, context) =>
   await Promise.all(studentPromises);
   return { success: true };
 });
+
+export const notifyTrialLesson = functions.https.onCall(async (data, context) => {
+  if (!context.auth) throw new functions.https.HttpsError('unauthenticated', 'Acesso negado');
+
+  const { lessonId } = data;
+  if (!lessonId) throw new functions.https.HttpsError('invalid-argument', 'lessonId é obrigatório');
+
+  const lessonDoc = await db.collection('lessons').doc(lessonId).get();
+  if (!lessonDoc.exists) throw new functions.https.HttpsError('not-found', 'Aula não encontrada');
+
+  const lessonData = lessonDoc.data()!;
+  if (!lessonData.isTrial) return { success: false, reason: 'Não é aula teste' };
+
+  // Settings
+  const settingsSnap = await db.collection('settings').doc('integrations').get();
+  const settings = settingsSnap.exists ? settingsSnap.data() : null;
+  if (!settings?.zapiInstance || !settings?.zapiToken) {
+    return { success: false, reason: 'Z-API não configurada' };
+  }
+
+  const teacherDoc = await db.collection('teachers').doc(lessonData.teacherId).get();
+  if (!teacherDoc.exists) throw new functions.https.HttpsError('not-found', 'Professor não encontrado');
+  
+  const teacherData = teacherDoc.data()!;
+  const teacherName = teacherData.name;
+  const teacherPhone = teacherData.phone;
+  
+  const studentName = lessonData.studentName || 'Prospecto';
+  const studentPhone = lessonData.studentPhone;
+  const instrument = lessonData.instrument || 'Instrumento';
+  
+  // Format Date and Time
+  const lessonDate = lessonData.startTime.toDate();
+  const dateStr = lessonDate.toLocaleDateString('pt-BR');
+  const timeStr = lessonDate.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+
+  const notificationPromises = [];
+  const url = `https://api.z-api.io/instances/${settings.zapiInstance}/token/${settings.zapiToken}/send-text`;
+  const headers: any = { 'Content-Type': 'application/json' };
+  if (settings.zapiSecurityToken) headers['Client-Token'] = settings.zapiSecurityToken;
+
+  // Notify Teacher
+  if (teacherPhone) {
+    const tPhone = teacherPhone.replace(/\D/g, '');
+    const tNum = tPhone.length <= 11 ? `55${tPhone}` : tPhone;
+    const msgTeacher = `🔔 *Aviso do Sistema Avance*\n\nOlá, *${teacherName.split(' ')[0]}*! Uma nova *Aula Teste* de ${instrument} foi agendada para você com o(a) aluno(a) prospecto *${studentName}* no dia *${dateStr} às ${timeStr}*.`;
+    
+    const promise = fetch(url, { method: 'POST', headers, body: JSON.stringify({ phone: tNum, message: msgTeacher }) }).catch(e => console.error(e));
+    notificationPromises.push(promise);
+  }
+
+  // Notify Student
+  if (studentPhone) {
+    const sPhone = studentPhone.replace(/\D/g, '');
+    const sNum = sPhone.length <= 11 ? `55${sPhone}` : sPhone;
+    const msgStudent = `🔔 *Aviso do Sistema Avance*\n\nOlá, ${studentName.split(' ')[0]}! Sua aula experimental de *${instrument}* foi confirmada para o dia *${dateStr} às ${timeStr}* com o professor *${teacherName}*.\n\nQualquer dúvida, estamos à disposição!`;
+    
+    const promise = fetch(url, { method: 'POST', headers, body: JSON.stringify({ phone: sNum, message: msgStudent }) }).catch(e => console.error(e));
+    notificationPromises.push(promise);
+  }
+
+  await Promise.all(notificationPromises);
+  return { success: true };
+});

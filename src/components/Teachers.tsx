@@ -25,6 +25,7 @@ export default function Teachers({ profile }: { profile: UserProfile }) {
     bio: '',
     phone: '',
     role: 'teacher' as 'teacher' | 'admin',
+    isTeacher: true as boolean,
     maxStudents: undefined as number | undefined
   });
 
@@ -51,7 +52,7 @@ export default function Teachers({ profile }: { profile: UserProfile }) {
 
   const handleAddTeacher = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (newTeacher.role === 'teacher' && newTeacher.instruments.length === 0) {
+    if (newTeacher.isTeacher && newTeacher.instruments.length === 0) {
       alert('Selecione pelo menos um instrumento para o professor.');
       return;
     }
@@ -67,9 +68,10 @@ export default function Teachers({ profile }: { profile: UserProfile }) {
           name: newTeacher.name,
           email: newTeacher.email,
           phone: newTeacher.phone,
-          instruments: newTeacher.instruments,
+          instruments: newTeacher.isTeacher ? newTeacher.instruments : [],
           bio: newTeacher.bio,
-          role: newTeacher.role
+          role: newTeacher.role,
+          isTeacher: newTeacher.isTeacher
         });
 
         // Update user document if it exists
@@ -97,9 +99,10 @@ export default function Teachers({ profile }: { profile: UserProfile }) {
           name: newTeacher.name,
           email: newTeacher.email,
           phone: newTeacher.phone,
-          instruments: newTeacher.instruments,
+          instruments: newTeacher.isTeacher ? newTeacher.instruments : [],
           bio: newTeacher.bio,
           role: newTeacher.role,
+          isTeacher: newTeacher.isTeacher,
           createdAt: serverTimestamp()
         });
 
@@ -115,7 +118,7 @@ export default function Teachers({ profile }: { profile: UserProfile }) {
       }
       setIsModalOpen(false);
       setEditingTeacherId(null);
-      setNewTeacher({ name: '', email: '', password: '', phone: '', instruments: [], bio: '', role: 'teacher' });
+      setNewTeacher({ name: '', email: '', password: '', phone: '', instruments: [], bio: '', role: 'teacher', isTeacher: true });
     } catch (error: any) {
       if (error && error.code && error.code.startsWith('auth/')) {
         let msg = 'Erro ao criar credenciais de acesso.';
@@ -136,14 +139,22 @@ export default function Teachers({ profile }: { profile: UserProfile }) {
 
   const handleEditTeacher = (teacher: Teacher) => {
     setEditingTeacherId(teacher.id);
+
+    let initialIsTeacher = true;
+    if (teacher.isTeacher === false) initialIsTeacher = false;
+    else if (teacher.role === 'admin' && (!teacher.instruments || teacher.instruments.length === 0) && teacher.isTeacher === undefined) {
+      initialIsTeacher = false; 
+    }
+
     setNewTeacher({
       name: teacher.name,
       email: teacher.email || '',
       password: '',
       phone: teacher.phone || '',
-      instruments: teacher.instruments,
+      instruments: teacher.instruments || [],
       bio: teacher.bio || '',
       role: teacher.role || 'teacher',
+      isTeacher: initialIsTeacher,
       maxStudents: teacher.maxStudents
     });
     setIsModalOpen(true);
@@ -151,7 +162,7 @@ export default function Teachers({ profile }: { profile: UserProfile }) {
 
   const openAddModal = () => {
     setEditingTeacherId(null);
-    setNewTeacher({ name: '', email: '', password: '', phone: '', instruments: [], bio: '', role: 'teacher', maxStudents: undefined });
+    setNewTeacher({ name: '', email: '', password: '', phone: '', instruments: [], bio: '', role: 'teacher', isTeacher: true, maxStudents: undefined });
     setIsModalOpen(true);
   };
 
@@ -225,13 +236,20 @@ export default function Teachers({ profile }: { profile: UserProfile }) {
               <Music className="w-8 h-8 text-zinc-400" />
             </div>
             <h3 className="text-lg font-bold text-black display-font">{teacher.name}</h3>
-            {teacher.role === 'admin' && (
-              <span className="bg-black text-white text-[10px] uppercase tracking-wider px-2 py-1 rounded-full mb-2 font-semibold">
-                Administrador
-              </span>
-            )}
+            <div className="flex flex-wrap items-center justify-center gap-1.5 mb-2">
+              {teacher.role === 'admin' && (
+                <span className="bg-black text-white text-[10px] uppercase tracking-wider px-2 py-1 rounded-full font-semibold">
+                  Admin
+                </span>
+              )}
+              {teacher.isTeacher !== false && (
+                <span className="bg-orange-100 text-orange-700 text-[10px] uppercase tracking-wider px-2 py-1 rounded-full font-semibold">
+                  Professor
+                </span>
+              )}
+            </div>
             <p className="text-orange-500 text-sm font-medium mb-4">
-              {teacher.instruments.length > 0 ? teacher.instruments.join(', ') : 'Equipe Administrativa'}
+              {teacher.isTeacher !== false ? (teacher.instruments?.length > 0 ? teacher.instruments.join(', ') : 'Nenhum instrumento') : 'Equipe Administrativa'}
             </p>
             <p className="text-zinc-500 text-xs line-clamp-2 mb-6">{teacher.bio || 'Sem biografia disponível.'}</p>
             <button className="w-full py-3 bg-zinc-50 text-black rounded-2xl text-sm font-bold hover:bg-zinc-100 transition-all">
@@ -310,69 +328,84 @@ export default function Teachers({ profile }: { profile: UserProfile }) {
                 </div>
               )}
               <div>
-                <label className="block text-sm font-medium text-zinc-700 mb-2">Nível de Acesso</label>
-                <div className="flex gap-4">
+                <label className="block text-sm font-medium text-zinc-700 mb-2">Nível de Acesso e Perfil</label>
+                <div className="flex flex-col gap-3">
                   <label className="flex items-center gap-2 cursor-pointer">
                     <input 
                       type="radio" 
-                      name="role" 
-                      value="teacher"
-                      checked={newTeacher.role === 'teacher'}
-                      onChange={() => setNewTeacher({...newTeacher, role: 'teacher'})}
+                      name="accountType" 
+                      value="teacher_only"
+                      checked={newTeacher.role === 'teacher' && newTeacher.isTeacher !== false}
+                      onChange={() => setNewTeacher({...newTeacher, role: 'teacher', isTeacher: true})}
                       className="text-orange-500 focus:ring-orange-500"
                     />
-                    <span className="text-sm text-zinc-700 font-medium">Professor</span>
+                    <span className="text-sm text-zinc-700 font-medium">Somente Professor (Acesso restrito à própria agenda)</span>
                   </label>
                   <label className="flex items-center gap-2 cursor-pointer">
                     <input 
                       type="radio" 
-                      name="role" 
-                      value="admin"
-                      checked={newTeacher.role === 'admin'}
-                      onChange={() => setNewTeacher({...newTeacher, role: 'admin'})}
+                      name="accountType" 
+                      value="admin_teacher"
+                      checked={newTeacher.role === 'admin' && newTeacher.isTeacher !== false}
+                      onChange={() => setNewTeacher({...newTeacher, role: 'admin', isTeacher: true})}
                       className="text-orange-500 focus:ring-orange-500"
                     />
-                    <span className="text-sm text-zinc-700 font-medium">Administrador</span>
+                    <span className="text-sm text-zinc-700 font-medium">Professor e Administrador (Dá aulas + Acesso total ao sistema)</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input 
+                      type="radio" 
+                      name="accountType" 
+                      value="admin_only"
+                      checked={newTeacher.role === 'admin' && newTeacher.isTeacher === false}
+                      onChange={() => setNewTeacher({...newTeacher, role: 'admin', isTeacher: false})}
+                      className="text-orange-500 focus:ring-orange-500"
+                    />
+                    <span className="text-sm text-zinc-700 font-medium">Somente Administrador (Não dá aulas, acesso total)</span>
                   </label>
                 </div>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-zinc-700 mb-2">Lotação Máxima por Horário (Opcional)</label>
-                <input 
-                  type="number" 
-                  min="1"
-                  value={newTeacher.maxStudents || ''}
-                  onChange={e => setNewTeacher({...newTeacher, maxStudents: e.target.value ? parseInt(e.target.value) : undefined})}
-                  className="w-full bg-zinc-50 border border-zinc-100 rounded-2xl px-6 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 transition-all"
-                  placeholder="Ex: 2 (Padrão da escola)"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-zinc-700 mb-4">
-                  Instrumentos que Ensina {newTeacher.role === 'admin' && <span className="text-xs text-zinc-400 font-normal ml-1">(Opcional para a sua função)</span>}
-                </label>
-                <div className="flex flex-wrap gap-2 max-h-40 overflow-y-auto p-1">
-                  {instruments.map(instrument => (
-                    <button
-                      key={instrument.id}
-                      type="button"
-                      onClick={() => toggleInstrument(instrument.name)}
-                      className={cn(
-                        "px-4 py-2 rounded-xl text-xs font-bold transition-all border flex items-center gap-2",
-                        newTeacher.instruments.includes(instrument.name)
-                          ? "bg-orange-500 text-white border-orange-500"
-                          : "bg-white text-zinc-500 border-zinc-100 hover:border-zinc-300"
+              {newTeacher.isTeacher && (
+                <>
+                  <div>
+                    <label className="block text-sm font-medium text-zinc-700 mb-2">Lotação Máxima por Horário (Opcional)</label>
+                    <input 
+                      type="number" 
+                      min="1"
+                      value={newTeacher.maxStudents || ''}
+                      onChange={e => setNewTeacher({...newTeacher, maxStudents: e.target.value ? parseInt(e.target.value) : undefined})}
+                      className="w-full bg-zinc-50 border border-zinc-100 rounded-2xl px-6 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 transition-all"
+                      placeholder="Ex: 2 (Padrão da escola)"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-zinc-700 mb-4">
+                      Instrumentos que Ensina
+                    </label>
+                    <div className="flex flex-wrap gap-2 max-h-40 overflow-y-auto p-1">
+                      {instruments.map(instrument => (
+                        <button
+                          key={instrument.id}
+                          type="button"
+                          onClick={() => toggleInstrument(instrument.name)}
+                          className={cn(
+                            "px-4 py-2 rounded-xl text-xs font-bold transition-all border flex items-center gap-2",
+                            newTeacher.instruments.includes(instrument.name)
+                              ? "bg-orange-500 text-white border-orange-500"
+                              : "bg-white text-zinc-500 border-zinc-100 hover:border-zinc-300"
+                          )}
+                        >
+                          {newTeacher.instruments.includes(instrument.name) && <Check className="w-3 h-3" />}
+                          {instrument.name}
+                        </button>
+                      ))}
+                      {instruments.length === 0 && (
+                        <p className="text-xs text-zinc-400 italic">Cadastre instrumentos na aba "Instrumentos" primeiro.</p>
                       )}
-                    >
-                      {newTeacher.instruments.includes(instrument.name) && <Check className="w-3 h-3" />}
-                      {instrument.name}
-                    </button>
-                  ))}
-                  {instruments.length === 0 && (
-                    <p className="text-xs text-zinc-400 italic">Cadastre instrumentos na aba "Instrumentos" primeiro.</p>
-                  )}
-                </div>
-              </div>
+                    </div>
+                  </div>
+                </>
+              )}
               <div>
                 <label className="block text-sm font-medium text-zinc-700 mb-2">Biografia</label>
                 <textarea 

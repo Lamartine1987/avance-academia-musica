@@ -136,25 +136,29 @@ service cloud.firestore {
     }
 
     function isValidTeacher(data) {
-      return hasOnlyAllowedFields(['name', 'email', 'phone', 'instruments', 'bio', 'role', 'maxStudents', 'createdAt']) &&
+      return hasOnlyAllowedFields(['name', 'email', 'phone', 'instruments', 'bio', 'role', 'isTeacher', 'maxStudents', 'createdAt']) &&
              data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
              (!('email' in data) || isValidEmail(data.email)) &&
              (!('phone' in data) || data.phone is string) &&
              (!('instruments' in data) || data.instruments is list) &&
              (!('bio' in data) || data.bio is string) &&
              (!('role' in data) || data.role in ['admin', 'teacher']) &&
+             (!('isTeacher' in data) || data.isTeacher is bool) &&
              (!('maxStudents' in data) || data.maxStudents is number) &&
              (!('createdAt' in data) || data.createdAt is timestamp);
     }
 
     function isValidLesson(data) {
-      return hasOnlyAllowedFields(['studentId', 'teacherId', 'instrument', 'startTime', 'endTime', 'status', 'notes', 'createdAt', 'isMakeup', 'absenceId']) &&
+      return hasOnlyAllowedFields(['studentId', 'teacherId', 'instrument', 'startTime', 'endTime', 'status', 'notes', 'createdAt', 'isMakeup', 'absenceId', 'isTrial', 'studentName', 'studentPhone']) &&
              data.studentId is string && data.teacherId is string && data.instrument is string &&
              data.startTime is timestamp && data.endTime is timestamp &&
              (!('status' in data) || data.status in ['scheduled', 'completed', 'cancelled', 'needs_reschedule', 'rescheduled']) &&
              (!('notes' in data) || data.notes is string) &&
              (!('isMakeup' in data) || data.isMakeup is bool) &&
              (!('absenceId' in data) || data.absenceId is string) &&
+             (!('isTrial' in data) || data.isTrial is bool) &&
+             (!('studentName' in data) || data.studentName is string) &&
+             (!('studentPhone' in data) || data.studentPhone is string) &&
              (!('createdAt' in data) || data.createdAt is timestamp);
     }
 

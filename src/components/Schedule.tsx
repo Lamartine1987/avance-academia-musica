@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { collection, onSnapshot, addDoc, Timestamp, query, orderBy, getDocs, where, serverTimestamp, setDoc, doc, deleteDoc, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
-import { UserProfile, Lesson, Student, Teacher, BlockedTime, IntegrationsSettings } from '../types';
+import { UserProfile, Lesson, Student, Teacher, BlockedTime, IntegrationsSettings, Instrument } from '../types';
 import { handleFirestoreError, OperationType } from '../lib/error-handler';
 import { Plus, X, Clock, User, Music, RefreshCw, CheckCircle2, LayoutGrid, List as ListIcon, ChevronLeft, ChevronRight, Settings, AlertCircle, Trash2, CalendarDays, FileText, Star } from 'lucide-react';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, getDay, setHours, setMinutes, isAfter, isSameDay, startOfWeek, addDays, subWeeks, addWeeks, addYears } from 'date-fns';
@@ -17,6 +17,7 @@ export default function Schedule({ profile }: { profile: UserProfile }) {
   const [blockedTimes, setBlockedTimes] = useState<BlockedTime[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
   const [teachers, setTeachers] = useState<Teacher[]>([]);
+  const [instruments, setInstruments] = useState<Instrument[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isBlockModalOpen, setIsBlockModalOpen] = useState(false);
   
@@ -38,6 +39,8 @@ export default function Schedule({ profile }: { profile: UserProfile }) {
   const [blockingSlot, setBlockingSlot] = useState<{ date: Date, time: string, teacherId?: string } | null>(null);
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
   const [blockedTimeToConfirm, setBlockedTimeToConfirm] = useState<string | null>(null);
+  const [isDeleteLessonConfirmOpen, setIsDeleteLessonConfirmOpen] = useState(false);
+  const [lessonToDelete, setLessonToDelete] = useState<Lesson | null>(null);
   const [pendingRejections, setPendingRejections] = useState(0);
   const [isSyncing, setIsSyncing] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -59,7 +62,11 @@ export default function Schedule({ profile }: { profile: UserProfile }) {
     teacherId: '',
     date: format(new Date(), 'yyyy-MM-dd'),
     time: '09:00',
-    duration: '60'
+    duration: '60',
+    isTrial: false,
+    studentName: '',
+    studentPhone: '',
+    instrument: ''
   });
   const [newBlockedTime, setNewBlockedTime] = useState({
     date: format(new Date(), 'yyyy-MM-dd'),
@@ -92,6 +99,10 @@ export default function Schedule({ profile }: { profile: UserProfile }) {
 
     const unsubscribeTeachers = onSnapshot(collection(db, 'teachers'), (snapshot) => {
       setTeachers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Teacher)));
+    });
+
+    const unsubscribeInstruments = onSnapshot(collection(db, 'instruments'), (snapshot) => {
+      setInstruments(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Instrument)));
     });
 
     const unsubscribeSettings = onSnapshot(doc(db, 'settings', 'school'), (snapshot) => {
@@ -132,6 +143,7 @@ export default function Schedule({ profile }: { profile: UserProfile }) {
       unsubscribeLessons();
       unsubscribeStudents();
       unsubscribeTeachers();
+      unsubscribeInstruments();
       unsubscribeSettings();
       unsubscribeBlockedTimes();
       unsubscribeRejections();
@@ -283,17 +295,54 @@ export default function Schedule({ profile }: { profile: UserProfile }) {
       const student = students.find(s => s.id === newLesson.studentId);
       const enrollment = student?.enrollments.find(e => e.teacherId === newLesson.teacherId);
 
-      await addDoc(collection(db, 'lessons'), {
-        studentId: newLesson.studentId,
+      const lessonData: any = {
+        studentId: newLesson.isTrial ? 'trial' : newLesson.studentId,
         teacherId: newLesson.teacherId,
-        instrument: enrollment?.instrument || 'Instrumento',
+        instrument: newLesson.isTrial ? newLesson.instrument : (enrollment?.instrument || 'Instrumento'),
         startTime: Timestamp.fromDate(start),
         endTime: Timestamp.fromDate(end),
         status: 'scheduled',
         createdAt: Timestamp.now()
-      });
+      };
+      
+      if (newLesson.isTrial) {
+        lessonData.isTrial = true;
+        lessonData.studentName = newLesson.studentName;
+        lessonData.studentPhone = newLesson.studentPhone;
+      }
+
+      const docRef = await addDoc(collection(db, 'lessons'), lessonData);
+      
       setIsModalOpen(false);
       setFormError(null);
+
+      if (newLesson.isTrial) {
+        try {
+          const fn = httpsCallable(getFunctions(), 'notifyTrialLesson');
+          await fn({ lessonId: docRef.id });
+          setFeedback({
+            isOpen: true,
+            type: 'success',
+            title: 'Aula agendada!',
+            message: 'Aula teste marcada e as mensagens enviadas.'
+          });
+        } catch (e) {
+          console.error('Erro ao notificar aula teste:', e);
+          setFeedback({
+            isOpen: true,
+            type: 'warning',
+            title: 'Erro de Notificação',
+            message: 'A aula teste foi cadastrada, mas não foi possível enviar as mensagens no WhatsApp.'
+          });
+        }
+      } else {
+        setFeedback({
+          isOpen: true,
+          type: 'success',
+          title: 'Aula agendada!',
+          message: 'Processo concluído com êxito.'
+        });
+      }
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, 'lessons');
     }
@@ -386,7 +435,28 @@ export default function Schedule({ profile }: { profile: UserProfile }) {
     }
   };
 
-  const getStudentName = (id: string) => students.find(s => s.id === id)?.name || 'Desconhecido';
+  const confirmDeleteLesson = async () => {
+    if (!lessonToDelete) return;
+    try {
+      await deleteDoc(doc(db, 'lessons', lessonToDelete.id));
+      setLessonToDelete(null);
+      setIsDeleteLessonConfirmOpen(false);
+      setIsLessonLogModalOpen(false);
+      setFeedback({
+        isOpen: true,
+        type: 'success',
+        title: 'Aula excluída',
+        message: 'A aula foi apagada da agenda com sucesso.'
+      });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, `lessons/${lessonToDelete.id}`);
+    }
+  };
+
+  const getStudentName = (id: string, lesson?: Lesson) => {
+    if (lesson?.isTrial) return lesson.studentName || 'Prospecto';
+    return students.find(s => s.id === id)?.name || 'Desconhecido';
+  };
   const getTeacherName = (id: string) => teachers.find(t => t.id === id)?.name || 'Desconhecido';
 
   const filteredLessons = lessons.filter(l => {
@@ -394,7 +464,7 @@ export default function Schedule({ profile }: { profile: UserProfile }) {
       return teacherId ? l.teacherId === teacherId : false;
     }
     return filterTeacherId === 'all' || l.teacherId === filterTeacherId;
-  });
+  }).sort((a, b) => getStudentName(a.studentId, a).localeCompare(getStudentName(b.studentId, b)));
 
   const getBlockedTimesForSlot = (day: Date, time: string, tId?: string) => {
     const [hours, minutes] = time.split(':').map(Number);
@@ -681,7 +751,7 @@ export default function Schedule({ profile }: { profile: UserProfile }) {
               className="bg-white border border-zinc-100 rounded-2xl px-4 py-2 text-xs font-medium focus:outline-none shadow-sm min-w-[150px]"
             >
               <option value="all">Todos os Professores</option>
-              {teachers.map(t => (
+              {teachers.filter(t => t.isTeacher !== false).map(t => (
                 <option key={t.id} value={t.id}>{t.name}</option>
               ))}
             </select>
@@ -838,7 +908,8 @@ export default function Schedule({ profile }: { profile: UserProfile }) {
                       <div>
                         <p className="text-xs text-zinc-400 uppercase tracking-wider font-medium">Aluno</p>
                         <p className="font-bold text-black flex items-center gap-1">
-                          {getStudentName(lesson.studentId)}
+                          {getStudentName(lesson.studentId, lesson)}
+                          {lesson.isTrial && <span className="ml-1 text-[10px] bg-orange-100 text-orange-600 px-1.5 py-0.5 rounded-full font-bold">AULA TESTE</span>}
                           {needsEvaluation && <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-500 animate-pulse" title="Avaliação de Nivelamento Recomendada" />}
                           <span className="ml-2 text-xs text-zinc-400 font-normal">
                             ({lesson.instrument || 'N/A'})
@@ -993,7 +1064,8 @@ export default function Schedule({ profile }: { profile: UserProfile }) {
                               >
                                 <div className="flex items-center justify-between gap-1">
                                   <p className="font-bold truncate flex items-center gap-1">
-                                    {getStudentName(lesson.studentId)}
+                                    {getStudentName(lesson.studentId, lesson)}
+                                    {lesson.isTrial && <span className="text-[9px] bg-orange-100 text-orange-600 px-1 py-0.5 rounded uppercase font-bold tracking-tight">Teste</span>}
                                     {needsEvaluation && !['cancelled', 'rescheduled'].includes(lesson.status) && <Star className="w-2.5 h-2.5 text-amber-500 fill-amber-500 animate-pulse shrink-0" title="Ciclo Fechado: Avaliar Aluno" />}
                                   </p>
                                   <div className="flex items-center gap-1">
@@ -1121,7 +1193,8 @@ export default function Schedule({ profile }: { profile: UserProfile }) {
                                   >
                                     <div className="flex items-center justify-between gap-1">
                                       <p className="font-bold truncate flex items-center gap-1">
-                                        {getStudentName(lesson.studentId)}
+                                        {getStudentName(lesson.studentId, lesson)}
+                                        {lesson.isTrial && <span className="text-[9px] bg-orange-100 text-orange-600 px-1 py-0.5 rounded uppercase font-bold tracking-tight">Teste</span>}
                                         {needsEvaluation && !['cancelled', 'rescheduled'].includes(lesson.status) && <Star className="w-2.5 h-2.5 text-amber-500 fill-amber-500 animate-pulse shrink-0" title="Ciclo Fechado: Avaliar Aluno" />}
                                       </p>
                                       <div className="flex items-center gap-1">
@@ -1255,34 +1328,96 @@ export default function Schedule({ profile }: { profile: UserProfile }) {
                   {formError}
                 </div>
               )}
-              <div>
-                <label className="block text-sm font-medium text-zinc-700 mb-2">Aluno</label>
-                <select 
-                  required
-                  value={newLesson.studentId}
-                  onChange={e => {
-                    const selectedStudentId = e.target.value;
-                    const student = students.find(s => s.id === selectedStudentId);
-                    let autoTeacherId = newLesson.teacherId;
-                    
-                    if (student && student.enrollments && student.enrollments.length > 0) {
-                      autoTeacherId = student.enrollments[0].teacherId;
-                    }
-                    
-                    setNewLesson({
-                      ...newLesson, 
-                      studentId: selectedStudentId,
-                      teacherId: autoTeacherId
-                    });
-                  }}
-                  className="w-full bg-zinc-50 border border-zinc-100 rounded-2xl px-6 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 transition-all"
-                >
-                  <option value="">Selecione um aluno</option>
-                  {students.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                </select>
+              <div className="flex items-center gap-3 p-3 bg-zinc-50 rounded-2xl border border-zinc-100">
+                <input
+                  type="checkbox"
+                  id="isTrialToggle"
+                  checked={newLesson.isTrial}
+                  onChange={(e) => setNewLesson({ ...newLesson, isTrial: e.target.checked, studentId: e.target.checked ? 'trial' : '', studentName: '', studentPhone: '', instrument: '' })}
+                  className="w-5 h-5 rounded border-zinc-300 text-orange-500 focus:ring-orange-500"
+                />
+                <label htmlFor="isTrialToggle" className="text-sm font-medium text-zinc-700 cursor-pointer select-none">
+                  Marcar como Aula Teste (Novo Aluno)
+                </label>
               </div>
+
+              {!newLesson.isTrial ? (
+                <div>
+                  <label className="block text-sm font-medium text-zinc-700 mb-2">Aluno da Base</label>
+                  <select 
+                    required={!newLesson.isTrial}
+                    value={newLesson.studentId}
+                    onChange={e => {
+                      const selectedStudentId = e.target.value;
+                      const student = students.find(s => s.id === selectedStudentId);
+                      let autoTeacherId = newLesson.teacherId;
+                      
+                      if (student && student.enrollments && student.enrollments.length > 0) {
+                        autoTeacherId = student.enrollments[0].teacherId;
+                      }
+                      
+                      setNewLesson({
+                        ...newLesson, 
+                        studentId: selectedStudentId,
+                        teacherId: autoTeacherId
+                      });
+                    }}
+                    className="w-full bg-zinc-50 border border-zinc-100 rounded-2xl px-6 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 transition-all"
+                  >
+                    <option value="">Selecione um aluno matriculado</option>
+                    {students.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                  </select>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-zinc-700 mb-2">Nome do Prospecto</label>
+                    <input 
+                      required={newLesson.isTrial}
+                      type="text" 
+                      placeholder="Nome Completo"
+                      value={newLesson.studentName}
+                      onChange={e => setNewLesson({...newLesson, studentName: e.target.value})}
+                      className="w-full bg-zinc-50 border border-zinc-100 rounded-2xl px-6 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 transition-all"
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-zinc-700 mb-2">Telefone</label>
+                      <input 
+                        required={newLesson.isTrial}
+                        type="tel" 
+                        placeholder="(00) 00000-0000"
+                        value={newLesson.studentPhone}
+                        onChange={e => {
+                          const val = e.target.value.replace(/\D/g, '');
+                          const masked = val.replace(/^(\d{2})(\d)/g, '($1) $2').replace(/(\d)(\d{4})$/, '$1-$2').substring(0, 15);
+                          setNewLesson({...newLesson, studentPhone: masked});
+                        }}
+                        className="w-full bg-zinc-50 border border-zinc-100 rounded-2xl px-6 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 transition-all"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-zinc-700 mb-2">Instrumento</label>
+                      <select 
+                        required={newLesson.isTrial}
+                        value={newLesson.instrument}
+                        onChange={e => {
+                          const inst = e.target.value;
+                          setNewLesson(prev => ({ ...prev, instrument: inst, teacherId: '' }));
+                        }}
+                        className="w-full bg-zinc-50 border border-zinc-100 rounded-2xl px-6 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 transition-all"
+                      >
+                        <option value="">Selecione um instrumento</option>
+                        {instruments.map(i => <option key={i.id} value={i.name}>{i.name}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <div>
-                <label className="block text-sm font-medium text-zinc-700 mb-2">Professor</label>
+                <label className="block text-sm font-medium text-zinc-700 mb-2">Professor Responsável</label>
                 <select 
                   required
                   value={newLesson.teacherId}
@@ -1290,7 +1425,13 @@ export default function Schedule({ profile }: { profile: UserProfile }) {
                   className="w-full bg-zinc-50 border border-zinc-100 rounded-2xl px-6 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 transition-all"
                 >
                   <option value="">Selecione um professor</option>
-                  {teachers.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                  {teachers.filter(t => {
+                    if (t.isTeacher === false) return false;
+                    if (newLesson.isTrial && newLesson.instrument) {
+                      return t.instruments?.includes(newLesson.instrument);
+                    }
+                    return true;
+                  }).map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
                 </select>
               </div>
               <div className="grid grid-cols-2 gap-4">
@@ -1349,7 +1490,7 @@ export default function Schedule({ profile }: { profile: UserProfile }) {
                     className="w-full bg-zinc-50 border border-zinc-100 rounded-2xl px-6 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 transition-all"
                   >
                     <option value="all">Todos os Professores (Geral)</option>
-                    {teachers.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                    {teachers.filter(t => t.isTeacher !== false).map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
                   </select>
                 </div>
               )}
@@ -1623,6 +1764,15 @@ export default function Schedule({ profile }: { profile: UserProfile }) {
         message="Tem certeza que deseja remover este bloqueio de horário?"
         confirmText="Remover"
       />
+
+      <ConfirmModal
+        isOpen={isDeleteLessonConfirmOpen}
+        onClose={() => { setIsDeleteLessonConfirmOpen(false); setLessonToDelete(null); }}
+        onConfirm={confirmDeleteLesson}
+        title="Excluir Aula"
+        message="Tem certeza que deseja excluir esta aula? Isso irá apagar todo o registro e apagá-la da agenda permanentemente."
+        confirmText="Excluir Aula"
+      />
     </div>
 
       {/* Lesson Log Modal */}
@@ -1645,7 +1795,10 @@ export default function Schedule({ profile }: { profile: UserProfile }) {
             
             <div className="overflow-y-auto p-5 sm:p-8">
               <div className="bg-zinc-50 p-4 rounded-2xl mb-6 border border-zinc-100 flex flex-col gap-1">
-                <p className="font-bold text-black text-lg">{getStudentName(selectedLessonForLog.studentId)}</p>
+                <p className="font-bold text-black text-lg">
+                  {getStudentName(selectedLessonForLog.studentId, selectedLessonForLog)}
+                  {selectedLessonForLog.isTrial && <span className="ml-2 text-xs bg-orange-100 text-orange-600 px-2 py-0.5 rounded-full font-bold inline-block align-middle">AULA TESTE</span>}
+                </p>
                 <p className="text-sm font-medium text-zinc-500 flex items-center gap-2">
                   <Music className="w-4 h-4" /> {selectedLessonForLog.instrument || 'Instrumento'}
                 </p>
@@ -1679,9 +1832,20 @@ export default function Schedule({ profile }: { profile: UserProfile }) {
 
                 {profile.role !== 'student' && (
                   <div className="pt-4 border-t border-zinc-100 flex gap-3">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setLessonToDelete(selectedLessonForLog);
+                        setIsDeleteLessonConfirmOpen(true);
+                      }}
+                      className="px-6 py-4 rounded-2xl bg-red-50 text-red-500 font-bold hover:bg-red-100 transition-colors shrink-0"
+                      title="Excluir Aula da Agenda"
+                    >
+                      <Trash2 className="w-5 h-5 mx-auto" />
+                    </button>
                     <button 
                       type="submit"
-                      className="w-full bg-gradient-to-r from-orange-500 to-amber-500 text-white py-4 rounded-2xl font-bold hover:from-orange-600 hover:to-amber-600 transition-all shadow-lg shadow-orange-500/25 active:scale-[0.98]"
+                      className="flex-1 bg-gradient-to-r from-orange-500 to-amber-500 text-white py-4 rounded-2xl font-bold hover:from-orange-600 hover:to-amber-600 transition-all shadow-lg shadow-orange-500/25 active:scale-[0.98]"
                     >
                       Salvar Relatório e Concluir Aula
                     </button>

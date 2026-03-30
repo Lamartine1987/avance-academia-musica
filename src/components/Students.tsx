@@ -1036,9 +1036,10 @@ export default function Students({ profile }: { profile: UserProfile }) {
                           >
                             <option value="">Selecione um professor</option>
                             {teachers
-                              .filter(t => !enrollment.instrument || t.instruments.includes(enrollment.instrument))
+                              .filter(t => t.isTeacher !== false)
+                              .filter(t => !enrollment.instrument || (t.instruments && t.instruments.includes(enrollment.instrument)))
                               .map(t => (
-                              <option key={t.id} value={t.id}>{t.name} ({t.instruments.join(', ')})</option>
+                              <option key={t.id} value={t.id}>{t.name} {(t.instruments && t.instruments.length > 0) ? `(${t.instruments.join(', ')})` : ''}</option>
                             ))}
                           </select>
                         </div>

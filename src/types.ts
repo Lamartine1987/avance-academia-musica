@@ -49,6 +49,7 @@ export interface Teacher {
   instruments: string[];
   bio?: string;
   role?: 'admin' | 'teacher';
+  isTeacher?: boolean;
   maxStudents?: number;
   createdAt: any;
 }
@@ -61,7 +62,7 @@ export interface Instrument {
 
 export interface Lesson {
   id: string;
-  studentId: string;
+  studentId: string; // Will store 'trial' for trial lessons
   teacherId: string;
   instrument: string;
   startTime: any;
@@ -69,6 +70,9 @@ export interface Lesson {
   status: 'scheduled' | 'completed' | 'cancelled' | 'needs_reschedule' | 'rescheduled';
   notes?: string;
   isMakeup?: boolean;
+  isTrial?: boolean;
+  studentName?: string;
+  studentPhone?: string;
 }
 
 export interface BlockedTime {
