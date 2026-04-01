@@ -372,7 +372,8 @@ export default function Students({ profile }: { profile: UserProfile }) {
 
         const names = newStudent.name.trim().split(' ').map(n => n.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, ""));
         const firstTwo = names.slice(0, 2).join('.');
-        const generatedEmail = `${firstTwo}@avance.com`;
+        const randomSuffix = Math.floor(100 + Math.random() * 900);
+        const generatedEmail = `${firstTwo}.${randomSuffix}@avance.com`;
         const generatedPassword = '123456';
 
         try {
@@ -445,11 +446,18 @@ export default function Students({ profile }: { profile: UserProfile }) {
                          headers['Client-Token'] = zapiSecurityToken;
                        }
                        
-                       fetch(`https://api.z-api.io/instances/${zapiInstance}/token/${zapiToken}/send-text`, {
+                       const url = zapiToken?.startsWith('http') ? zapiToken : `https://api.z-api.io/instances/${zapiInstance}/token/${zapiToken}/send-text`;
+                       const payload = {
+                         instanceName: zapiInstance,
+                         phone: number,
+                         message: msg
+                       };
+                       
+                       fetch(url, {
                          method: 'POST',
                          headers: headers,
-                         body: JSON.stringify({ phone: number, message: msg })
-                       }).catch(err => console.error("Z-API Welcome Error:", err));
+                         body: JSON.stringify(payload)
+                       }).catch(err => console.error("Welcome Error:", err));
                      }
                   }
                }

@@ -89,7 +89,7 @@ async function runFinancialRoutine() {
                 if (zapiSecurityToken) {
                     headers['Client-Token'] = zapiSecurityToken;
                 }
-                const url = `https://api.z-api.io/instances/${zapiInstance}/token/${zapiToken}/send-text`;
+                const url = (zapiToken === null || zapiToken === void 0 ? void 0 : zapiToken.startsWith('http')) ? zapiToken : `https://api.z-api.io/instances/${zapiInstance}/token/${zapiToken}/send-text`;
                 const response = await fetch(url, {
                     method: 'POST',
                     headers: headers,
@@ -224,7 +224,7 @@ async function runFinancialRoutine() {
 }
 // --- NEW INTELLIGENT RESCHEDULE MODULE ---
 exports.registerTeacherAbsence = functions.https.onCall(async (data, context) => {
-    var _a, _b;
+    var _a, _b, _c;
     if (!context.auth)
         throw new functions.https.HttpsError('unauthenticated', 'Apenas usuários autenticados podem registrar faltas.');
     const { teacherId, startDate, endDate, customSlots, originUrl, reason } = data;
@@ -306,7 +306,7 @@ exports.registerTeacherAbsence = functions.https.onCall(async (data, context) =>
                     msg = `🔔 *Aviso do Sistema Avance*\n\nOlá, ${studentDoc.data().name}! Informamos que o professor *${teacherName}* teve um imprevisto e sua(s) ${lostCount} aula(s) precisaram ser suspensas${reason ? ` pelo seguinte motivo: ${reason}` : ''}. Para não sair no prejuízo, por favor, clique no link seguro abaixo para escolher o melhor horário para sua reposição:\n\n🔗 ${link}`;
                 }
                 console.log(`[ABSENCE] Sending ZAPI to ${phone}`);
-                const url = `https://api.z-api.io/instances/${settings.zapiInstance}/token/${settings.zapiToken}/send-text`;
+                const url = ((_c = settings.zapiToken) === null || _c === void 0 ? void 0 : _c.startsWith('http')) ? settings.zapiToken : `https://api.z-api.io/instances/${settings.zapiInstance}/token/${settings.zapiToken}/send-text`;
                 const headers = { 'Content-Type': 'application/json' };
                 if (settings.zapiSecurityToken)
                     headers['Client-Token'] = settings.zapiSecurityToken;
@@ -361,6 +361,7 @@ exports.getRescheduleData = functions.https.onCall(async (data, context) => {
     };
 });
 exports.confirmReschedule = functions.https.onCall(async (data, context) => {
+    var _a;
     const { token, slotIds } = data;
     if (!token || !slotIds || !Array.isArray(slotIds) || slotIds.length === 0)
         throw new functions.https.HttpsError('invalid-argument', 'Missing token or slotIds');
@@ -446,7 +447,7 @@ exports.confirmReschedule = functions.https.onCall(async (data, context) => {
     });
     const { success, studentName, studentPhone, settings, datesSelected } = txResult;
     if (success && (settings === null || settings === void 0 ? void 0 : settings.zapiInstance) && (settings === null || settings === void 0 ? void 0 : settings.zapiToken)) {
-        const url = `https://api.z-api.io/instances/${settings.zapiInstance}/token/${settings.zapiToken}/send-text`;
+        const url = ((_a = settings.zapiToken) === null || _a === void 0 ? void 0 : _a.startsWith('http')) ? settings.zapiToken : `https://api.z-api.io/instances/${settings.zapiInstance}/token/${settings.zapiToken}/send-text`;
         const headers = { 'Content-Type': 'application/json' };
         if (settings.zapiSecurityToken)
             headers['Client-Token'] = settings.zapiSecurityToken;
@@ -479,6 +480,7 @@ exports.confirmReschedule = functions.https.onCall(async (data, context) => {
     return { success: true };
 });
 exports.rejectRescheduleSlots = functions.https.onCall(async (data, context) => {
+    var _a;
     const { token, observation } = data;
     if (!token)
         throw new functions.https.HttpsError('invalid-argument', 'Token missing');
@@ -520,7 +522,7 @@ exports.rejectRescheduleSlots = functions.https.onCall(async (data, context) => 
     if (success && (settings === null || settings === void 0 ? void 0 : settings.zapiInstance) && (settings === null || settings === void 0 ? void 0 : settings.zapiToken) && (settings === null || settings === void 0 ? void 0 : settings.schoolPhone)) {
         const phone = settings.schoolPhone.replace(/\D/g, '');
         const msg = `🔔 *Aviso do Sistema Avance*\n\nO aluno *${studentName}* informou que NÃO tem disponibilidade nos horários de reposição sugeridos.${observation ? `\n\n*Recado do aluno:* ${observation}` : ''}\n\nAcesse o painel web na aba de Início -> Exceções para fornecer novos horários a este aluno.`;
-        const url = `https://api.z-api.io/instances/${settings.zapiInstance}/token/${settings.zapiToken}/send-text`;
+        const url = ((_a = settings.zapiToken) === null || _a === void 0 ? void 0 : _a.startsWith('http')) ? settings.zapiToken : `https://api.z-api.io/instances/${settings.zapiInstance}/token/${settings.zapiToken}/send-text`;
         const headers = { 'Content-Type': 'application/json' };
         if (settings.zapiSecurityToken)
             headers['Client-Token'] = settings.zapiSecurityToken;
@@ -533,6 +535,7 @@ exports.rejectRescheduleSlots = functions.https.onCall(async (data, context) => 
     return { success: true };
 });
 exports.provideNewRescheduleSlots = functions.https.onCall(async (data, context) => {
+    var _a;
     if (!context.auth)
         throw new functions.https.HttpsError('unauthenticated', 'Acesso negado');
     const { tokenId, newSlots, originUrl } = data;
@@ -580,7 +583,7 @@ exports.provideNewRescheduleSlots = functions.https.onCall(async (data, context)
         const phone = studentData.phone.replace(/\D/g, '');
         const link = `${originUrl || 'http://localhost:5173'}/reposicao/${token}`;
         const msg = `🔔 *Aviso do Sistema Avance*\n\nOlá, ${studentData.name}! O professor *${teacherName}* disponibilizou novos horários para a sua reposição.\n\nPor favor, acesse o link abaixo para escolher o seu horário:\n🔗 ${link}`;
-        const url = `https://api.z-api.io/instances/${settings.zapiInstance}/token/${settings.zapiToken}/send-text`;
+        const url = ((_a = settings.zapiToken) === null || _a === void 0 ? void 0 : _a.startsWith('http')) ? settings.zapiToken : `https://api.z-api.io/instances/${settings.zapiInstance}/token/${settings.zapiToken}/send-text`;
         const headers = { 'Content-Type': 'application/json' };
         if (settings.zapiSecurityToken)
             headers['Client-Token'] = settings.zapiSecurityToken;
@@ -672,7 +675,7 @@ exports.requestPasswordResetWhatsApp = functions.https.onCall(async (data, conte
         const number = cleanPhone.length <= 11 ? `55${cleanPhone}` : cleanPhone;
         const firstName = studentData.name.split(' ')[0];
         const msg = `🔔 *Aviso do Sistema Avance*\n\nOlá, ${firstName}! Recebemos um pedido de recuperação da sua senha.\n\nSua nova senha provisória é:\n*${tempPassword}*\n\nPor motivos de segurança, o sistema pedirá que você crie uma nova senha de sua escolha assim que realizar o login com esta senha provisória.`;
-        const url = `https://api.z-api.io/instances/${zapiInstance}/token/${zapiToken}/send-text`;
+        const url = (zapiToken === null || zapiToken === void 0 ? void 0 : zapiToken.startsWith('http')) ? zapiToken : `https://api.z-api.io/instances/${zapiInstance}/token/${zapiToken}/send-text`;
         const headers = { 'Content-Type': 'application/json' };
         if (zapiSecurityToken)
             headers['Client-Token'] = zapiSecurityToken;
@@ -689,6 +692,7 @@ exports.requestPasswordResetWhatsApp = functions.https.onCall(async (data, conte
     }
 });
 exports.notifyStudentEvaluation = functions.https.onCall(async (data, context) => {
+    var _a;
     if (!context.auth)
         throw new functions.https.HttpsError('unauthenticated', 'Acesso negado');
     const { evaluationId, originUrl } = data;
@@ -727,7 +731,7 @@ exports.notifyStudentEvaluation = functions.https.onCall(async (data, context) =
             msg = `🔔 *Aviso do Sistema Avance*\n\nOlá, ${studentName}! O professor *${teacherName}* acabou de liberar o seu novo Boletim de Avaliação Niveladora.\n\nAcesse o Portal do Aluno para conferir as notas e o feedback do professor:\n🔗 ${link}`;
         }
         const number = phone.length <= 11 ? `55${phone}` : phone;
-        const url = `https://api.z-api.io/instances/${settings.zapiInstance}/token/${settings.zapiToken}/send-text`;
+        const url = ((_a = settings.zapiToken) === null || _a === void 0 ? void 0 : _a.startsWith('http')) ? settings.zapiToken : `https://api.z-api.io/instances/${settings.zapiInstance}/token/${settings.zapiToken}/send-text`;
         const headers = { 'Content-Type': 'application/json' };
         if (settings.zapiSecurityToken)
             headers['Client-Token'] = settings.zapiSecurityToken;
@@ -747,7 +751,7 @@ exports.notifyStudentEvaluation = functions.https.onCall(async (data, context) =
     return { success: false, reason: 'Z-API não configurada' };
 });
 async function runPedagogicalRoutine() {
-    var _a, _b;
+    var _a, _b, _c;
     try {
         const settingsDoc = await db.collection('settings').doc('integrations').get();
         if (!settingsDoc.exists) {
@@ -829,7 +833,7 @@ async function runPedagogicalRoutine() {
                     msg = `🔔 *Aviso Interno Pedagógico*\n\nAdmin, o professor *${teacherFirstName}* tem aula amanhã com o aluno *${studentFirstName}* e precisa realizar a *Avaliação de Nivelamento* atrasada (ciclo fechou há ${diffDays} dias). O professor em questão não possui telefone cadastrado!`;
                 }
                 const formattedNumber = numberToSend.length <= 11 ? `55${numberToSend}` : numberToSend;
-                const url = `https://api.z-api.io/instances/${settings.zapiInstance}/token/${settings.zapiToken}/send-text`;
+                const url = ((_c = settings.zapiToken) === null || _c === void 0 ? void 0 : _c.startsWith('http')) ? settings.zapiToken : `https://api.z-api.io/instances/${settings.zapiInstance}/token/${settings.zapiToken}/send-text`;
                 const headers = { 'Content-Type': 'application/json' };
                 if (settings.zapiSecurityToken)
                     headers['Client-Token'] = settings.zapiSecurityToken;
@@ -890,10 +894,18 @@ exports.notifyNewMaterial = functions.https.onCall(async (data, context) => {
     }
     // Get templates
     const templateSnap = await db.collection('templates').where('type', '==', 'material_added').limit(1).get();
-    const customTemplate = templateSnap.empty ? null : templateSnap.docs[0].data().content;
+    let customTemplate = null;
+    if (!templateSnap.empty) {
+        const templateData = templateSnap.docs[0].data();
+        if (templateData.isAutomatic === false) {
+            return { success: false, reason: 'Envio automático de material desativado pelo administrador' };
+        }
+        customTemplate = templateData.content;
+    }
     const teacherName = materialData.teacherName || 'Professor';
     const link = `${originUrl || 'https://sistema-avance.web.app'}`;
     const studentPromises = studentIds.map(async (studentId) => {
+        var _a;
         const studentDoc = await db.collection('students').doc(studentId).get();
         if (!studentDoc.exists)
             return;
@@ -906,6 +918,7 @@ exports.notifyNewMaterial = functions.https.onCall(async (data, context) => {
         if (customTemplate) {
             msg = customTemplate
                 .replace(/{aluno}/g, studentName)
+                .replace(/{nome}/g, studentName)
                 .replace(/{professor}/g, teacherName)
                 .replace(/{material}/g, materialData.title)
                 .replace(/{link}/g, link);
@@ -915,21 +928,32 @@ exports.notifyNewMaterial = functions.https.onCall(async (data, context) => {
             msg = `🔔 *Aviso do Sistema Avance*\n\nOlá, ${studentName}! O professor *${teacherName}* acabou de compartilhar um novo material didático com você: *${materialData.title}*.\n\nAcesse o Portal do Aluno para conferir e baixar:\n🔗 ${link}`;
         }
         const number = phone.length <= 11 ? `55${phone}` : phone;
-        const url = `https://api.z-api.io/instances/${settings.zapiInstance}/token/${settings.zapiToken}/send-text`;
+        const url = ((_a = settings.zapiToken) === null || _a === void 0 ? void 0 : _a.startsWith('http')) ? settings.zapiToken : `https://api.z-api.io/instances/${settings.zapiInstance}/token/${settings.zapiToken}/send-text`;
         const headers = { 'Content-Type': 'application/json' };
         if (settings.zapiSecurityToken)
             headers['Client-Token'] = settings.zapiSecurityToken;
+        const payload = {
+            instanceName: settings.zapiInstance, // Always inject instanceName just in case custom motor expects it
+            phone: number,
+            message: msg
+        };
+        console.log(`[MATERIAL_NOTIFY] Dispatching to: ${url}`);
+        console.log(`[MATERIAL_NOTIFY] Payload Number: ${number}`);
         try {
-            await fetch(url, { method: 'POST', headers, body: JSON.stringify({ phone: number, message: msg }) });
+            const response = await fetch(url, { method: 'POST', headers, body: JSON.stringify(payload) });
+            console.log(`[MATERIAL_NOTIFY] Response Status: ${response.status} ${response.statusText}`);
+            const text = await response.text();
+            console.log(`[MATERIAL_NOTIFY] Response Text: ${text}`);
         }
         catch (e) {
-            console.error('[MATERIAL_NOTIFY] Z-API Error', e);
+            console.error('[MATERIAL_NOTIFY] Fetch Error', e);
         }
     });
     await Promise.all(studentPromises);
     return { success: true };
 });
 exports.notifyTrialLesson = functions.https.onCall(async (data, context) => {
+    var _a;
     if (!context.auth)
         throw new functions.https.HttpsError('unauthenticated', 'Acesso negado');
     const { lessonId } = data;
@@ -961,7 +985,7 @@ exports.notifyTrialLesson = functions.https.onCall(async (data, context) => {
     const dateStr = lessonDate.toLocaleDateString('pt-BR');
     const timeStr = lessonDate.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
     const notificationPromises = [];
-    const url = `https://api.z-api.io/instances/${settings.zapiInstance}/token/${settings.zapiToken}/send-text`;
+    const url = ((_a = settings.zapiToken) === null || _a === void 0 ? void 0 : _a.startsWith('http')) ? settings.zapiToken : `https://api.z-api.io/instances/${settings.zapiInstance}/token/${settings.zapiToken}/send-text`;
     const headers = { 'Content-Type': 'application/json' };
     if (settings.zapiSecurityToken)
         headers['Client-Token'] = settings.zapiSecurityToken;
@@ -978,7 +1002,7 @@ exports.notifyTrialLesson = functions.https.onCall(async (data, context) => {
         const sPhone = studentPhone.replace(/\D/g, '');
         const sNum = sPhone.length <= 11 ? `55${sPhone}` : sPhone;
         const msgStudent = `🔔 *Aviso do Sistema Avance*\n\nOlá, ${studentName.split(' ')[0]}! Sua aula experimental de *${instrument}* foi confirmada para o dia *${dateStr} às ${timeStr}* com o professor *${teacherName}*.\n\nQualquer dúvida, estamos à disposição!`;
-        const promise = fetch(url, { method: 'POST', headers, body: JSON.stringify({ phone: sNum, message: msgStudent }) }).catch(e => console.error(e));
+        const promise = fetch(url, { method: 'POST', headers, body: JSON.stringify({ instanceName: settings.zapiInstance, phone: sNum, message: msgStudent }) }).catch(e => console.error(e));
         notificationPromises.push(promise);
     }
     await Promise.all(notificationPromises);

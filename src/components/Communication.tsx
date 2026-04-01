@@ -577,7 +577,7 @@ export default function Communication() {
                     </select>
                   </div>
                   
-                  {currentTemplate.type === 'welcome' && (
+                  {['welcome', 'material_added'].includes(currentTemplate.type || '') && (
                     <div className="flex flex-col justify-center">
                       <label className="block text-sm font-bold text-zinc-700 mb-2">Disparo Automático</label>
                       <label className="flex items-center cursor-pointer">
@@ -592,10 +592,12 @@ export default function Communication() {
                           <div className={`dot absolute left-1 top-1 bg-white w-6 h-6 rounded-full transition-transform ${currentTemplate.isAutomatic ? 'transform translate-x-6' : ''}`}></div>
                         </div>
                         <span className="ml-3 text-sm font-medium text-zinc-700">
-                          {currentTemplate.isAutomatic ? 'Ligado na Matrícula' : 'Desligado'}
+                          {currentTemplate.isAutomatic ? 'Ligado' : 'Desligado'}
                         </span>
                       </label>
-                      <p className="text-xs text-zinc-400 mt-1">Envia essa mensagem sozinho na hora do cadastro do aluno.</p>
+                      <p className="text-xs text-zinc-400 mt-1">
+                        {currentTemplate.type === 'welcome' ? 'Envia essa mensagem sozinho na hora do cadastro do aluno.' : 'Envia essa mensagem automaticamente quando um novo material for anexado.'}
+                      </p>
                     </div>
                   )}
                 </div>

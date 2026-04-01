@@ -118,7 +118,7 @@ service cloud.firestore {
     }
 
     function isValidStudent(data) {
-      return hasOnlyAllowedFields(['name', 'email', 'phone', 'cpf', 'birthDate', 'fatherName', 'motherName', 'level', 'enrollments', 'status', 'courseValue', 'dueDate', 'createdAt', 'authUid']) &&
+      return hasOnlyAllowedFields(['name', 'email', 'phone', 'cpf', 'birthDate', 'fatherName', 'motherName', 'level', 'enrollments', 'status', 'courseValue', 'dueDate', 'createdAt', 'authUid', 'lastEvaluationDate']) &&
              data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
              data.enrollments is list && data.enrollments.size() > 0 &&
              (!('level' in data) || data.level in ['beginner', 'intermediate', 'advanced']) &&
@@ -132,7 +132,8 @@ service cloud.firestore {
              (!('status' in data) || data.status in ['active', 'inactive']) &&
              (!('courseValue' in data) || data.courseValue is number) &&
              (!('dueDate' in data) || data.dueDate is number) &&
-             (!('createdAt' in data) || data.createdAt is timestamp);
+             (!('createdAt' in data) || data.createdAt is timestamp) &&
+             (!('lastEvaluationDate' in data) || data.lastEvaluationDate is string);
     }
 
     function isValidTeacher(data) {

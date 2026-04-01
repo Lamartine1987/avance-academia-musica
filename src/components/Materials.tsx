@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { collection, query, onSnapshot, addDoc, serverTimestamp, deleteDoc, doc, getDocs, where, orderBy } from 'firebase/firestore';
-import { db } from '../firebase';
+import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
+import { db, storage } from '../firebase';
 import { UserProfile, Material, Student } from '../types';
 import { BookOpen, Plus, Trash2, X, FileText, Video, Headphones, ExternalLink, Users, PlayCircle, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -18,6 +19,10 @@ export default function Materials({ profile }: MaterialsProps) {
   const [showForm, setShowForm] = useState(false);
   
   // Form Activity
+  const [inputType, setInputType] = useState<'upload' | 'url'>('upload');
+  const [file, setFile] = useState<File | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<number>(0);
+  
   const [title, setTitle] = useState('');
   const [url, setUrl] = useState('');
   const [type, setType] = useState<'pdf' | 'audio' | 'video' | 'link'>('link');
@@ -102,13 +107,42 @@ export default function Materials({ profile }: MaterialsProps) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title || !url) return;
+    if (!title) return;
+    if (inputType === 'url' && !url) return;
+    if (inputType === 'upload' && !file) return;
+
     setIsSubmitting(true);
 
     try {
-      let finalUrl = url;
-      if (!finalUrl.startsWith('http://') && !finalUrl.startsWith('https://')) {
-        finalUrl = 'https://' + finalUrl;
+      let finalUrl = '';
+
+      if (inputType === 'url') {
+        finalUrl = url;
+        if (!finalUrl.startsWith('http://') && !finalUrl.startsWith('https://')) {
+          finalUrl = 'https://' + finalUrl;
+        }
+      } else if (inputType === 'upload' && file) {
+        const fileExt = file.name.split('.').pop();
+        const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
+        const storageRef = ref(storage, `materials/${fileName}`);
+        const uploadTask = uploadBytesResumable(storageRef, file);
+        
+        finalUrl = await new Promise((resolve, reject) => {
+          uploadTask.on('state_changed', 
+            (snapshot) => {
+              const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+              setUploadProgress(progress);
+            },
+            (error) => {
+              console.error("Upload error:", error);
+              reject(error);
+            },
+            async () => {
+              const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
+              resolve(downloadURL);
+            }
+          );
+        });
       }
 
       const materialData = {
@@ -145,7 +179,6 @@ export default function Materials({ profile }: MaterialsProps) {
     } catch (err) {
       console.error(err);
       alert('Erro ao salvar material.');
-    } finally {
       setIsSubmitting(false);
     }
   };
@@ -157,6 +190,10 @@ export default function Materials({ profile }: MaterialsProps) {
     setDescription('');
     setShareWithAll(true);
     setSelectedStudentIds([]);
+    setInputType('upload');
+    setFile(null);
+    setUploadProgress(0);
+    setIsSubmitting(false);
   };
 
   const handleDelete = async () => {
@@ -283,18 +320,60 @@ export default function Materials({ profile }: MaterialsProps) {
                   </div>
                 </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-zinc-700 mb-1 ml-1">Link Compartilhado (URL)</label>
-                  <input
-                    type="url"
-                    required
-                    value={url}
-                    onChange={(e) => setUrl(e.target.value)}
-                    className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 transition-all"
-                    placeholder="https://drive.google.com/..."
-                  />
-                  <p className="text-xs text-zinc-400 mt-1 ml-1 tracking-wide">Certifique-se de que o link esteja acessível para seus alunos (permissão de leitura).</p>
+                <div className="flex gap-4 mb-4 bg-zinc-100 p-1.5 rounded-2xl w-fit">
+                  <button 
+                    type="button"
+                    onClick={() => setInputType('upload')}
+                    className={`px-4 py-2 rounded-xl text-sm font-bold transition-all ${inputType === 'upload' ? 'bg-white text-zinc-900 shadow-sm ring-1 ring-zinc-950/5' : 'text-zinc-500 hover:text-zinc-900'}`}
+                  >
+                    Fazer Upload
+                  </button>
+                  <button 
+                    type="button"
+                    onClick={() => setInputType('url')}
+                    className={`px-4 py-2 rounded-xl text-sm font-bold transition-all ${inputType === 'url' ? 'bg-white text-zinc-900 shadow-sm ring-1 ring-zinc-950/5' : 'text-zinc-500 hover:text-zinc-900'}`}
+                  >
+                    Link Externo
+                  </button>
                 </div>
+
+                {inputType === 'url' ? (
+                  <div>
+                    <label className="block text-sm font-medium text-zinc-700 mb-1 ml-1">Link Compartilhado (URL)</label>
+                    <input
+                      type="url"
+                      required={inputType === 'url'}
+                      value={url}
+                      onChange={(e) => setUrl(e.target.value)}
+                      className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 transition-all"
+                      placeholder="https://drive.google.com/..."
+                    />
+                    <p className="text-xs text-zinc-400 mt-1 ml-1 tracking-wide">Certifique-se de que o link esteja acessível para seus alunos (permissão de leitura).</p>
+                  </div>
+                ) : (
+                  <div>
+                    <label className="block text-sm font-medium text-zinc-700 mb-1 ml-1">Arquivo</label>
+                    <input
+                      type="file"
+                      required={inputType === 'upload'}
+                      onChange={(e) => setFile(e.target.files?.[0] || null)}
+                      className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 transition-all file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-bold file:bg-orange-50 file:text-orange-600 hover:file:bg-orange-100 cursor-pointer text-zinc-500"
+                    />
+                    <p className="text-xs text-zinc-400 mt-2 ml-1 tracking-wide">Tamanho máximo recomendado: 50MB. (PDFs, Áudios, Imagens permitidos)</p>
+                    
+                    {isSubmitting && uploadProgress > 0 && (
+                      <div className="mt-3">
+                        <div className="flex justify-between text-xs text-zinc-500 mb-1 font-bold">
+                          <span>Realizando Upload...</span>
+                          <span>{Math.round(uploadProgress)}%</span>
+                        </div>
+                        <div className="w-full bg-zinc-200 rounded-full h-2.5">
+                          <div className="bg-orange-500 h-2.5 rounded-full transition-all duration-300" style={{ width: `${uploadProgress}%` }}></div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 <div>
                   <label className="block text-sm font-medium text-zinc-700 mb-1 ml-1">Descrição (Opcional)</label>

@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, where, onSnapshot, getDoc, doc } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, getDoc, doc, deleteDoc } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { getFunctions, httpsCallable } from 'firebase/functions';
-import { AlertCircle, Clock, Send, Plus, Loader2, User } from 'lucide-react';
+import { AlertCircle, Clock, Send, Plus, Loader2, User, Trash2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import FeedbackModal from '../FeedbackModal';
@@ -63,6 +63,16 @@ export default function RejectedReschedules({}: RejectedRescheduleProps) {
 
     return () => unsubscribe();
   }, []);
+
+  const handleDismiss = async (tokenId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      await deleteDoc(doc(db, 'reschedule_tokens', tokenId));
+    } catch (err) {
+      console.error(err);
+      alert('Erro ao remover pendência.');
+    }
+  };
 
   const addCustomSlot = () => {
     const dateObj = new Date(`${tempSlot.date}T00:00:00`);
@@ -141,9 +151,14 @@ export default function RejectedReschedules({}: RejectedRescheduleProps) {
                 >
                   <div className="flex justify-between items-start mb-2">
                     <span className="font-bold text-zinc-900">{token.studentName}</span>
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-amber-600 bg-amber-100 px-2 py-1 rounded-full">
-                      Falta de {token.teacherName}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-amber-600 bg-amber-100 px-2 py-1 rounded-full">
+                        Falta de {token.teacherName}
+                      </span>
+                      <button onClick={(e) => handleDismiss(token.id, e)} className="p-1 text-zinc-400 hover:text-red-500 rounded-lg hover:bg-red-50 transition-colors" title="Descartar pendência">
+                         <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
                   </div>
                   {token.studentObservation ? (
                     <p className="text-sm text-zinc-600 bg-white/50 p-2 rounded-xl italic">"{token.studentObservation}"</p>
@@ -176,9 +191,14 @@ export default function RejectedReschedules({}: RejectedRescheduleProps) {
                       {token.studentName}
                     </span>
                   </div>
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-blue-600 bg-blue-100 px-2 py-1 rounded-full whitespace-nowrap self-start sm:self-auto">
-                    Falta de {token.teacherName}
-                  </span>
+                  <div className="flex items-center gap-2 self-start sm:self-auto">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-blue-600 bg-blue-100 px-2 py-1 rounded-full whitespace-nowrap">
+                      Falta de {token.teacherName}
+                    </span>
+                    <button onClick={(e) => handleDismiss(token.id, e)} className="p-1 text-zinc-400 hover:text-red-500 rounded-lg hover:bg-red-50 transition-colors" title="Descartar pendência">
+                        <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
