@@ -14,3 +14,14 @@ body {
 .display-font {
   font-family: var(--font-display);
 }
+
+@media print {
+  html, body, #root {
+    height: auto !important;
+    overflow: visible !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+}
+

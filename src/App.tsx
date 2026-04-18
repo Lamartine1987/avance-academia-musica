@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   onAuthStateChanged, 
   signInWithEmailAndPassword,
@@ -37,7 +37,9 @@ import {
   ChevronLeft,
   ChevronRight,
   BookOpen,
-  Award
+  Award,
+  Settings,
+  Folder
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { auth, db } from './firebase';
@@ -60,8 +62,12 @@ import Communication from './components/Communication';
 import ReschedulePortal from './components/ReschedulePortal';
 import Materials from './components/Materials';
 import Evaluations from './components/Evaluations';
+import ClassDiary from './components/ClassDiary';
+import EnrollmentPortal from './components/EnrollmentPortal';
+import PixPaymentPortal from './components/PixPaymentPortal';
+import Documents from './components/Documents';
 
-type View = 'dashboard' | 'students' | 'teachers' | 'schedule' | 'instruments' | 'profile' | 'financial' | 'communication' | 'materials' | 'evaluations';
+type View = 'dashboard' | 'students' | 'teachers' | 'schedule' | 'instruments' | 'profile' | 'financial' | 'communication' | 'materials' | 'evaluations' | 'diary' | 'documents';
 
 export default function App() {
   const pathname = window.location.pathname;
@@ -70,10 +76,21 @@ export default function App() {
     return <ReschedulePortal token={token} />;
   }
 
+  if (pathname.startsWith('/matricula/')) {
+    const token = pathname.replace('/matricula/', '');
+    return <EnrollmentPortal token={token} />;
+  }
+
+  if (pathname.startsWith('/pagamento/')) {
+    const paymentId = pathname.replace('/pagamento/', '');
+    return <PixPaymentPortal id={paymentId} />;
+  }
+
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [currentView, setCurrentView] = useState<View>('dashboard');
+  const [diaryInitialLesson, setDiaryInitialLesson] = useState<{ studentId: string, lessonId: string } | null>(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isDesktopMenuExpanded, setIsDesktopMenuExpanded] = useState(true);
   
@@ -89,6 +106,13 @@ export default function App() {
   const [resetLoading, setResetLoading] = useState(false);
   const [resetSuccess, setResetSuccess] = useState(false);
   const [resetError, setResetError] = useState<string | null>(null);
+  
+  // Pending approvals counter
+  const [pendingApprovalsCount, setPendingApprovalsCount] = useState(0);
+  const [pendingDocsCount, setPendingDocsCount] = useState(0);
+  const lastPendingCount = useRef(-1);
+  const lastUnreadCount = useRef(-1);
+  const lastPendingDocsCount = useRef(-1);
 
   const applyCpfMask = (value: string) => {
     return value
@@ -101,6 +125,7 @@ export default function App() {
 
   const [notifications, setNotifications] = useState<any[]>([]);
   const [showNotifications, setShowNotifications] = useState(false);
+  const [schoolSettings, setSchoolSettings] = useState<any>(null);
   
   // Derived state to ensure real-time synchronization with notifications array
   const unreadCount = notifications.filter((n) => !n.read).length;
@@ -167,7 +192,7 @@ export default function App() {
     if (profile && profile.role === 'teacher' && !['schedule', 'profile', 'materials', 'evaluations'].includes(currentView)) {
       setCurrentView('schedule');
     }
-    if (profile && profile.role === 'student' && !['schedule', 'financial', 'profile', 'materials', 'evaluations'].includes(currentView)) {
+    if (profile && profile.role === 'student' && !['schedule', 'financial', 'profile', 'materials', 'evaluations', 'documents'].includes(currentView)) {
       setCurrentView('schedule');
     }
   }, [profile, currentView]);
@@ -182,9 +207,52 @@ export default function App() {
     const unsubscribe = onSnapshot(q, (snap) => {
       const notifs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       setNotifications(notifs);
+      
+      const currentUnread = notifs.filter((n: any) => !n.read).length;
+      if (lastUnreadCount.current !== -1 && currentUnread > lastUnreadCount.current) {
+          const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
+          audio.volume = 0.5;
+          audio.play().catch(() => {});
+      }
+      lastUnreadCount.current = currentUnread;
     });
 
-    return () => unsubscribe();
+    const pendingQ = query(collection(db, 'students'), where('status', '==', 'pending_approval'));
+    const pendingUnsubscribe = onSnapshot(pendingQ, (snap) => {
+       const count = snap.docs.length;
+       if (lastPendingCount.current !== -1 && count > lastPendingCount.current) {
+          const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
+          audio.volume = 0.5;
+          audio.play().catch(() => {});
+       }
+       lastPendingCount.current = count;
+       setPendingApprovalsCount(count);
+    });
+
+    const pendingDocsQ = query(collection(db, 'document_requests'), where('status', '==', 'pending'));
+    const pendingDocsUnsubscribe = onSnapshot(pendingDocsQ, (snap) => {
+       const count = snap.docs.length;
+       if (lastPendingDocsCount.current !== -1 && count > lastPendingDocsCount.current) {
+          const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
+          audio.volume = 0.5;
+          audio.play().catch(() => {});
+       }
+       lastPendingDocsCount.current = count;
+       setPendingDocsCount(count);
+    });
+
+    const settingsUnsubscribe = onSnapshot(doc(db, 'settings', 'school'), (docSnap) => {
+      if (docSnap.exists()) {
+        setSchoolSettings(docSnap.data());
+      }
+    });
+
+    return () => {
+      unsubscribe();
+      pendingUnsubscribe();
+      pendingDocsUnsubscribe();
+      settingsUnsubscribe();
+    };
   }, [profile]);
 
   const markNotificationsRead = async () => {
@@ -383,11 +451,13 @@ export default function App() {
     { id: 'schedule', label: 'Minha Agenda', icon: Calendar, roles: ['admin', 'teacher', 'student'] },
     { id: 'students', label: 'Alunos', icon: Users, roles: ['admin'] },
     { id: 'teachers', label: 'Professores', icon: Music, roles: ['admin'] },
+    { id: 'diary', label: 'Diário de Aula', icon: BookOpen, roles: ['admin', 'teacher'] },
     { id: 'instruments', label: 'Instrumentos', icon: Music2, roles: ['admin'] },
     { id: 'materials', label: 'Materiais', icon: BookOpen, roles: ['admin', 'teacher', 'student'] },
+    { id: 'documents', label: 'Documentos', icon: Folder, roles: ['admin', 'student'] },
     { id: 'evaluations', label: 'Avaliações', icon: Award, roles: ['admin', 'teacher', 'student'] },
     { id: 'financial', label: 'Meu Histórico Financeiro', icon: Wallet, roles: ['admin', 'student'] },
-    { id: 'communication', label: 'Comunicação', icon: MessageSquareText, roles: ['admin'] },
+    { id: 'communication', label: 'Configurações', icon: Settings, roles: ['admin'] },
   ].filter(item => item.roles.includes(profile.role));
 
   return (
@@ -398,12 +468,16 @@ export default function App() {
       
       <div className="min-h-screen bg-zinc-50 flex flex-col md:flex-row">
       {/* Mobile Header */}
-      <div className="md:hidden bg-zinc-950 text-white p-4 flex items-center justify-between sticky top-0 z-40 border-b border-white/5">
+      <div className="md:hidden bg-zinc-950 text-white p-4 flex items-center justify-between sticky top-0 z-40 border-b border-white/5 print:hidden">
         <div className="flex items-center gap-2">
-          <div className="w-8 h-8 bg-orange-500 rounded-lg flex items-center justify-center">
-            <Music2 className="w-5 h-5 text-white" />
-          </div>
-          <span className="text-lg font-bold display-font">Avance</span>
+          {schoolSettings?.logoUrl ? (
+            <img src={schoolSettings.logoUrl} alt="Logo" className="h-8 object-contain bg-white rounded-md p-1" />
+          ) : (
+            <div className="w-8 h-8 bg-orange-500 rounded-lg flex items-center justify-center">
+              <Music2 className="w-5 h-5 text-white" />
+            </div>
+          )}
+          <span className="text-lg font-bold display-font uppercase truncate">{schoolSettings?.tradingName || 'Avance'}</span>
         </div>
         <button onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} className="p-2">
           {isMobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
@@ -412,7 +486,7 @@ export default function App() {
 
       {/* Sidebar */}
       <aside className={cn(
-        "fixed md:sticky top-0 left-0 h-screen bg-zinc-950 text-zinc-50 flex flex-col p-4 md:p-6 z-50 transition-all duration-300 ease-in-out border-r border-white/5 shadow-2xl shadow-black/50 overflow-visible shrink-0",
+        "fixed md:sticky top-0 left-0 h-screen bg-zinc-950 text-zinc-50 flex flex-col p-4 md:p-6 z-50 transition-all duration-300 ease-in-out border-r border-white/5 shadow-2xl shadow-black/50 overflow-visible shrink-0 print:hidden",
         isMobileMenuOpen ? "translate-x-0 w-72" : "-translate-x-full md:translate-x-0",
         !isMobileMenuOpen && (isDesktopMenuExpanded ? "md:w-72" : "md:w-24")
       )}>
@@ -426,12 +500,18 @@ export default function App() {
 
         <div className={cn("flex items-center justify-between mb-12", isDesktopMenuExpanded ? "px-2" : "px-0 md:justify-center")}>
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-orange-500 rounded-xl flex items-center justify-center shrink-0 shadow-lg shadow-orange-500/20">
-              <Music2 className="w-6 h-6 text-white" />
-            </div>
+            {schoolSettings?.logoUrl ? (
+              <img src={schoolSettings.logoUrl} alt="Logo" className="w-10 h-10 object-contain bg-white rounded-xl p-1 shrink-0 shadow-lg" />
+            ) : (
+              <div className="w-10 h-10 bg-orange-500 rounded-xl flex items-center justify-center shrink-0 shadow-lg shadow-orange-500/20">
+                <Music2 className="w-6 h-6 text-white" />
+              </div>
+            )}
             <div className={cn("flex flex-col", !isDesktopMenuExpanded && "md:hidden")}>
-              <span className="text-xl font-bold tracking-tight display-font leading-none">Avance</span>
-              <span className="text-[10px] uppercase tracking-widest text-orange-500 font-semibold mt-1">Academia de Música</span>
+              <span className="text-xl font-bold tracking-tight display-font leading-none uppercase truncate max-w-[150px]">{schoolSettings?.tradingName || 'Avance'}</span>
+              {!schoolSettings?.tradingName && (
+                <span className="text-[10px] uppercase tracking-widest text-orange-500 font-semibold mt-1">Academia de Música</span>
+              )}
             </div>
           </div>
           <button onClick={() => setIsMobileMenuOpen(false)} className="md:hidden p-2 text-zinc-400 hover:text-white shrink-0">
@@ -458,6 +538,16 @@ export default function App() {
             >
               <item.icon className="w-5 h-5 shrink-0" />
               <span className={cn("truncate", !isDesktopMenuExpanded && "md:hidden")}>{item.label}</span>
+              {item.id === 'students' && pendingApprovalsCount > 0 && (
+                <span className="ml-auto bg-orange-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 shadow-sm shadow-orange-500/50">
+                  {pendingApprovalsCount}
+                </span>
+              )}
+              {item.id === 'documents' && pendingDocsCount > 0 && profile?.role === 'admin' && (
+                <span className="ml-auto bg-blue-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 shadow-sm shadow-blue-500/50">
+                  {pendingDocsCount}
+                </span>
+              )}
             </button>
           ))}
         </nav>
@@ -509,8 +599,8 @@ export default function App() {
       )}
 
       {/* Main Content */}
-      <main className="flex-1 overflow-y-auto w-full p-4 md:p-10 relative">
-        <header className="sticky top-0 z-30 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mb-8 md:mb-12 bg-zinc-50/80 backdrop-blur-xl pb-4 pt-2 -mx-4 md:-mx-10 px-4 md:px-10 border-b border-zinc-200/50">
+      <main className="flex-1 overflow-y-auto w-full p-4 md:p-10 relative print:overflow-visible print:p-0 print:m-0">
+        <header className="sticky top-0 z-30 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mb-8 md:mb-12 bg-zinc-50/80 backdrop-blur-xl pb-4 pt-2 -mx-4 md:-mx-10 px-4 md:px-10 border-b border-zinc-200/50 print:hidden">
           <div>
             <h2 className="text-2xl md:text-3xl font-bold display-font tracking-tight text-black capitalize">
               {currentView === 'profile' ? 'Seu Perfil' : navItems.find(i => i.id === currentView)?.label}
@@ -596,11 +686,13 @@ export default function App() {
             {currentView === 'dashboard' && profile.role === 'admin' && <Dashboard profile={profile} />}
             {currentView === 'students' && profile.role === 'admin' && <Students profile={profile} />}
             {currentView === 'teachers' && profile.role === 'admin' && <Teachers profile={profile} />}
-            {currentView === 'schedule' && (profile.role === 'admin' || profile.role === 'teacher' || profile.role === 'student') && <Schedule profile={profile} />}
+            {currentView === 'schedule' && (profile.role === 'admin' || profile.role === 'teacher' || profile.role === 'student') && <Schedule profile={profile} onNavigateToDiary={(studentId, lessonId) => { setDiaryInitialLesson({ studentId, lessonId }); setCurrentView('diary'); }} />}
+            {currentView === 'diary' && (profile.role === 'admin' || profile.role === 'teacher') && <ClassDiary profile={profile} initialStudentId={diaryInitialLesson?.studentId} initialLessonId={diaryInitialLesson?.lessonId} />}
             {currentView === 'instruments' && profile.role === 'admin' && <Instruments profile={profile} />}
             {currentView === 'financial' && (profile.role === 'admin' || profile.role === 'student') && <Financial profile={profile} />}
             {currentView === 'communication' && profile.role === 'admin' && <Communication />}
             {currentView === 'materials' && <Materials profile={profile} />}
+            {currentView === 'documents' && (profile.role === 'admin' || profile.role === 'student') && <Documents profile={profile} />}
             {currentView === 'evaluations' && <Evaluations profile={profile} />}
             {currentView === 'profile' && <Profile user={user} profile={profile} />}
           </motion.div>

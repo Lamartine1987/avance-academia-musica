@@ -57,7 +57,7 @@ async function runFinancialRoutine() {
         await db.collection('payments').add({
           studentId: student.id,
           studentName: student.name,
-          amount: student.courseValue,
+          amount: Math.max(0, (Number(student.courseValue) || 0) - (Number(student.discount) || 0)),
           dueDate: dueDateStr,
           month: currentMonth,
           year: currentYear,
@@ -769,7 +769,17 @@ export const requestPasswordResetWhatsApp = functions.https.onCall(async (data, 
 
     const number = cleanPhone.length <= 11 ? `55${cleanPhone}` : cleanPhone;
     const firstName = studentData.name.split(' ')[0];
-    const msg = `🔔 *Aviso do Sistema Avance*\n\nOlá, ${firstName}! Recebemos um pedido de recuperação da sua senha.\n\nSua nova senha provisória é:\n*${tempPassword}*\n\nPor motivos de segurança, o sistema pedirá que você crie uma nova senha de sua escolha assim que realizar o login com esta senha provisória.`;
+
+    // Fetch auth email
+    let authEmail = studentData.systemLogin || studentData.email || 'Não encontrado';
+    try {
+      const userRecord = await admin.auth().getUser(studentData.authUid);
+      authEmail = userRecord.email || authEmail;
+    } catch (e) {
+      console.error('Error fetching auth user', e);
+    }
+    
+    const msg = `🔔 *Aviso do Sistema Avance*\n\nOlá, ${firstName}! Recebemos um pedido de recuperação da sua senha.\n\nO seu login (e-mail de acesso) é:\n*${authEmail}*\n\nSua nova senha provisória é:\n*${tempPassword}*\n\nPor motivos de segurança, o sistema pedirá que você crie uma nova senha de sua escolha assim que realizar o login com esta senha provisória.`;
 
     const url = zapiToken?.startsWith('http') ? zapiToken : `https://api.z-api.io/instances/${zapiInstance}/token/${zapiToken}/send-text`;
     const headers: any = { 'Content-Type': 'application/json' };
@@ -895,7 +905,7 @@ async function runPedagogicalRoutine() {
     for (const sDoc of studentsSnap.docs) {
       const student = { id: sDoc.id, ...sDoc.data() } as any;
 
-      const baseDateStr = student.lastEvaluationDate || (student.createdAt?.toDate ? student.createdAt.toDate().toISOString().split('T')[0] : null);
+      const baseDateStr = student.lastEvaluationDate || student.enrollmentDate || (student.createdAt?.toDate ? student.createdAt.toDate().toISOString().split('T')[0] : null);
       if (!baseDateStr) continue;
 
       const baseDate = new Date(baseDateStr + 'T12:00:00'); // No timezone trickery, roughly midday.

@@ -10,7 +10,7 @@ interface ConfirmModalProps {
   message: string;
   confirmText?: string;
   cancelText?: string;
-  variant?: 'danger' | 'warning';
+  variant?: 'danger' | 'warning' | 'success' | 'primary';
 }
 
 export default function ConfirmModal({
@@ -41,7 +41,12 @@ export default function ConfirmModal({
             className="relative bg-white w-full max-w-md rounded-[32px] p-8 shadow-2xl border border-zinc-100"
           >
             <div className="flex items-center justify-between mb-6">
-              <div className={variant === 'danger' ? "w-12 h-12 bg-red-50 rounded-2xl flex items-center justify-center text-red-500" : "w-12 h-12 bg-amber-50 rounded-2xl flex items-center justify-center text-amber-500"}>
+              <div className={
+                 variant === 'danger' ? "w-12 h-12 bg-red-50 rounded-2xl flex items-center justify-center text-red-500" :
+                 variant === 'warning' ? "w-12 h-12 bg-amber-50 rounded-2xl flex items-center justify-center text-amber-500" :
+                 variant === 'success' ? "w-12 h-12 bg-emerald-50 rounded-2xl flex items-center justify-center text-emerald-500" :
+                 "w-12 h-12 bg-blue-50 rounded-2xl flex items-center justify-center text-blue-500"
+              }>
                 <AlertTriangle className="w-6 h-6" />
               </div>
               <button onClick={onClose} className="text-zinc-400 hover:text-black transition-colors">
@@ -64,9 +69,11 @@ export default function ConfirmModal({
                   onConfirm();
                   onClose();
                 }}
-                className={variant === 'danger' 
-                  ? "flex-1 px-6 py-3 rounded-2xl text-sm font-medium bg-red-500 text-white hover:bg-red-600 transition-all shadow-lg shadow-red-500/20"
-                  : "flex-1 px-6 py-3 rounded-2xl text-sm font-medium bg-amber-500 text-white hover:bg-amber-600 transition-all shadow-lg shadow-amber-500/20"
+                className={
+                  variant === 'danger' ? "flex-1 px-6 py-3 rounded-2xl text-sm font-medium bg-red-500 text-white hover:bg-red-600 transition-all shadow-lg shadow-red-500/20" :
+                  variant === 'warning' ? "flex-1 px-6 py-3 rounded-2xl text-sm font-medium bg-amber-500 text-white hover:bg-amber-600 transition-all shadow-lg shadow-amber-500/20" :
+                  variant === 'success' ? "flex-1 px-6 py-3 rounded-2xl text-sm font-medium bg-emerald-500 text-white hover:bg-emerald-600 transition-all shadow-lg shadow-emerald-500/20" :
+                  "flex-1 px-6 py-3 rounded-2xl text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 transition-all shadow-lg shadow-blue-500/20"
                 }
               >
                 {confirmText}

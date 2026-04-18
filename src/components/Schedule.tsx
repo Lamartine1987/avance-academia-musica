@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { collection, onSnapshot, addDoc, Timestamp, query, orderBy, getDocs, where, serverTimestamp, setDoc, doc, deleteDoc, writeBatch } from 'firebase/firestore';
+import { collection, onSnapshot, addDoc, Timestamp, query, orderBy, getDocs, where, serverTimestamp, setDoc, doc, deleteDoc, writeBatch, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { UserProfile, Lesson, Student, Teacher, BlockedTime, IntegrationsSettings, Instrument } from '../types';
 import { handleFirestoreError, OperationType } from '../lib/error-handler';
-import { Plus, X, Clock, User, Music, RefreshCw, CheckCircle2, LayoutGrid, List as ListIcon, ChevronLeft, ChevronRight, Settings, AlertCircle, Trash2, CalendarDays, FileText, Star } from 'lucide-react';
+import { Plus, X, Clock, User, Music, RefreshCw, CheckCircle2, LayoutGrid, List as ListIcon, ChevronLeft, ChevronRight, Settings, AlertCircle, Trash2, CalendarDays, FileText, Star, Edit3, BookOpen } from 'lucide-react';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, getDay, setHours, setMinutes, isAfter, isSameDay, startOfWeek, addDays, subWeeks, addWeeks, addYears } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { getFunctions, httpsCallable } from 'firebase/functions';
@@ -12,13 +12,14 @@ import ConfirmModal from './ConfirmModal';
 import FeedbackModal from './FeedbackModal';
 import RejectedReschedules from './schedule/RejectedReschedules';
 
-export default function Schedule({ profile }: { profile: UserProfile }) {
+export default function Schedule({ profile, onNavigateToDiary }: { profile: UserProfile, onNavigateToDiary?: (studentId: string, lessonId: string) => void }) {
   const [lessons, setLessons] = useState<Lesson[]>([]);
   const [blockedTimes, setBlockedTimes] = useState<BlockedTime[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [instruments, setInstruments] = useState<Instrument[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingLessonId, setEditingLessonId] = useState<string | null>(null);
   const [isBlockModalOpen, setIsBlockModalOpen] = useState(false);
   
   const [isLessonLogModalOpen, setIsLessonLogModalOpen] = useState(false);
@@ -181,7 +182,7 @@ export default function Schedule({ profile }: { profile: UserProfile }) {
     const student = students.find(s => s.id === studentId);
     if (!student || student.status !== 'active') return false;
 
-    const baseDateStr = student.lastEvaluationDate || (student.createdAt?.toDate ? format(student.createdAt.toDate(), 'yyyy-MM-dd') : null);
+    const baseDateStr = student.lastEvaluationDate || student.enrollmentDate || (student.createdAt?.toDate ? format(student.createdAt.toDate(), 'yyyy-MM-dd') : null);
     if (!baseDateStr) return true;
 
     const baseDate = new Date(baseDateStr + 'T12:00:00');
@@ -215,7 +216,7 @@ export default function Schedule({ profile }: { profile: UserProfile }) {
     return null;
   };
 
-  const getTeacherColor = (teacherId: string) => {
+  const getInstrumentColor = (instrument: string) => {
     const colors = [
       { bg: 'bg-blue-50', border: 'border-blue-100', text: 'text-blue-700' },
       { bg: 'bg-emerald-50', border: 'border-emerald-100', text: 'text-emerald-700' },
@@ -230,8 +231,9 @@ export default function Schedule({ profile }: { profile: UserProfile }) {
     ];
     
     let hash = 0;
-    for (let i = 0; i < teacherId.length; i++) {
-      hash = teacherId.charCodeAt(i) + ((hash << 5) - hash);
+    const str = instrument || 'default';
+    for (let i = 0; i < str.length; i++) {
+      hash = str.charCodeAt(i) + ((hash << 5) - hash);
     }
     const index = Math.abs(hash) % colors.length;
     return colors[index];
@@ -311,37 +313,51 @@ export default function Schedule({ profile }: { profile: UserProfile }) {
         lessonData.studentPhone = newLesson.studentPhone;
       }
 
-      const docRef = await addDoc(collection(db, 'lessons'), lessonData);
-      
-      setIsModalOpen(false);
-      setFormError(null);
+      if (editingLessonId) {
+        await updateDoc(doc(db, 'lessons', editingLessonId), lessonData);
+        setIsModalOpen(false);
+        setEditingLessonId(null);
+        setFormError(null);
+        
+        setFeedback({
+          isOpen: true,
+          type: 'success',
+          title: 'Aula atualizada!',
+          message: 'As alterações foram salvas com sucesso no banco de dados.'
+        });
+      } else {
+        const docRef = await addDoc(collection(db, 'lessons'), lessonData);
+        
+        setIsModalOpen(false);
+        setFormError(null);
 
-      if (newLesson.isTrial) {
-        try {
-          const fn = httpsCallable(getFunctions(), 'notifyTrialLesson');
-          await fn({ lessonId: docRef.id });
+        if (newLesson.isTrial) {
+          try {
+            const fn = httpsCallable(getFunctions(), 'notifyTrialLesson');
+            await fn({ lessonId: docRef.id });
+            setFeedback({
+              isOpen: true,
+              type: 'success',
+              title: 'Aula agendada!',
+              message: 'Aula teste marcada e as mensagens enviadas.'
+            });
+          } catch (e) {
+            console.error('Erro ao notificar aula teste:', e);
+            setFeedback({
+              isOpen: true,
+              type: 'warning',
+              title: 'Erro de Notificação',
+              message: 'A aula teste foi cadastrada, mas não foi possível enviar as mensagens no WhatsApp.'
+            });
+          }
+        } else {
           setFeedback({
             isOpen: true,
             type: 'success',
             title: 'Aula agendada!',
-            message: 'Aula teste marcada e as mensagens enviadas.'
-          });
-        } catch (e) {
-          console.error('Erro ao notificar aula teste:', e);
-          setFeedback({
-            isOpen: true,
-            type: 'warning',
-            title: 'Erro de Notificação',
-            message: 'A aula teste foi cadastrada, mas não foi possível enviar as mensagens no WhatsApp.'
+            message: 'Processo concluído com êxito.'
           });
         }
-      } else {
-        setFeedback({
-          isOpen: true,
-          type: 'success',
-          title: 'Aula agendada!',
-          message: 'Processo concluído com êxito.'
-        });
       }
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, 'lessons');
@@ -856,7 +872,7 @@ export default function Schedule({ profile }: { profile: UserProfile }) {
           
           <div className="space-y-4">
             {filteredLessons.map(lesson => {
-              const tColor = getTeacherColor(lesson.teacherId);
+              const tColor = getInstrumentColor(lesson.instrument);
               const lessonStart = toDate(lesson.startTime);
               const needsEvaluation = lessonStart ? checkEvaluationDue(lesson.studentId, lessonStart) : false;
               return (
@@ -865,9 +881,13 @@ export default function Schedule({ profile }: { profile: UserProfile }) {
                   onClick={(e) => {
                     e.stopPropagation();
                     if (profile.role === 'admin' || profile.role === 'teacher' || (profile.role === 'student' && lesson.notes)) {
-                      setSelectedLessonForLog(lesson);
-                      setLessonLogNotes(lesson.notes || '');
-                      setIsLessonLogModalOpen(true);
+                      if (onNavigateToDiary) {
+                        onNavigateToDiary(lesson.studentId, lesson.id);
+                      } else {
+                        setSelectedLessonForLog(lesson);
+                        setLessonLogNotes(lesson.notes || '');
+                        setIsLessonLogModalOpen(true);
+                      }
                     }
                   }}
                   className={cn(
@@ -965,31 +985,34 @@ export default function Schedule({ profile }: { profile: UserProfile }) {
           <div className="overflow-x-auto">
             <div className="min-w-[800px]">
               {/* Header */}
-              <div className="grid border-b border-zinc-100" style={{ gridTemplateColumns: `80px repeat(${weekDays.length}, 1fr)` }}>
-                <div className="p-4 border-r border-zinc-100 bg-zinc-100/50"></div>
-                {weekDays.map((day, idx) => (
-                  <div key={idx} className={cn(
-                    "p-4 text-center border-r border-zinc-100 last:border-r-0",
-                    isSameDay(day, new Date()) ? "bg-orange-500 text-white" : "bg-zinc-50/50"
-                  )}>
-                    <p className="text-[10px] uppercase font-bold tracking-widest opacity-60">
-                      {safeFormat(day, 'eee', { locale: ptBR })}
-                    </p>
-                    <p className="text-lg font-bold">
-                      {safeFormat(day, 'dd')}
-                    </p>
+              <div className="grid border-b border-zinc-100" style={{ gridTemplateColumns: `100px repeat(${timeSlots.length}, minmax(180px, 1fr))` }}>
+                <div className="sticky left-0 z-20 p-4 border-r border-zinc-100 bg-zinc-50 flex flex-col items-center justify-center shadow-[4px_0_12px_-4px_rgba(0,0,0,0.1)]">
+                  <Clock className="w-5 h-5 text-zinc-400 opacity-50" />
+                </div>
+                {timeSlots.map((time, idx) => (
+                  <div key={idx} className="p-4 text-center border-r border-zinc-100 last:border-r-0 bg-zinc-50/50 flex flex-col items-center justify-center">
+                    <p className="text-[10px] uppercase font-bold tracking-widest text-zinc-500">Horário</p>
+                    <p className="text-sm font-bold text-black">{time}</p>
                   </div>
                 ))}
               </div>
 
               {/* Grid Body */}
               <div className="relative">
-                {timeSlots.map((time, timeIdx) => (
-                  <div key={timeIdx} className="grid border-b border-zinc-50 last:border-b-0 group" style={{ gridTemplateColumns: `80px repeat(${weekDays.length}, 1fr)` }}>
-                    <div className="p-4 border-r border-zinc-100 text-[10px] font-bold text-black text-center bg-zinc-100/50">
-                      {time}
+                {weekDays.map((day, dayIdx) => (
+                  <div key={dayIdx} className="grid border-b border-zinc-50 last:border-b-0 group" style={{ gridTemplateColumns: `100px repeat(${timeSlots.length}, minmax(180px, 1fr))` }}>
+                    <div className={cn(
+                      "sticky left-0 z-20 p-4 border-r border-zinc-100 text-[10px] font-bold text-center flex flex-col items-center justify-center shadow-[4px_0_12px_-4px_rgba(0,0,0,0.05)]",
+                      isSameDay(day, new Date()) ? "bg-orange-500 text-white" : "bg-white text-black"
+                    )}>
+                      <p className="text-[10px] uppercase font-bold tracking-widest opacity-80">
+                        {safeFormat(day, 'eee', { locale: ptBR })}
+                      </p>
+                      <p className="text-lg font-bold mt-0.5">
+                        {safeFormat(day, 'dd')}
+                      </p>
                     </div>
-                    {weekDays.map((day, dayIdx) => {
+                    {timeSlots.map((time, timeIdx) => {
                       const dayLessons = filteredLessons.filter(l => {
                         const lessonDate = toDate(l.startTime);
                         if (!lessonDate) return false;
@@ -999,12 +1022,12 @@ export default function Schedule({ profile }: { profile: UserProfile }) {
 
                       return (
                         <div 
-                          key={dayIdx} 
+                          key={timeIdx} 
                           onClick={() => handleSlotClick(day, time)}
                           onDoubleClick={() => handleSlotDoubleClick(day, time, profile.role === 'teacher' ? profile.teacherId : undefined)}
                           className={cn(
-                            "p-1 border-r border-zinc-100 last:border-r-0 min-h-[80px] relative transition-colors select-none",
-                            isBlockingMode ? "cursor-pointer hover:bg-red-50" : "cursor-pointer group-hover:bg-zinc-50/20"
+                            "p-2 border-r border-zinc-100 last:border-r-0 min-h-[90px] relative transition-colors select-none flex flex-col gap-1",
+                            isBlockingMode ? "cursor-pointer hover:bg-red-50" : "cursor-pointer group-hover:bg-zinc-50/20 hover:bg-zinc-100/50"
                           )}
                         >
                           {dayBlockedTimes.map(bt => (
@@ -1017,7 +1040,7 @@ export default function Schedule({ profile }: { profile: UserProfile }) {
                                 }
                               }}
                               className={cn(
-                                "p-2 rounded-xl text-[10px] mb-1 shadow-sm border border-red-100 bg-red-50 text-red-700 transition-all cursor-not-allowed",
+                                "p-2 rounded-xl text-[10px] shadow-sm border border-red-100 bg-red-50 text-red-700 transition-all cursor-not-allowed",
                                 (profile.role === 'admin' || (profile.role === 'teacher' && bt.teacherId === profile.teacherId)) && "hover:bg-red-100 cursor-pointer"
                               )}
                             >
@@ -1031,7 +1054,7 @@ export default function Schedule({ profile }: { profile: UserProfile }) {
                             </div>
                           ))}
                           {dayLessons.map(lesson => {
-                            const tColor = getTeacherColor(lesson.teacherId);
+                            const tColor = getInstrumentColor(lesson.instrument);
                             const lessonStart = toDate(lesson.startTime);
                             const needsEvaluation = lessonStart ? checkEvaluationDue(lesson.studentId, lessonStart) : false;
                             
@@ -1054,7 +1077,7 @@ export default function Schedule({ profile }: { profile: UserProfile }) {
                                   'Aula Regular Agendada.'
                                 }
                                 className={cn(
-                                  "p-2 rounded-xl text-[10px] mb-1 shadow-sm border transition-all cursor-pointer hover:scale-[1.02]",
+                                  "p-2 rounded-xl text-[10px] shadow-sm border transition-all cursor-pointer hover:scale-[1.02]",
                                   lesson.status === 'needs_reschedule' ? "bg-red-100 border-red-300 text-red-800" :
                                   lesson.status === 'rescheduled' ? "bg-zinc-100 border-zinc-200 text-zinc-400 opacity-60 line-through" :
                                   `${tColor.bg} ${tColor.border} ${tColor.text}`,
@@ -1160,7 +1183,7 @@ export default function Schedule({ profile }: { profile: UserProfile }) {
                                 </div>
                               ))}
                               {teacherDayLessons.map(lesson => {
-                                const tColor = getTeacherColor(lesson.teacherId);
+                                const tColor = getInstrumentColor(lesson.instrument);
                                 const lessonStart = toDate(lesson.startTime);
                                 const needsEvaluation = lessonStart ? checkEvaluationDue(lesson.studentId, lessonStart) : false;
                                 
@@ -1170,9 +1193,13 @@ export default function Schedule({ profile }: { profile: UserProfile }) {
                                     onClick={(e) => {
                                       e.stopPropagation();
                                       if (profile.role === 'admin' || profile.role === 'teacher' || (profile.role === 'student' && lesson.notes)) {
-                                        setSelectedLessonForLog(lesson);
-                                        setLessonLogNotes(lesson.notes || '');
-                                        setIsLessonLogModalOpen(true);
+                                        if (onNavigateToDiary) {
+                                          onNavigateToDiary(lesson.studentId, lesson.id);
+                                        } else {
+                                          setSelectedLessonForLog(lesson);
+                                          setLessonLogNotes(lesson.notes || '');
+                                          setIsLessonLogModalOpen(true);
+                                        }
                                       }
                                     }}
                                     title={
@@ -1625,7 +1652,7 @@ export default function Schedule({ profile }: { profile: UserProfile }) {
                     className="w-full bg-zinc-50 border border-zinc-100 rounded-2xl px-6 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 text-black"
                   >
                     <option value="">Selecione um professor...</option>
-                    {teachers.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                    {teachers.filter(t => t.isTeacher !== false).map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
                   </select>
                 </div>
 
@@ -1775,12 +1802,12 @@ export default function Schedule({ profile }: { profile: UserProfile }) {
       />
     </div>
 
-      {/* Lesson Log Modal */}
+      {/* Lesson Options Modal */}
       {isLessonLogModalOpen && selectedLessonForLog && (
         <div className="fixed inset-0 bg-zinc-950/40 backdrop-blur-md flex items-center justify-center p-4 sm:p-6 z-[60]">
-          <div className="bg-white w-full max-w-lg rounded-[32px] shadow-2xl shadow-black/10 ring-1 ring-zinc-950/5 flex flex-col max-h-[100dvh] sm:max-h-[90vh]">
-            <div className="flex items-center justify-between p-5 sm:p-8 border-b border-zinc-100 shrink-0">
-              <h3 className="text-xl sm:text-2xl font-bold display-font text-orange-500">Diário de Aula</h3>
+          <div className="bg-white w-full max-w-sm rounded-[32px] shadow-2xl shadow-black/10 ring-1 ring-zinc-950/5 flex flex-col max-h-[100dvh] sm:max-h-[90vh]">
+            <div className="flex items-center justify-between p-5 sm:p-6 border-b border-zinc-100 shrink-0">
+              <h3 className="text-xl font-bold display-font text-orange-500">Opções da Aula</h3>
               <button 
                 onClick={() => {
                   setIsLessonLogModalOpen(false);
@@ -1793,65 +1820,81 @@ export default function Schedule({ profile }: { profile: UserProfile }) {
               </button>
             </div>
             
-            <div className="overflow-y-auto p-5 sm:p-8">
-              <div className="bg-zinc-50 p-4 rounded-2xl mb-6 border border-zinc-100 flex flex-col gap-1">
+            <div className="overflow-y-auto p-5 sm:p-6">
+              <div className="bg-zinc-50 p-4 rounded-2xl mb-6 border border-zinc-100 flex flex-col gap-1 text-center items-center justify-center">
                 <p className="font-bold text-black text-lg">
                   {getStudentName(selectedLessonForLog.studentId, selectedLessonForLog)}
-                  {selectedLessonForLog.isTrial && <span className="ml-2 text-xs bg-orange-100 text-orange-600 px-2 py-0.5 rounded-full font-bold inline-block align-middle">AULA TESTE</span>}
                 </p>
-                <p className="text-sm font-medium text-zinc-500 flex items-center gap-2">
+                {selectedLessonForLog.isTrial && <span className="mt-1 text-xs bg-orange-100 text-orange-600 px-2 py-0.5 rounded-full font-bold inline-block align-middle mb-1">AULA TESTE</span>}
+                <p className="text-sm font-medium text-zinc-500 flex items-center justify-center gap-2 mt-1">
                   <Music className="w-4 h-4" /> {selectedLessonForLog.instrument || 'Instrumento'}
                 </p>
-                <div className="flex items-center gap-2 mt-2 text-xs font-bold text-zinc-400">
+                <div className="flex items-center justify-center gap-2 mt-2 text-xs font-bold text-zinc-400">
                    <Clock className="w-4 h-4" />
                    {safeFormat(toDate(selectedLessonForLog.startTime), 'dd/MM/yyyy HH:mm')}
                 </div>
               </div>
 
-              <form onSubmit={handleSaveLessonLog} className="space-y-6">
-                <div>
-                  <label className="block text-sm font-medium text-zinc-700 mb-2">Resumo da Aula (O que foi estudado?)</label>
-                  {profile.role === 'student' ? (
-                    <div className="bg-orange-50 p-6 rounded-2xl italic text-amber-900 border border-orange-100 min-h-[100px] whitespace-pre-wrap">
-                      "{lessonLogNotes}"
-                    </div>
-                  ) : (
-                    <>
-                      <textarea 
-                        autoFocus
-                        required
-                        value={lessonLogNotes}
-                        onChange={e => setLessonLogNotes(e.target.value)}
-                        placeholder="Ex: Focamos na transição entre acordes maiores e menores, compasso 4/4 e postura da mão direita."
-                        className="w-full bg-zinc-50 border border-zinc-100 rounded-2xl px-6 py-4 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 transition-all min-h-[150px] resize-y"
-                      />
-                      <p className="text-xs text-zinc-400 mt-2">As anotações serão salvas no histórico da aula. O status será marcado como <strong>Concluída</strong>.</p>
-                    </>
-                  )}
-                </div>
-
+              <div className="flex flex-col gap-3">
                 {profile.role !== 'student' && (
-                  <div className="pt-4 border-t border-zinc-100 flex gap-3">
+                  <>
+                    <button 
+                      onClick={() => {
+                        setIsLessonLogModalOpen(false);
+                        const startDate = toDate(selectedLessonForLog.startTime);
+                        const endDate = toDate(selectedLessonForLog.endTime);
+                        const durationMins = startDate && endDate ? (endDate.getTime() - startDate.getTime()) / 60000 : 60;
+                        
+                        setEditingLessonId(selectedLessonForLog.id);
+                        setNewLesson({
+                          studentId: selectedLessonForLog.isTrial ? 'trial' : selectedLessonForLog.studentId,
+                          teacherId: selectedLessonForLog.teacherId || '',
+                          date: startDate ? format(startDate, 'yyyy-MM-dd') : format(new Date(), 'yyyy-MM-dd'),
+                          time: startDate ? safeFormat(startDate, 'HH:mm') : '09:00',
+                          duration: String(durationMins),
+                          isTrial: !!selectedLessonForLog.isTrial,
+                          studentName: selectedLessonForLog.studentName || '',
+                          studentPhone: selectedLessonForLog.studentPhone || '',
+                          instrument: selectedLessonForLog.instrument || ''
+                        });
+                        setFormError(null);
+                        setIsModalOpen(true);
+                      }}
+                      className="w-full bg-blue-50 text-blue-600 border border-blue-100 py-3.5 rounded-2xl font-bold hover:bg-blue-100 transition-colors flex items-center justify-center gap-2 shadow-sm"
+                    >
+                      <Edit3 className="w-5 h-5" /> Editar Aula
+                    </button>
+
+                    {onNavigateToDiary && (
+                      <button 
+                        onClick={() => {
+                            setIsLessonLogModalOpen(false);
+                            onNavigateToDiary(selectedLessonForLog.studentId, selectedLessonForLog.id);
+                        }}
+                        className="w-full bg-zinc-900 border border-zinc-800 text-white py-3.5 px-2 rounded-2xl font-bold hover:bg-black transition-all flex items-center justify-center gap-2 shadow-sm"
+                      >
+                        <BookOpen className="w-5 h-5" /> Ir para Diário de Aula 
+                      </button>
+                    )}
+
                     <button
-                      type="button"
                       onClick={() => {
                         setLessonToDelete(selectedLessonForLog);
                         setIsDeleteLessonConfirmOpen(true);
                       }}
-                      className="px-6 py-4 rounded-2xl bg-red-50 text-red-500 font-bold hover:bg-red-100 transition-colors shrink-0"
-                      title="Excluir Aula da Agenda"
+                      className="w-full bg-red-50 text-red-500 border border-red-100 py-3.5 rounded-2xl font-bold hover:bg-red-100 transition-colors flex items-center justify-center gap-2 shadow-sm mt-3"
                     >
-                      <Trash2 className="w-5 h-5 mx-auto" />
+                      <Trash2 className="w-5 h-5" /> Excluir da Agenda
                     </button>
-                    <button 
-                      type="submit"
-                      className="flex-1 bg-gradient-to-r from-orange-500 to-amber-500 text-white py-4 rounded-2xl font-bold hover:from-orange-600 hover:to-amber-600 transition-all shadow-lg shadow-orange-500/25 active:scale-[0.98]"
-                    >
-                      Salvar Relatório e Concluir Aula
-                    </button>
+                  </>
+                )}
+                {profile.role === 'student' && (
+                  <div className="py-4 text-center text-zinc-500 bg-zinc-50 rounded-xl border border-zinc-100 text-sm">
+                    <p>Entre em contato com a secretaria caso precise desmarcar esta aula.</p>
                   </div>
                 )}
-              </form>
+              </div>
+
             </div>
           </div>
         </div>

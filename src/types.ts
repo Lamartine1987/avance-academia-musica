@@ -11,6 +11,28 @@ export interface UserProfile {
   createdAt: any;
 }
 
+export interface StudentDocument {
+  id?: string;
+  studentId: string;
+  studentName: string;
+  title: string;
+  type: 'contract' | 'identification' | 'proof_of_address' | 'certificate' | 'other';
+  url: string;
+  createdAt: any;
+}
+
+export interface DocumentRequest {
+  id?: string;
+  studentId: string;
+  studentName: string;
+  type: string;
+  status: 'pending' | 'approved' | 'rejected';
+  requestDate: any;
+  observation?: string;
+  documentUrl?: string; // Filled when approved
+  approvedBy?: string; // Admin displayName
+}
+
 export interface ScheduleItem {
   day: number; // 0-6
   time: string; // HH:mm
@@ -27,17 +49,39 @@ export interface Student {
   id: string;
   name: string;
   email?: string;
+  systemLogin?: string;
   phone?: string;
   cpf?: string;
+  rg?: string;
+  nationality?: string;
+  maritalStatus?: string;
+  profession?: string;
+  cep?: string;
+  address?: string;
+  addressNumber?: string;
+  neighborhood?: string;
+  city?: string;
+  state?: string;
   birthDate?: string;
   fatherName?: string;
   motherName?: string;
+  responsibleName?: string;
+  responsibleCpf?: string;
+  responsibleRg?: string;
+  responsiblePhone?: string;
+  responsibleKinship?: string;
+  isScholarship?: boolean;
+  discount?: number;
+  extraNotes?: string;
+  classType?: 'individual' | 'group';
   enrollments: CourseEnrollment[];
   level?: 'beginner' | 'intermediate' | 'advanced';
-  status: 'active' | 'inactive';
+  status: 'active' | 'inactive' | 'pending_approval' | 'rejected';
   courseValue?: number;
   dueDate?: number;
   lastEvaluationDate?: string;
+  enrollmentDate?: string;
+  contractUrl?: string;
   createdAt: any;
 }
 
@@ -57,6 +101,8 @@ export interface Teacher {
 export interface Instrument {
   id: string;
   name: string;
+  defaultPrice?: number;
+  individualPrice?: number;
   createdAt: any;
 }
 
@@ -69,6 +115,7 @@ export interface Lesson {
   endTime: any;
   status: 'scheduled' | 'completed' | 'cancelled' | 'needs_reschedule' | 'rescheduled';
   notes?: string;
+  photoUrls?: string[];
   isMakeup?: boolean;
   isTrial?: boolean;
   studentName?: string;
@@ -99,9 +146,14 @@ export interface Payment {
 }
 
 export interface IntegrationsSettings {
+  whatsappEngine?: 'zapi' | 'apiz';
   zapiInstance: string;
   zapiToken: string;
   zapiSecurityToken?: string;
+  apizUrl?: string;
+  apizToken?: string;
+  apizInstanceName?: string;
+  apizWebhook?: string;
   schoolPhone?: string;
   remindersEnabled?: boolean;
   reminderDaysBefore?: boolean;
@@ -111,13 +163,17 @@ export interface IntegrationsSettings {
   reminderDaysAfterCount?: number;
   evaluationCycleDays?: number;
   notifyTeacherDaysBefore?: number;
+  pixKey?: string;
+  pixName?: string;
+  pixCity?: string;
+  interBankEnabled?: boolean;
 }
 
 export interface MessageTemplate {
   id: string;
   title: string;
   content: string;
-  type: 'welcome' | 'promo' | 'reminder_predue' | 'reminder_due' | 'reminder_overdue' | 'custom' | 'reschedule' | 'evaluation' | 'pedagogic_reminder' | 'material_added';
+  type: 'welcome' | 'promo' | 'reminder_predue' | 'reminder_due' | 'reminder_overdue' | 'custom' | 'reschedule' | 'evaluation' | 'pedagogic_reminder' | 'material_added' | 'enrollment_approved' | 'enrollment_rejected';
   isAutomatic: boolean;
   createdAt: any;
 }

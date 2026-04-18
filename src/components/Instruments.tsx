@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { collection, onSnapshot, addDoc, serverTimestamp, deleteDoc, doc } from 'firebase/firestore';
+import { collection, onSnapshot, addDoc, serverTimestamp, deleteDoc, doc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { UserProfile, Instrument } from '../types';
 import { handleFirestoreError, OperationType } from '../lib/error-handler';
-import { Plus, Trash2, X, Music2 } from 'lucide-react';
+import { Plus, Trash2, X, Music2, Pencil } from 'lucide-react';
 import ConfirmModal from './ConfirmModal';
 
 export default function Instruments({ profile }: { profile: UserProfile }) {
@@ -11,8 +11,11 @@ export default function Instruments({ profile }: { profile: UserProfile }) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
   const [instrumentToDelete, setInstrumentToDelete] = useState<string | null>(null);
+  const [editingInstrumentId, setEditingInstrumentId] = useState<string | null>(null);
   const [newInstrument, setNewInstrument] = useState({
-    name: ''
+    name: '',
+    defaultPrice: '',
+    individualPrice: ''
   });
 
   useEffect(() => {
@@ -26,18 +29,46 @@ export default function Instruments({ profile }: { profile: UserProfile }) {
     return () => unsubscribe();
   }, []);
 
-  const handleAddInstrument = async (e: React.FormEvent) => {
+  const handleSaveInstrument = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await addDoc(collection(db, 'instruments'), {
+      const payload = {
         name: newInstrument.name,
-        createdAt: serverTimestamp()
-      });
+        defaultPrice: newInstrument.defaultPrice ? Number(newInstrument.defaultPrice) : null,
+        individualPrice: newInstrument.individualPrice ? Number(newInstrument.individualPrice) : null,
+        updatedAt: serverTimestamp()
+      };
+
+      if (editingInstrumentId) {
+        await updateDoc(doc(db, 'instruments', editingInstrumentId), payload);
+      } else {
+        await addDoc(collection(db, 'instruments'), {
+          ...payload,
+          createdAt: serverTimestamp()
+        });
+      }
       setIsModalOpen(false);
-      setNewInstrument({ name: '' });
+      setEditingInstrumentId(null);
+      setNewInstrument({ name: '', defaultPrice: '', individualPrice: '' });
     } catch (error) {
-      handleFirestoreError(error, OperationType.CREATE, 'instruments');
+      handleFirestoreError(error, editingInstrumentId ? OperationType.UPDATE : OperationType.CREATE, 'instruments');
     }
+  };
+
+  const openEditModal = (instrument: Instrument) => {
+    setEditingInstrumentId(instrument.id);
+    setNewInstrument({
+      name: instrument.name,
+      defaultPrice: instrument.defaultPrice?.toString() || '',
+      individualPrice: instrument.individualPrice?.toString() || ''
+    });
+    setIsModalOpen(true);
+  };
+
+  const openAddModal = () => {
+    setEditingInstrumentId(null);
+    setNewInstrument({ name: '', defaultPrice: '', individualPrice: '' });
+    setIsModalOpen(true);
   };
 
   const handleDeleteInstrument = async (id: string) => {
@@ -60,7 +91,7 @@ export default function Instruments({ profile }: { profile: UserProfile }) {
       <div className="flex justify-end">
         {profile.role === 'admin' && (
           <button 
-            onClick={() => setIsModalOpen(true)}
+            onClick={openAddModal}
             className="bg-gradient-to-r from-orange-500 to-amber-500 text-white px-6 py-3 rounded-2xl flex items-center gap-2 hover:from-orange-600 hover:to-amber-600 transition-all font-bold shadow-lg shadow-orange-500/25 active:scale-[0.98]"
           >
             <Plus className="w-5 h-5" />
@@ -79,6 +110,8 @@ export default function Instruments({ profile }: { profile: UserProfile }) {
             <thead>
               <tr className="text-zinc-400 text-xs uppercase tracking-wider border-b border-zinc-50">
                 <th className="py-4 font-medium">Nome do Instrumento</th>
+                <th className="py-4 font-medium">Valor Turma</th>
+                <th className="py-4 font-medium">Valor Individual</th>
                 <th className="py-4 font-medium text-right">Ações</th>
               </tr>
             </thead>
@@ -91,14 +124,36 @@ export default function Instruments({ profile }: { profile: UserProfile }) {
                     </div>
                     {instrument.name}
                   </td>
+                  <td className="py-5">
+                    {instrument.defaultPrice ? (
+                      <span className="font-medium text-emerald-600">
+                        {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(instrument.defaultPrice)}
+                      </span>
+                    ) : <span className="text-zinc-400 text-xs italic">Não definido</span>}
+                  </td>
+                  <td className="py-5">
+                    {instrument.individualPrice ? (
+                      <span className="font-medium text-emerald-600">
+                        {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(instrument.individualPrice)}
+                      </span>
+                    ) : <span className="text-zinc-400 text-xs italic">Não definido</span>}
+                  </td>
                   <td className="py-5 text-right">
                     {profile.role === 'admin' && (
-                      <button 
-                        onClick={() => handleDeleteInstrument(instrument.id)}
-                        className="text-red-400 hover:text-red-600 transition-colors"
-                      >
-                        <Trash2 className="w-5 h-5" />
-                      </button>
+                      <div className="flex items-center justify-end gap-2">
+                        <button 
+                          onClick={() => openEditModal(instrument)}
+                          className="text-zinc-400 hover:text-orange-500 transition-colors p-2"
+                        >
+                          <Pencil className="w-5 h-5" />
+                        </button>
+                        <button 
+                          onClick={() => handleDeleteInstrument(instrument.id)}
+                          className="text-red-400 hover:text-red-600 transition-colors p-2"
+                        >
+                          <Trash2 className="w-5 h-5" />
+                        </button>
+                      </div>
                     )}
                   </td>
                 </tr>
@@ -120,12 +175,18 @@ export default function Instruments({ profile }: { profile: UserProfile }) {
         <div className="fixed inset-0 bg-zinc-950/40 backdrop-blur-md flex items-center justify-center p-6 z-50">
           <div className="bg-white w-full max-w-md rounded-[32px] p-8 shadow-2xl shadow-black/10 ring-1 ring-zinc-950/5">
             <div className="flex items-center justify-between mb-8">
-              <h3 className="text-2xl font-bold display-font">Novo Instrumento</h3>
-              <button onClick={() => setIsModalOpen(false)} className="text-zinc-400 hover:text-black transition-colors">
+              <h3 className="text-2xl font-bold display-font">{editingInstrumentId ? 'Editar Instrumento' : 'Novo Instrumento'}</h3>
+              <button 
+                onClick={() => {
+                  setIsModalOpen(false);
+                  setEditingInstrumentId(null);
+                }} 
+                className="text-zinc-400 hover:text-black transition-colors"
+              >
                 <X className="w-6 h-6" />
               </button>
             </div>
-            <form onSubmit={handleAddInstrument} className="space-y-6">
+            <form onSubmit={handleSaveInstrument} className="space-y-6">
               <div>
                 <label className="block text-sm font-medium text-zinc-700 mb-2">Nome do Instrumento</label>
                 <input 
@@ -137,11 +198,37 @@ export default function Instruments({ profile }: { profile: UserProfile }) {
                   className="w-full bg-zinc-50 border border-zinc-100 rounded-2xl px-6 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 transition-all"
                 />
               </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-zinc-700 mb-2">Preço Padrão (Turma)</label>
+                  <input 
+                    type="number" 
+                    min="0"
+                    step="0.01"
+                    placeholder="R$ 0,00"
+                    value={newInstrument.defaultPrice}
+                    onChange={e => setNewInstrument({...newInstrument, defaultPrice: e.target.value})}
+                    className="w-full bg-zinc-50 border border-zinc-100 rounded-2xl px-6 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 transition-all font-medium"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-zinc-700 mb-2">Preço VIP (Individual)</label>
+                  <input 
+                    type="number" 
+                    min="0"
+                    step="0.01"
+                    placeholder="R$ 0,00"
+                    value={newInstrument.individualPrice}
+                    onChange={e => setNewInstrument({...newInstrument, individualPrice: e.target.value})}
+                    className="w-full bg-zinc-50 border border-zinc-100 rounded-2xl px-6 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 transition-all font-medium"
+                  />
+                </div>
+              </div>
               <button 
                 type="submit"
                 className="w-full bg-gradient-to-r from-orange-500 to-amber-500 text-white py-4 rounded-2xl font-bold hover:from-orange-600 hover:to-amber-600 transition-all shadow-lg shadow-orange-500/25 active:scale-[0.98]"
               >
-                Cadastrar Instrumento
+                {editingInstrumentId ? 'Salvar Alterações' : 'Cadastrar Instrumento'}
               </button>
             </form>
           </div>

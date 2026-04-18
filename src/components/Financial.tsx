@@ -73,7 +73,7 @@ export default function Financial({ profile }: { profile?: any }) {
         sSnap.forEach(d => {
           const data = d.data();
           activeCount++;
-          mrr += (Number(data.courseValue) || 0);
+          mrr += Math.max(0, (Number(data.courseValue) || 0) - (Number(data.discount) || 0));
         });
         setReportStats({
           totalActiveStudents: activeCount,
