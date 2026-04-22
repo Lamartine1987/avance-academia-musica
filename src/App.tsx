@@ -66,6 +66,7 @@ import ClassDiary from './components/ClassDiary';
 import EnrollmentPortal from './components/EnrollmentPortal';
 import PixPaymentPortal from './components/PixPaymentPortal';
 import Documents from './components/Documents';
+import LandingPage from './components/LandingPage';
 
 type View = 'dashboard' | 'students' | 'teachers' | 'schedule' | 'instruments' | 'profile' | 'financial' | 'communication' | 'materials' | 'evaluations' | 'diary' | 'documents';
 
@@ -93,7 +94,14 @@ export default function App() {
   const [diaryInitialLesson, setDiaryInitialLesson] = useState<{ studentId: string, lessonId: string } | null>(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isDesktopMenuExpanded, setIsDesktopMenuExpanded] = useState(true);
+  const [showLogin, setShowLogin] = useState(window.location.hash === '#login');
   
+  useEffect(() => {
+    const onHashChange = () => setShowLogin(window.location.hash === '#login');
+    window.addEventListener('hashchange', onHashChange);
+    return () => window.removeEventListener('hashchange', onHashChange);
+  }, []);
+
   // Auth states
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -313,6 +321,10 @@ export default function App() {
   }
 
   if (!user || !profile) {
+    if (!showLogin) {
+      return <LandingPage onLoginClick={() => window.location.hash = '#login'} />;
+    }
+
     return (
       <div className="min-h-screen flex items-center justify-center bg-zinc-50 p-6 relative overflow-hidden">
         <div className="absolute top-[-20%] left-[-10%] w-[50%] h-[50%] bg-gradient-to-br from-orange-500/20 to-amber-500/10 rounded-full blur-[120px] pointer-events-none"></div>
@@ -430,13 +442,20 @@ export default function App() {
                 )}
               </button>
               
-              <div className="text-center pt-2">
+              <div className="text-center pt-4 flex flex-col gap-3">
                 <button 
                   type="button" 
                   onClick={() => setIsResetting(true)}
                   className="text-orange-500/80 hover:text-orange-600 text-sm font-medium transition-colors"
                 >
                   Esqueci minha senha
+                </button>
+                <button 
+                  type="button" 
+                  onClick={() => window.location.hash = ''}
+                  className="text-zinc-400 hover:text-zinc-600 text-sm font-medium transition-colors"
+                >
+                  Voltar à Página Inicial
                 </button>
               </div>
             </form>
@@ -507,11 +526,15 @@ export default function App() {
                 <Music2 className="w-6 h-6 text-white" />
               </div>
             )}
-            <div className={cn("flex flex-col", !isDesktopMenuExpanded && "md:hidden")}>
-              <span className="text-xl font-bold tracking-tight display-font leading-none uppercase truncate max-w-[150px]">{schoolSettings?.tradingName || 'Avance'}</span>
-              {!schoolSettings?.tradingName && (
-                <span className="text-[10px] uppercase tracking-widest text-orange-500 font-semibold mt-1">Academia de Música</span>
-              )}
+            <div className={cn("flex flex-col flex-1 min-w-0 justify-center", !isDesktopMenuExpanded && "md:hidden")}>
+              <span className="text-xl font-bold tracking-tight display-font leading-none uppercase truncate">
+                {schoolSettings?.tradingName?.split(' ')[0] || 'AVANCE'}
+              </span>
+              <span className="text-[10px] uppercase tracking-widest text-orange-500 font-semibold mt-1 truncate">
+                {schoolSettings?.tradingName?.split(' ').length > 1 
+                  ? schoolSettings?.tradingName.split(' ').slice(1).join(' ') 
+                  : 'ACADEMIA DE MÚSICA'}
+              </span>
             </div>
           </div>
           <button onClick={() => setIsMobileMenuOpen(false)} className="md:hidden p-2 text-zinc-400 hover:text-white shrink-0">

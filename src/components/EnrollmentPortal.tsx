@@ -153,7 +153,8 @@ export default function EnrollmentPortal({ token }: { token: string }) {
         motherName: formData.motherName || '',
         extraNotes: enrollmentData.extraNotes ? `Matriculado via Self-Service Portal\n\nObs: ${enrollmentData.extraNotes}` : 'Matriculado via Self-Service Portal',
         discount: enrollmentData.discount || 0,
-        isScholarship: enrollmentData.isScholarship || false
+        isScholarship: enrollmentData.isScholarship || false,
+        imageRightsGranted: (document.getElementById('chk-image') as HTMLInputElement)?.checked || false
       };
 
       if (formData.isMinor) {
@@ -547,16 +548,35 @@ export default function EnrollmentPortal({ token }: { token: string }) {
               <ContractPreview />
 
               <div className="bg-white p-6 md:p-8 rounded-[32px] ring-1 ring-zinc-950/5 shadow-xl">
-                 <label className="flex items-start gap-4 cursor-pointer mb-6 p-4 md:p-6 bg-zinc-50 border border-zinc-200 hover:border-zinc-300 rounded-2xl transition-colors">
-                   <input type="checkbox" className="mt-1 w-6 h-6 accent-orange-500 shrink-0" required id="chk-agree" />
-                   <span className="font-bold text-zinc-800 leading-snug">Eu declaro que as informações preenchidas são de livre exatidão governamental, e declaro ter lido e CONCORDO com todas as cláusulas do Contrato de Prestação de Serviço, reconhecendo esta ação como minha Assinatura Digital com Validade Legal.</span>
-                 </label>
+                 <div className="space-y-4 mb-8">
+                   <label className="flex items-start gap-4 cursor-pointer p-4 md:p-6 bg-zinc-50 border border-zinc-200 hover:border-orange-300 rounded-2xl transition-colors">
+                     <input type="checkbox" className="mt-1 w-6 h-6 accent-orange-500 shrink-0" required id="chk-agree" />
+                     <span className="font-bold text-zinc-800 leading-snug">Eu declaro que as informações preenchidas são de livre exatidão governamental, e declaro ter lido e CONCORDO com todas as cláusulas do Contrato de Prestação de Serviço, reconhecendo esta ação como minha Assinatura Digital com Validade Legal.</span>
+                   </label>
+
+                   <label className="flex items-start gap-4 cursor-pointer p-4 md:p-6 bg-zinc-50 border border-zinc-200 hover:border-orange-300 rounded-2xl transition-colors">
+                     <input type="checkbox" className="mt-1 w-6 h-6 accent-orange-500 shrink-0" required id="chk-lgpd" />
+                     <span className="font-bold text-zinc-800 leading-snug">LI, COMPREENDI E CONCORDO com a Cláusula de Privacidade e Proteção de Dados (LGPD). Autorizo a coleta, o tratamento e o armazenamento em nuvem dos meus dados e/ou dos dados do aluno para fins estritamente educacionais, financeiros e administrativos da Escola.</span>
+                   </label>
+
+                   <label className="flex items-start gap-4 cursor-pointer p-4 md:p-6 bg-zinc-50 border border-zinc-200 hover:border-orange-300 rounded-2xl transition-colors">
+                     <input type="checkbox" className="mt-1 w-6 h-6 accent-orange-500 shrink-0" id="chk-image" />
+                     <div className="flex flex-col">
+                       <span className="font-bold text-zinc-800 leading-snug">Autorizo o Uso de Imagem e Voz (Opcional)</span>
+                       <span className="text-sm text-zinc-600 mt-1">Autorizo o uso, de forma gratuita, da imagem e voz do ALUNO captadas durante as atividades, para fins de divulgação em campanhas institucionais e publicação nas redes sociais da Avance.</span>
+                     </div>
+                   </label>
+                 </div>
                  
                  <div className="flex flex-col-reverse md:flex-row gap-4">
                     <button onClick={() => setStep(1)} className="px-6 py-4 bg-zinc-100 text-zinc-600 rounded-2xl font-bold hover:bg-zinc-200 transition-all text-sm">Voltar e Corrigir Ficha</button>
                     <button onClick={() => {
                         if (!(document.getElementById('chk-agree') as HTMLInputElement).checked) {
-                          alert("Atenção: Você precisa marcar a caixa atestando sua concordância para assinar digitalmente.");
+                          alert("Atenção: Você precisa marcar a caixa principal atestando sua concordância para assinar digitalmente.");
+                          return;
+                        }
+                        if (!(document.getElementById('chk-lgpd') as HTMLInputElement).checked) {
+                          alert("Atenção: Pela nova legislação, você precisa concordar com os termos de Proteção de Dados (LGPD) para prosseguir com a matrícula.");
                           return;
                         }
                         handleSignContract();

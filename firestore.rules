@@ -118,7 +118,7 @@ service cloud.firestore {
     }
 
     function isValidStudent(data) {
-      return hasOnlyAllowedFields(['name', 'email', 'systemLogin', 'phone', 'cpf', 'rg', 'birthDate', 'enrollmentDate', 'fatherName', 'motherName', 'level', 'enrollments', 'status', 'courseValue', 'dueDate', 'createdAt', 'authUid', 'lastEvaluationDate', 'responsibleName', 'responsibleCpf', 'responsibleRg', 'responsiblePhone', 'responsibleKinship', 'isScholarship', 'discount', 'extraNotes', 'classType', 'nationality', 'maritalStatus', 'profession', 'cep', 'address', 'addressNumber', 'neighborhood', 'city', 'state', 'contractUrl', 'signatureIp']) &&
+      return hasOnlyAllowedFields(['name', 'email', 'systemLogin', 'phone', 'cpf', 'rg', 'birthDate', 'enrollmentDate', 'fatherName', 'motherName', 'level', 'enrollments', 'status', 'courseValue', 'dueDate', 'createdAt', 'authUid', 'lastEvaluationDate', 'responsibleName', 'responsibleCpf', 'responsibleRg', 'responsiblePhone', 'responsibleKinship', 'isScholarship', 'discount', 'extraNotes', 'classType', 'nationality', 'maritalStatus', 'profession', 'cep', 'address', 'addressNumber', 'neighborhood', 'city', 'state', 'contractUrl', 'signatureIp', 'imageRightsGranted']) &&
              data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
              data.enrollments is list && data.enrollments.size() > 0 &&
              (!('level' in data) || data.level in ['beginner', 'intermediate', 'advanced']) &&
@@ -156,7 +156,8 @@ service cloud.firestore {
              (!('state' in data) || data.state is string) &&
              (!('enrollmentDate' in data) || data.enrollmentDate is string) &&
              (!('contractUrl' in data) || data.contractUrl is string) &&
-             (!('signatureIp' in data) || data.signatureIp is string);
+             (!('signatureIp' in data) || data.signatureIp is string) &&
+             (!('imageRightsGranted' in data) || data.imageRightsGranted is bool);
     }
 
     function isValidTeacher(data) {
