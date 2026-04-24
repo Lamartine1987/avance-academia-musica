@@ -173,7 +173,7 @@ export interface MessageTemplate {
   id: string;
   title: string;
   content: string;
-  type: 'welcome' | 'promo' | 'reminder_predue' | 'reminder_due' | 'reminder_overdue' | 'custom' | 'reschedule' | 'evaluation' | 'pedagogic_reminder' | 'material_added' | 'enrollment_approved' | 'enrollment_rejected';
+  type: 'welcome' | 'promo' | 'reminder_predue' | 'reminder_due' | 'reminder_overdue' | 'custom' | 'reschedule' | 'evaluation' | 'pedagogic_reminder' | 'material_added' | 'enrollment_approved' | 'enrollment_rejected' | 'holiday_reminder';
   isAutomatic: boolean;
   createdAt: any;
 }
@@ -189,6 +189,7 @@ export interface Material {
   teacherId: string;
   teacherName: string;
   studentIds: string[]; // empty means global
+  isActive?: boolean;
   createdAt: any;
 }
 
@@ -207,5 +208,16 @@ export interface Evaluation {
   date: string; // YYYY-MM-DD
   metrics: EvaluationMetric[];
   notes?: string;
+  createdAt: any;
+}
+
+export interface SchoolEvent {
+  id: string;
+  title: string;
+  type: 'holiday' | 'recess';
+  date: string; // YYYY-MM-DD
+  endDate?: string; // YYYY-MM-DD
+  isEnabled: boolean;
+  description?: string;
   createdAt: any;
 }

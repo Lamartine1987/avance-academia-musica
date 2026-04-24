@@ -470,6 +470,7 @@ export default function Communication() {
       case 'enrollment_approved': return 'Matrícula Aprovada';
       case 'enrollment_rejected': return 'Matrícula Reprovada';
       case 'pix_payment': return 'PIX / Faturamento (Baixa Automática)';
+      case 'holiday_reminder': return 'Lembrete de Feriado/Recesso';
       case 'custom': return 'Outros';
       default: return type;
     }
@@ -1401,12 +1402,13 @@ export default function Communication() {
                       <option value="enrollment_rejected">Matrícula Reprovada</option>
                       <option value="pix_payment">PIX / Faturamento (Baixa Automática)</option>
                       <option value="declaration_issued">Declaração Emitida</option>
+                      <option value="holiday_reminder">Lembrete de Feriado/Recesso</option>
                       <option value="custom">Outros</option>
                     </select>
                   </div>
                   
                   
-                  {['welcome', 'material_added', 'enrollment_approved', 'enrollment_rejected', 'declaration_issued'].includes(currentTemplate.type || '') && (
+                  {['welcome', 'material_added', 'enrollment_approved', 'enrollment_rejected', 'declaration_issued', 'holiday_reminder'].includes(currentTemplate.type || '') && (
                     <div className="flex flex-col justify-center">
                       <label className="block text-sm font-bold text-zinc-700 mb-2">Disparo Automático</label>
                       <label className="flex items-center cursor-pointer">
@@ -1428,6 +1430,7 @@ export default function Communication() {
                         {currentTemplate.type === 'welcome' ? 'Envia essa mensagem sozinho na hora do cadastro do aluno.' : 
                          currentTemplate.type === 'declaration_issued' ? 'Envia essa mensagem automaticamente quando a declaração for emitida.' :
                          ['enrollment_approved', 'enrollment_rejected'].includes(currentTemplate.type || '') ? 'O botão Aprovar/Reprovar irá acionar este envio automaticamente.' :
+                         currentTemplate.type === 'holiday_reminder' ? 'Se ativo, enviará este alerta no dia anterior ao feriado, apenas para alunos afetados.' :
                          'Envia essa mensagem automaticamente quando um novo material for anexado.'}
                       </p>
                     </div>
@@ -1482,6 +1485,12 @@ export default function Communication() {
                           <li><strong>{'{aluno}'}</strong> - O primeiro nome do aluno que fará a avaliação;</li>
                           <li><strong>{'{professor}'}</strong> - O primeiro nome do professor que ministrará a aula;</li>
                           <li><strong>{'{dias}'}</strong> - Quantidade de dias da última avaliação até a data atual.</li>
+                        </>
+                      )}
+                      {currentTemplate.type === 'holiday_reminder' && (
+                        <>
+                          <li><strong>{'{aluno}'}</strong> - O primeiro nome do aluno;</li>
+                          <li><strong>{'{feriado}'}</strong> - Título do feriado ou período do recesso;</li>
                         </>
                       )}
                     </ul>

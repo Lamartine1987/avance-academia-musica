@@ -12,7 +12,7 @@ import ConfirmModal from './ConfirmModal';
 import FeedbackModal from './FeedbackModal';
 import RejectedReschedules from './schedule/RejectedReschedules';
 
-export default function Schedule({ profile, onNavigateToDiary }: { profile: UserProfile, onNavigateToDiary?: (studentId: string, lessonId: string) => void }) {
+export default function Schedule({ profile, onNavigateToDiary, onNavigateToEvaluation }: { profile: UserProfile, onNavigateToDiary?: (studentId: string, lessonId: string) => void, onNavigateToEvaluation?: (studentId: string, teacherId: string, instrument: string, date: string) => void }) {
   const [lessons, setLessons] = useState<Lesson[]>([]);
   const [blockedTimes, setBlockedTimes] = useState<BlockedTime[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
@@ -366,7 +366,7 @@ export default function Schedule({ profile, onNavigateToDiary }: { profile: User
 
   const handleAddBlockedTime = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (profile.role !== 'admin' && profile.role !== 'teacher') return;
+    if (profile.role !== 'admin') return;
     
     try {
       const start = new Date(`${newBlockedTime.date}T${newBlockedTime.startTime}`);
@@ -386,7 +386,7 @@ export default function Schedule({ profile, onNavigateToDiary }: { profile: User
   };
 
   const handleDeleteBlockedTime = async (id: string) => {
-    if (profile.role !== 'admin' && profile.role !== 'teacher') return;
+    if (profile.role !== 'admin') return;
     setBlockedTimeToConfirm(id);
     setIsConfirmOpen(true);
   };
@@ -409,7 +409,7 @@ export default function Schedule({ profile, onNavigateToDiary }: { profile: User
 
   const handleSlotDoubleClick = (date: Date, time: string, tId?: string) => {
     if (isBlockingMode) return;
-    if (profile.role !== 'admin' && profile.role !== 'teacher') return;
+    if (profile.role !== 'admin') return;
     
     setNewLesson(prev => ({
       ...prev,
@@ -818,7 +818,7 @@ export default function Schedule({ profile, onNavigateToDiary }: { profile: User
               <span className="sm:hidden">Sincronizar</span>
             </button>
           )}
-          {(profile.role === 'admin' || profile.role === 'teacher') && (
+          {profile.role === 'admin' && (
             <button 
               onClick={() => {
                 setIsBlockingMode(!isBlockingMode);
@@ -892,12 +892,11 @@ export default function Schedule({ profile, onNavigateToDiary }: { profile: User
                   }}
                   className={cn(
                   "flex flex-col md:flex-row md:items-center gap-4 md:gap-6 p-4 md:p-6 rounded-2xl border transition-all relative overflow-hidden",
-                  tColor.bg,
-                  tColor.border,
+                  lesson.isMakeup ? 'bg-emerald-50 border-emerald-200 text-emerald-900 shadow-[inset_0_0_12px_rgba(16,185,129,0.05)]' : `${tColor.bg} ${tColor.border}`,
                   needsEvaluation ? 'ring-2 ring-amber-400 shadow-amber-400/20' : '',
                   "cursor-pointer hover:shadow-md hover:scale-[1.01]"
                 )}>
-                  <div className={cn("absolute left-0 top-0 bottom-0 w-1.5 opacity-50", tColor.text.replace('text-', 'bg-'))} />
+                  <div className={cn("absolute left-0 top-0 bottom-0 w-1.5 opacity-50", lesson.isMakeup ? 'bg-emerald-500' : tColor.text.replace('text-', 'bg-'))} />
                   
                   <div className="flex items-center justify-between w-full md:w-auto">
                     <div className="w-16 h-16 bg-white rounded-xl flex flex-col items-center justify-center border border-zinc-100 shadow-sm shrink-0">
@@ -1035,13 +1034,13 @@ export default function Schedule({ profile, onNavigateToDiary }: { profile: User
                               key={bt.id}
                               onClick={(e) => {
                                 e.stopPropagation();
-                                if (profile.role === 'admin' || (profile.role === 'teacher' && bt.teacherId === profile.teacherId)) {
+                                if (profile.role === 'admin') {
                                   handleDeleteBlockedTime(bt.id);
                                 }
                               }}
                               className={cn(
                                 "p-2 rounded-xl text-[10px] shadow-sm border border-red-100 bg-red-50 text-red-700 transition-all cursor-not-allowed",
-                                (profile.role === 'admin' || (profile.role === 'teacher' && bt.teacherId === profile.teacherId)) && "hover:bg-red-100 cursor-pointer"
+                                profile.role === 'admin' && "hover:bg-red-100 cursor-pointer"
                               )}
                             >
                               <div className="flex items-center justify-between gap-1">
@@ -1080,6 +1079,7 @@ export default function Schedule({ profile, onNavigateToDiary }: { profile: User
                                   "p-2 rounded-xl text-[10px] shadow-sm border transition-all cursor-pointer hover:scale-[1.02]",
                                   lesson.status === 'needs_reschedule' ? "bg-red-100 border-red-300 text-red-800" :
                                   lesson.status === 'rescheduled' ? "bg-zinc-100 border-zinc-200 text-zinc-400 opacity-60 line-through" :
+                                  lesson.isMakeup ? "bg-emerald-100 border-emerald-300 text-emerald-900 shadow-[inset_0_0_12px_rgba(16,185,129,0.15)]" :
                                   `${tColor.bg} ${tColor.border} ${tColor.text}`,
                                   needsEvaluation && !['cancelled', 'rescheduled'].includes(lesson.status) && 'ring-2 ring-amber-400 shadow-amber-400/20 z-10 scale-[1.02]',
                                   lesson.status === 'cancelled' && "opacity-50 grayscale"
@@ -1120,27 +1120,30 @@ export default function Schedule({ profile, onNavigateToDiary }: { profile: User
         </div>
       ) : (
         <div className="bg-white rounded-[32px] ring-1 ring-zinc-950/5 shadow-xl shadow-black/[0.03] overflow-hidden">
-          <div className="overflow-x-auto pb-4">
-            <div className="min-w-[800px]">
-              {/* Header: Teachers */}
-              <div className="grid border-b border-zinc-100" style={{ gridTemplateColumns: `80px repeat(${teachers.length}, 1fr)` }}>
-                <div className="p-4 border-r border-zinc-100 bg-zinc-100/50"></div>
-                {teachers.map((teacher) => (
-                  <div key={teacher.id} className="p-4 text-center border-r border-zinc-100 last:border-r-0 bg-zinc-50/50">
-                    <p className="text-[10px] uppercase font-bold tracking-widest opacity-60">Professor</p>
-                    <p className="text-sm font-bold truncate">{teacher.name}</p>
+          {(() => {
+            const visibleTeachers = profile.role === 'teacher' ? teachers.filter(t => t.id === profile.teacherId) : teachers;
+            return (
+              <div className="overflow-x-auto pb-4">
+                <div className="min-w-[800px]">
+                  {/* Header: Teachers */}
+                  <div className="grid border-b border-zinc-100" style={{ gridTemplateColumns: `80px repeat(${visibleTeachers.length}, 1fr)` }}>
+                    <div className="p-4 border-r border-zinc-100 bg-zinc-100/50"></div>
+                    {visibleTeachers.map((teacher) => (
+                      <div key={teacher.id} className="p-4 text-center border-r border-zinc-100 last:border-r-0 bg-zinc-50/50">
+                        <p className="text-[10px] uppercase font-bold tracking-widest opacity-60">Professor</p>
+                        <p className="text-sm font-bold truncate">{teacher.name}</p>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
 
-              {/* Grid Body */}
-              <div className="relative">
-                    {timeSlots.map((time, timeIdx) => (
-                      <div key={timeIdx} className="grid border-b border-zinc-50 last:border-b-0 group" style={{ gridTemplateColumns: `80px repeat(${teachers.length}, 1fr)` }}>
-                        <div className="p-4 border-r border-zinc-100 text-[10px] font-bold text-black text-center bg-zinc-100/50">
-                          {time}
-                        </div>
-                        {teachers.map((teacher) => {
+                  {/* Grid Body */}
+                  <div className="relative">
+                        {timeSlots.map((time, timeIdx) => (
+                          <div key={timeIdx} className="grid border-b border-zinc-50 last:border-b-0 group" style={{ gridTemplateColumns: `80px repeat(${visibleTeachers.length}, 1fr)` }}>
+                            <div className="p-4 border-r border-zinc-100 text-[10px] font-bold text-black text-center bg-zinc-100/50">
+                              {time}
+                            </div>
+                            {visibleTeachers.map((teacher) => {
                           const teacherDayLessons = filteredLessons.filter(l => {
                             const lessonDate = toDate(l.startTime);
                             if (!lessonDate) return false;
@@ -1165,13 +1168,13 @@ export default function Schedule({ profile, onNavigateToDiary }: { profile: User
                                   key={bt.id}
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    if (profile.role === 'admin' || (profile.role === 'teacher' && bt.teacherId === profile.teacherId)) {
+                                    if (profile.role === 'admin') {
                                       handleDeleteBlockedTime(bt.id);
                                     }
                                   }}
                                   className={cn(
                                     "p-2 rounded-xl text-[10px] mb-1 shadow-sm border border-red-100 bg-red-50 text-red-700 transition-all cursor-not-allowed",
-                                    (profile.role === 'admin' || (profile.role === 'teacher' && bt.teacherId === profile.teacherId)) && "hover:bg-red-100 cursor-pointer"
+                                    profile.role === 'admin' && "hover:bg-red-100 cursor-pointer"
                                   )}
                                 >
                                   <div className="flex items-center justify-between gap-1">
@@ -1213,6 +1216,7 @@ export default function Schedule({ profile, onNavigateToDiary }: { profile: User
                                       "p-2 rounded-xl text-[10px] mb-1 shadow-sm border transition-all cursor-pointer hover:scale-[1.02]",
                                       lesson.status === 'needs_reschedule' ? "bg-red-100 border-red-300 text-red-800" :
                                       lesson.status === 'rescheduled' ? "bg-zinc-100 border-zinc-200 text-zinc-400 opacity-60 line-through" :
+                                      lesson.isMakeup ? "bg-emerald-100 border-emerald-300 text-emerald-900 shadow-[inset_0_0_12px_rgba(16,185,129,0.15)]" :
                                       `${tColor.bg} ${tColor.border} ${tColor.text}`,
                                       needsEvaluation && !['cancelled', 'rescheduled'].includes(lesson.status) && 'ring-2 ring-amber-400 shadow-amber-400/20 z-10 scale-[1.02]',
                                       lesson.status === 'cancelled' && "opacity-50 grayscale"
@@ -1244,8 +1248,10 @@ export default function Schedule({ profile, onNavigateToDiary }: { profile: User
                       </div>
                     ))}
                   </div>
-            </div>
-          </div>
+                </div>
+              </div>
+            );
+          })()}
         </div>
       )}
 
@@ -1874,6 +1880,26 @@ export default function Schedule({ profile, onNavigateToDiary }: { profile: User
                         className="w-full bg-zinc-900 border border-zinc-800 text-white py-3.5 px-2 rounded-2xl font-bold hover:bg-black transition-all flex items-center justify-center gap-2 shadow-sm"
                       >
                         <BookOpen className="w-5 h-5" /> Ir para Diário de Aula 
+                      </button>
+                    )}
+
+                    {onNavigateToEvaluation && 
+                     checkEvaluationDue(selectedLessonForLog.studentId, toDate(selectedLessonForLog.startTime) || new Date()) && 
+                     !['cancelled', 'rescheduled'].includes(selectedLessonForLog.status) && 
+                     (new Date((toDate(selectedLessonForLog.startTime) || new Date()).getTime()).setHours(0,0,0,0) <= new Date().setHours(0,0,0,0)) && (
+                      <button 
+                        onClick={() => {
+                            setIsLessonLogModalOpen(false);
+                            onNavigateToEvaluation(
+                               selectedLessonForLog.studentId,
+                               selectedLessonForLog.teacherId || '',
+                               selectedLessonForLog.instrument,
+                               format(toDate(selectedLessonForLog.startTime) || new Date(), 'yyyy-MM-dd')
+                            );
+                        }}
+                        className="w-full bg-amber-50 border border-amber-200 text-amber-600 py-3.5 px-2 rounded-2xl font-bold hover:bg-amber-100 transition-all flex items-center justify-center gap-2 shadow-sm mt-3"
+                      >
+                        <Star className="w-5 h-5" /> Realizar Avaliação
                       </button>
                     )}
 

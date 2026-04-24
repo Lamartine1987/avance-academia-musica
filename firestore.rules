@@ -244,19 +244,20 @@ service cloud.firestore {
       return hasOnlyAllowedFields(['title', 'content', 'type', 'isAutomatic', 'createdAt']) &&
              data.title is string && data.title.size() > 0 &&
              data.content is string && data.content.size() > 0 &&
-             data.type in ['welcome', 'promo', 'reminder_predue', 'reminder_due', 'reminder_overdue', 'custom', 'reschedule', 'evaluation', 'pedagogic_reminder', 'material_added', 'enrollment_approved', 'enrollment_rejected', 'pix_payment', 'declaration_issued'] &&
+             data.type in ['welcome', 'promo', 'reminder_predue', 'reminder_due', 'reminder_overdue', 'custom', 'reschedule', 'evaluation', 'pedagogic_reminder', 'material_added', 'enrollment_approved', 'enrollment_rejected', 'pix_payment', 'declaration_issued', 'holiday_reminder'] &&
              data.isAutomatic is bool &&
              (!('createdAt' in data) || data.createdAt is timestamp);
     }
 
     function isValidMaterial(data) {
-      return hasOnlyAllowedFields(['title', 'url', 'type', 'description', 'teacherId', 'teacherName', 'studentIds', 'createdAt']) &&
+      return hasOnlyAllowedFields(['title', 'url', 'type', 'description', 'teacherId', 'teacherName', 'studentIds', 'isActive', 'createdAt']) &&
              data.title is string && data.title.size() > 0 &&
              data.url is string && data.url.size() > 0 &&
              data.type in ['pdf', 'audio', 'video', 'link'] &&
              (!('description' in data) || data.description is string) &&
              data.teacherId is string && data.teacherName is string &&
              data.studentIds is list &&
+             (!('isActive' in data) || data.isActive is bool) &&
              (!('createdAt' in data) || data.createdAt is timestamp);
     }
 
@@ -288,6 +289,17 @@ service cloud.firestore {
              (!('requestDate' in data) || data.requestDate is timestamp) &&
              (!('documentUrl' in data) || data.documentUrl is string) &&
              (!('approvedBy' in data) || data.approvedBy is string);
+    }
+
+    function isValidSchoolEvent(data) {
+      return hasOnlyAllowedFields(['title', 'type', 'date', 'endDate', 'isEnabled', 'description', 'createdAt']) &&
+             data.title is string && data.title.size() > 0 &&
+             data.type in ['holiday', 'recess'] &&
+             data.date is string &&
+             (!('endDate' in data) || data.endDate == null || data.endDate is string) &&
+             data.isEnabled is bool &&
+             (!('description' in data) || data.description == null || data.description is string) &&
+             (!('createdAt' in data) || data.createdAt is timestamp);
     }
 
     // ===============================================================
@@ -412,6 +424,12 @@ service cloud.firestore {
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.studentId == request.resource.data.studentId
       )) && isValidDocumentRequest(request.resource.data);
       allow update: if isAdmin() && isValidDocumentRequest(request.resource.data);
+      allow delete: if isAdmin();
+    }
+
+    match /school_calendar/{eventId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isAdmin() && isValidSchoolEvent(request.resource.data);
       allow delete: if isAdmin();
     }
   }

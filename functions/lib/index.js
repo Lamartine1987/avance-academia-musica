@@ -1,12 +1,65 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.notifyTrialLesson = exports.notifyNewMaterial = exports.onUserDeleted = exports.manualPedagogicalRoutine = exports.pedagogicalRoutineDaily = exports.notifyStudentEvaluation = exports.requestPasswordResetWhatsApp = exports.createStudentUser = exports.provideNewRescheduleSlots = exports.rejectRescheduleSlots = exports.confirmReschedule = exports.getRescheduleData = exports.registerTeacherAbsence = exports.manualFinancialRoutine = exports.financialRoutineDaily = void 0;
+exports.manualHolidayReminderRoutine = exports.holidayReminderRoutineDaily = exports.notifyTrialLesson = exports.notifyNewMaterial = exports.onUserDeleted = exports.manualPedagogicalRoutine = exports.pedagogicalRoutineDaily = exports.notifyStudentEvaluation = exports.requestPasswordResetWhatsApp = exports.createStudentUser = exports.provideNewRescheduleSlots = exports.rejectRescheduleSlots = exports.confirmReschedule = exports.getRescheduleData = exports.registerTeacherAbsence = exports.manualFinancialRoutine = exports.financialRoutineDaily = void 0;
 const functions = require("firebase-functions/v1");
 const admin = require("firebase-admin");
 const firestore_1 = require("firebase-admin/firestore");
 const crypto = require("crypto");
 admin.initializeApp();
 const db = (0, firestore_1.getFirestore)(admin.app(), 'ai-studio-00c161e8-693c-4cc9-8d3a-3e1ddae8db8e');
+async function sendSystemWhatsApp(settings, phone, message) {
+    var _a, _b;
+    const isApiz = settings.whatsappEngine === 'apiz';
+    let cleanedPhone = phone.replace(/\D/g, '');
+    if (cleanedPhone.length < 10)
+        return false;
+    if (cleanedPhone.length <= 11)
+        cleanedPhone = `55${cleanedPhone}`;
+    if (isApiz) {
+        if (!settings.apizUrl || !settings.apizToken)
+            return false;
+        const baseUrl = ((_a = settings.apizUrl) === null || _a === void 0 ? void 0 : _a.replace(/\/send-text\/?$/, '').replace(/\/$/, '')) || '';
+        try {
+            const response = await fetch(`${baseUrl}/send-text`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-api-key': settings.apizToken || ''
+                },
+                body: JSON.stringify({
+                    instanceName: settings.apizInstanceName || 'teste-crm',
+                    number: cleanedPhone,
+                    text: message
+                })
+            });
+            return response.ok;
+        }
+        catch (e) {
+            console.error('APIZ Error', e);
+            return false;
+        }
+    }
+    else {
+        if (!settings.zapiInstance || !settings.zapiToken)
+            return false;
+        const url = ((_b = settings.zapiToken) === null || _b === void 0 ? void 0 : _b.startsWith('http')) ? settings.zapiToken : `https://api.z-api.io/instances/${settings.zapiInstance}/token/${settings.zapiToken}/send-text`;
+        const headers = { 'Content-Type': 'application/json' };
+        if (settings.zapiSecurityToken)
+            headers['Client-Token'] = settings.zapiSecurityToken;
+        try {
+            const response = await fetch(url, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify({ phone: cleanedPhone, message: message })
+            });
+            return response.ok;
+        }
+        catch (e) {
+            console.error('Z-API Error', e);
+            return false;
+        }
+    }
+}
 exports.financialRoutineDaily = functions.pubsub
     .schedule('0 8 * * *')
     .timeZone('America/Sao_Paulo')
@@ -67,7 +120,7 @@ async function runFinancialRoutine() {
             console.log('Z-API credentials not configured. Skipping notifications.');
             return;
         }
-        const { zapiInstance, zapiToken, zapiSecurityToken, remindersEnabled, reminderDaysBefore, reminderDaysBeforeCount, sendOnDue, reminderDaysAfter, reminderDaysAfterCount } = settingsSnap.data();
+        const { zapiInstance, zapiToken, remindersEnabled, reminderDaysBefore, reminderDaysBeforeCount, sendOnDue, reminderDaysAfter, reminderDaysAfterCount } = settingsSnap.data();
         if (remindersEnabled === false) {
             console.log('Reminders disabled by admin. Skipping notifications.');
             return;
@@ -78,33 +131,7 @@ async function runFinancialRoutine() {
         }
         // A helper to send the actual message via fetch
         const sendWhatsApp = async (phone, message) => {
-            // clean phone number - keep only digits
-            const cleanPhone = phone.replace(/\D/g, '');
-            if (cleanPhone.length < 10)
-                return false;
-            // Format for Z-API (adding country code if missing)
-            const number = cleanPhone.length <= 11 ? `55${cleanPhone}` : cleanPhone;
-            try {
-                const headers = { 'Content-Type': 'application/json' };
-                if (zapiSecurityToken) {
-                    headers['Client-Token'] = zapiSecurityToken;
-                }
-                const url = (zapiToken === null || zapiToken === void 0 ? void 0 : zapiToken.startsWith('http')) ? zapiToken : `https://api.z-api.io/instances/${zapiInstance}/token/${zapiToken}/send-text`;
-                const response = await fetch(url, {
-                    method: 'POST',
-                    headers: headers,
-                    body: JSON.stringify({
-                        phone: number,
-                        message: message
-                    })
-                });
-                const data = await response.json();
-                return data.id || data.messageId ? true : false;
-            }
-            catch (err) {
-                console.error('Error sending WhatsApp to', number, err);
-                return false;
-            }
+            return await sendSystemWhatsApp(settingsSnap.data(), phone, message);
         };
         // Helper to add days
         const addDays = (date, days) => {
@@ -224,7 +251,7 @@ async function runFinancialRoutine() {
 }
 // --- NEW INTELLIGENT RESCHEDULE MODULE ---
 exports.registerTeacherAbsence = functions.https.onCall(async (data, context) => {
-    var _a, _b, _c;
+    var _a, _b;
     if (!context.auth)
         throw new functions.https.HttpsError('unauthenticated', 'Apenas usuários autenticados podem registrar faltas.');
     const { teacherId, startDate, endDate, customSlots, originUrl, reason } = data;
@@ -287,10 +314,10 @@ exports.registerTeacherAbsence = functions.https.onCall(async (data, context) =>
             credits: lostCount,
             createdAt: admin.firestore.FieldValue.serverTimestamp()
         });
-        if (settings.zapiInstance && settings.zapiToken) {
+        if (settings.zapiInstance || settings.whatsappEngine === 'apiz') {
             const studentDoc = await db.collection('students').doc(studentId).get();
             if (studentDoc.exists && ((_b = studentDoc.data()) === null || _b === void 0 ? void 0 : _b.phone)) {
-                const phone = studentDoc.data().phone.replace(/\D/g, '');
+                const phone = studentDoc.data().phone;
                 const link = `${originUrl || 'http://localhost:5173'}/reposicao/${token}`;
                 const studentName = studentDoc.data().name.split(' ')[0];
                 let msg = '';
@@ -305,29 +332,15 @@ exports.registerTeacherAbsence = functions.https.onCall(async (data, context) =>
                 else {
                     msg = `🔔 *Aviso do Sistema Avance*\n\nOlá, ${studentDoc.data().name}! Informamos que o professor *${teacherName}* teve um imprevisto e sua(s) ${lostCount} aula(s) precisaram ser suspensas${reason ? ` pelo seguinte motivo: ${reason}` : ''}. Para não sair no prejuízo, por favor, clique no link seguro abaixo para escolher o melhor horário para sua reposição:\n\n🔗 ${link}`;
                 }
-                console.log(`[ABSENCE] Sending ZAPI to ${phone}`);
-                const url = ((_c = settings.zapiToken) === null || _c === void 0 ? void 0 : _c.startsWith('http')) ? settings.zapiToken : `https://api.z-api.io/instances/${settings.zapiInstance}/token/${settings.zapiToken}/send-text`;
-                const headers = { 'Content-Type': 'application/json' };
-                if (settings.zapiSecurityToken)
-                    headers['Client-Token'] = settings.zapiSecurityToken;
-                try {
-                    const resp = await fetch(url, {
-                        method: 'POST',
-                        headers,
-                        body: JSON.stringify({ phone: phone.length <= 11 ? `55${phone}` : phone, message: msg })
-                    });
-                    console.log(`[ABSENCE] ZAPI status: ${resp.status}`);
-                }
-                catch (e) {
-                    console.error('[ABSENCE] Z-API error', e);
-                }
+                console.log(`[ABSENCE] Sending to ${phone}`);
+                await sendSystemWhatsApp(settings, phone, msg);
             }
             else {
                 console.log(`[ABSENCE] Student ${studentId} lacks a valid phone number or document.`);
             }
         }
         else {
-            console.log(`[ABSENCE] No ZAPI credentials found. Skipping MSGs.`);
+            console.log(`[ABSENCE] No WhatsApp credentials found. Skipping MSGs.`);
         }
     }
     await batch.commit();
@@ -361,7 +374,6 @@ exports.getRescheduleData = functions.https.onCall(async (data, context) => {
     };
 });
 exports.confirmReschedule = functions.https.onCall(async (data, context) => {
-    var _a;
     const { token, slotIds } = data;
     if (!token || !slotIds || !Array.isArray(slotIds) || slotIds.length === 0)
         throw new functions.https.HttpsError('invalid-argument', 'Missing token or slotIds');
@@ -446,21 +458,14 @@ exports.confirmReschedule = functions.https.onCall(async (data, context) => {
         };
     });
     const { success, studentName, studentPhone, settings, datesSelected } = txResult;
-    if (success && (settings === null || settings === void 0 ? void 0 : settings.zapiInstance) && (settings === null || settings === void 0 ? void 0 : settings.zapiToken)) {
-        const url = ((_a = settings.zapiToken) === null || _a === void 0 ? void 0 : _a.startsWith('http')) ? settings.zapiToken : `https://api.z-api.io/instances/${settings.zapiInstance}/token/${settings.zapiToken}/send-text`;
-        const headers = { 'Content-Type': 'application/json' };
-        if (settings.zapiSecurityToken)
-            headers['Client-Token'] = settings.zapiSecurityToken;
+    if (success) {
         const notificationPromises = [];
         // 1. Notify School Admin
         if (settings.schoolPhone) {
             const adminPhone = settings.schoolPhone.replace(/\D/g, '');
             const adminMsg = `🔔 *Aviso do Sistema Avance*\n\nO aluno *${studentName}* acaba de realizar o reagendamento automático de reposição para as seguintes datas:\n\n${datesSelected}`;
-            const adminPromise = fetch(url, {
-                method: 'POST',
-                headers,
-                body: JSON.stringify({ phone: adminPhone.length <= 11 ? `55${adminPhone}` : adminPhone, message: adminMsg })
-            }).catch(e => console.error('[CONFIRM_RESCHEDULE] Z-API Error (Admin)', e));
+            const adminPromise = sendSystemWhatsApp(settings, adminPhone, adminMsg)
+                .catch(e => console.error('[CONFIRM_RESCHEDULE] Error (Admin)', e));
             notificationPromises.push(adminPromise);
         }
         // 2. Notify Student
@@ -468,11 +473,8 @@ exports.confirmReschedule = functions.https.onCall(async (data, context) => {
             const sPhone = studentPhone.replace(/\D/g, '');
             const firstName = studentName.split(' ')[0];
             const studentMsg = `🔔 *Aviso do Sistema Avance*\n\nOlá, ${firstName}! Sua reposição foi agendada com sucesso para as seguintes datas/horários:\n\n${datesSelected}\nQualquer dúvida, estamos à disposição!`;
-            const studentPromise = fetch(url, {
-                method: 'POST',
-                headers,
-                body: JSON.stringify({ phone: sPhone.length <= 11 ? `55${sPhone}` : sPhone, message: studentMsg })
-            }).catch(e => console.error('[CONFIRM_RESCHEDULE] Z-API Error (Student)', e));
+            const studentPromise = sendSystemWhatsApp(settings, sPhone, studentMsg)
+                .catch(e => console.error('[CONFIRM_RESCHEDULE] Error (Student)', e));
             notificationPromises.push(studentPromise);
         }
         await Promise.all(notificationPromises);
@@ -480,7 +482,6 @@ exports.confirmReschedule = functions.https.onCall(async (data, context) => {
     return { success: true };
 });
 exports.rejectRescheduleSlots = functions.https.onCall(async (data, context) => {
-    var _a;
     const { token, observation } = data;
     if (!token)
         throw new functions.https.HttpsError('invalid-argument', 'Token missing');
@@ -519,23 +520,15 @@ exports.rejectRescheduleSlots = functions.https.onCall(async (data, context) => 
         };
     });
     const { success, studentName, settings } = txResult;
-    if (success && (settings === null || settings === void 0 ? void 0 : settings.zapiInstance) && (settings === null || settings === void 0 ? void 0 : settings.zapiToken) && (settings === null || settings === void 0 ? void 0 : settings.schoolPhone)) {
+    if (success && (settings === null || settings === void 0 ? void 0 : settings.schoolPhone)) {
         const phone = settings.schoolPhone.replace(/\D/g, '');
         const msg = `🔔 *Aviso do Sistema Avance*\n\nO aluno *${studentName}* informou que NÃO tem disponibilidade nos horários de reposição sugeridos.${observation ? `\n\n*Recado do aluno:* ${observation}` : ''}\n\nAcesse o painel web na aba de Início -> Exceções para fornecer novos horários a este aluno.`;
-        const url = ((_a = settings.zapiToken) === null || _a === void 0 ? void 0 : _a.startsWith('http')) ? settings.zapiToken : `https://api.z-api.io/instances/${settings.zapiInstance}/token/${settings.zapiToken}/send-text`;
-        const headers = { 'Content-Type': 'application/json' };
-        if (settings.zapiSecurityToken)
-            headers['Client-Token'] = settings.zapiSecurityToken;
-        await fetch(url, {
-            method: 'POST',
-            headers,
-            body: JSON.stringify({ phone: phone.length <= 11 ? `55${phone}` : phone, message: msg })
-        }).catch(e => console.error('[REJECT_RESCHEDULE] Z-API Error', e));
+        await sendSystemWhatsApp(settings, phone, msg)
+            .catch(e => console.error('[REJECT_RESCHEDULE] Error', e));
     }
     return { success: true };
 });
 exports.provideNewRescheduleSlots = functions.https.onCall(async (data, context) => {
-    var _a;
     if (!context.auth)
         throw new functions.https.HttpsError('unauthenticated', 'Acesso negado');
     const { tokenId, newSlots, originUrl } = data;
@@ -579,19 +572,12 @@ exports.provideNewRescheduleSlots = functions.https.onCall(async (data, context)
         };
     });
     const { success, studentData, teacherName, settings, token } = txResult;
-    if (success && (settings === null || settings === void 0 ? void 0 : settings.zapiInstance) && (settings === null || settings === void 0 ? void 0 : settings.zapiToken) && (studentData === null || studentData === void 0 ? void 0 : studentData.phone)) {
+    if (success && (studentData === null || studentData === void 0 ? void 0 : studentData.phone)) {
         const phone = studentData.phone.replace(/\D/g, '');
         const link = `${originUrl || 'http://localhost:5173'}/reposicao/${token}`;
         const msg = `🔔 *Aviso do Sistema Avance*\n\nOlá, ${studentData.name}! O professor *${teacherName}* disponibilizou novos horários para a sua reposição.\n\nPor favor, acesse o link abaixo para escolher o seu horário:\n🔗 ${link}`;
-        const url = ((_a = settings.zapiToken) === null || _a === void 0 ? void 0 : _a.startsWith('http')) ? settings.zapiToken : `https://api.z-api.io/instances/${settings.zapiInstance}/token/${settings.zapiToken}/send-text`;
-        const headers = { 'Content-Type': 'application/json' };
-        if (settings.zapiSecurityToken)
-            headers['Client-Token'] = settings.zapiSecurityToken;
-        await fetch(url, {
-            method: 'POST',
-            headers,
-            body: JSON.stringify({ phone: phone.length <= 11 ? `55${phone}` : phone, message: msg })
-        }).catch(e => console.error('[NOVO_HORARIO] Z-API Error', e));
+        await sendSystemWhatsApp(settings, phone, msg)
+            .catch(e => console.error('[NOVO_HORARIO] Error', e));
     }
     return { success: true };
 });
@@ -659,20 +645,16 @@ exports.requestPasswordResetWhatsApp = functions.https.onCall(async (data, conte
         await db.collection('users').doc(studentData.authUid).update({
             mustChangePassword: true
         });
-        // 3. Send WhatsApp via Z-API
+        // 3. Send WhatsApp via Global Helper
         const settingsSnap = await db.collection('settings').doc('integrations').get();
         if (!settingsSnap.exists) {
             throw new functions.https.HttpsError('internal', 'Configuração de WhatsApp não encontrada no sistema.');
         }
-        const { zapiInstance, zapiToken, zapiSecurityToken } = settingsSnap.data();
-        if (!zapiInstance || !zapiToken) {
-            throw new functions.https.HttpsError('internal', 'Credenciais do WhatsApp estão incompletas.');
-        }
+        const settings = settingsSnap.data();
         const cleanPhone = studentData.phone.replace(/\D/g, '');
         if (cleanPhone.length < 10) {
             throw new functions.https.HttpsError('invalid-argument', 'Telefone cadastrado parece estar incorreto.');
         }
-        const number = cleanPhone.length <= 11 ? `55${cleanPhone}` : cleanPhone;
         const firstName = studentData.name.split(' ')[0];
         // Fetch auth email
         let authEmail = studentData.systemLogin || studentData.email || 'Não encontrado';
@@ -684,15 +666,7 @@ exports.requestPasswordResetWhatsApp = functions.https.onCall(async (data, conte
             console.error('Error fetching auth user', e);
         }
         const msg = `🔔 *Aviso do Sistema Avance*\n\nOlá, ${firstName}! Recebemos um pedido de recuperação da sua senha.\n\nO seu login (e-mail de acesso) é:\n*${authEmail}*\n\nSua nova senha provisória é:\n*${tempPassword}*\n\nPor motivos de segurança, o sistema pedirá que você crie uma nova senha de sua escolha assim que realizar o login com esta senha provisória.`;
-        const url = (zapiToken === null || zapiToken === void 0 ? void 0 : zapiToken.startsWith('http')) ? zapiToken : `https://api.z-api.io/instances/${zapiInstance}/token/${zapiToken}/send-text`;
-        const headers = { 'Content-Type': 'application/json' };
-        if (zapiSecurityToken)
-            headers['Client-Token'] = zapiSecurityToken;
-        await fetch(url, {
-            method: 'POST',
-            headers,
-            body: JSON.stringify({ phone: number, message: msg })
-        });
+        await sendSystemWhatsApp(settings, studentData.phone, msg);
         return { success: true };
     }
     catch (error) {
@@ -1016,5 +990,114 @@ exports.notifyTrialLesson = functions.https.onCall(async (data, context) => {
     }
     await Promise.all(notificationPromises);
     return { success: true };
+});
+async function runHolidayReminderRoutine() {
+    var _a;
+    try {
+        const settingsDoc = await db.collection('settings').doc('integrations').get();
+        if (!settingsDoc.exists)
+            return;
+        const settings = settingsDoc.data();
+        if (!(settings === null || settings === void 0 ? void 0 : settings.zapiInstance) || !(settings === null || settings === void 0 ? void 0 : settings.zapiToken))
+            return;
+        // Tomorrow at UTC-3
+        const today = new Date();
+        const brlOffset = -3 * 60;
+        const nowUtc = new Date(today.getTime() + today.getTimezoneOffset() * 60000);
+        const brlTime = new Date(nowUtc.getTime() + brlOffset * 60000);
+        const tomorrow = new Date(brlTime);
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        const yyyy = tomorrow.getFullYear();
+        const mm = String(tomorrow.getMonth() + 1).padStart(2, '0');
+        const dd = String(tomorrow.getDate()).padStart(2, '0');
+        const targetDateStr = `${yyyy}-${mm}-${dd}`;
+        console.log(`[HOLIDAY] Verificando feriados para amanhã: ${targetDateStr}`);
+        const calendarSnap = await db.collection('school_calendar').where('isEnabled', '==', true).get();
+        let matchedEvent = null;
+        for (const doc of calendarSnap.docs) {
+            const event = doc.data();
+            if (event.type === 'holiday' && !event.endDate && event.date === targetDateStr) {
+                matchedEvent = event;
+                break;
+            }
+            if ((event.type === 'recess' || (event.type === 'holiday' && event.endDate)) && event.date <= targetDateStr && event.endDate >= targetDateStr) {
+                matchedEvent = event;
+                break;
+            }
+        }
+        if (!matchedEvent) {
+            console.log('[HOLIDAY] Nenhum feriado ou recesso para amanhã.');
+            return;
+        }
+        console.log(`[HOLIDAY] Evento encontrado: ${matchedEvent.title}. Buscando alunos com aula amanhã...`);
+        const tomorrowStart = new Date(tomorrow);
+        tomorrowStart.setHours(0, 0, 0, 0);
+        const tomorrowEnd = new Date(tomorrow);
+        tomorrowEnd.setHours(23, 59, 59, 999);
+        const lessonsSnap = await db.collection('lessons')
+            .where('status', '==', 'scheduled')
+            .where('startTime', '>=', admin.firestore.Timestamp.fromDate(tomorrowStart))
+            .where('startTime', '<=', admin.firestore.Timestamp.fromDate(tomorrowEnd))
+            .get();
+        if (lessonsSnap.empty) {
+            console.log('[HOLIDAY] Nenhum aluno com aula amanhã.');
+            return;
+        }
+        const studentIds = new Set();
+        lessonsSnap.docs.forEach(doc => studentIds.add(doc.data().studentId));
+        const templateSnap = await db.collection('templates').where('type', '==', 'holiday_reminder').where('isAutomatic', '==', true).limit(1).get();
+        const customTemplate = templateSnap.empty ? null : templateSnap.docs[0].data().content;
+        for (const studentId of Array.from(studentIds)) {
+            const studentDoc = await db.collection('students').doc(studentId).get();
+            if (!studentDoc.exists)
+                continue;
+            const studentData = studentDoc.data();
+            if (!studentData.phone)
+                continue;
+            const studentName = studentData.name.split(' ')[0];
+            const eventTitle = matchedEvent.type === 'recess' ? `Recesso Escolar (${matchedEvent.date.split('-').reverse().join('/')} a ${matchedEvent.endDate.split('-').reverse().join('/')})` : matchedEvent.title;
+            let msg = '';
+            if (customTemplate) {
+                msg = customTemplate
+                    .replace(/{aluno}/g, studentName)
+                    .replace(/{nome}/g, studentName)
+                    .replace(/{feriado}/g, eventTitle);
+                msg = `🔔 *Aviso do Sistema Avance*\n\n${msg}`;
+            }
+            else {
+                msg = `🔔 *Aviso do Sistema Avance*\n\nOlá, ${studentName}! Passando para lembrar que amanhã não teremos aula devido a: *${eventTitle}*. Bom descanso!`;
+            }
+            const phone = studentData.phone.replace(/\D/g, '');
+            const number = phone.length <= 11 ? `55${phone}` : phone;
+            const url = ((_a = settings.zapiToken) === null || _a === void 0 ? void 0 : _a.startsWith('http')) ? settings.zapiToken : `https://api.z-api.io/instances/${settings.zapiInstance}/token/${settings.zapiToken}/send-text`;
+            const headers = { 'Content-Type': 'application/json' };
+            if (settings.zapiSecurityToken)
+                headers['Client-Token'] = settings.zapiSecurityToken;
+            try {
+                await fetch(url, { method: 'POST', headers, body: JSON.stringify({ instanceName: settings.zapiInstance, phone: number, message: msg }) });
+                console.log(`[HOLIDAY] Aviso enviado para ${studentName} (${number})`);
+            }
+            catch (e) {
+                console.error(`[HOLIDAY] Falha no disparo a ${number}:`, e);
+            }
+        }
+    }
+    catch (err) {
+        console.error('[HOLIDAY_ROUTINE] Error:', err);
+    }
+}
+exports.holidayReminderRoutineDaily = functions.pubsub.schedule('0 10 * * *').timeZone('America/Sao_Paulo').onRun(async (context) => {
+    await runHolidayReminderRoutine();
+});
+exports.manualHolidayReminderRoutine = functions.https.onCall(async (data, context) => {
+    try {
+        if (!context.auth)
+            throw new functions.https.HttpsError('unauthenticated', 'Acesso negado.');
+        await runHolidayReminderRoutine();
+        return { success: true, message: 'Varredura de feriados executada.' };
+    }
+    catch (err) {
+        throw new functions.https.HttpsError('internal', err.message);
+    }
 });
 //# sourceMappingURL=index.js.map

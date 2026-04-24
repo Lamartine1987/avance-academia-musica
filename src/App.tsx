@@ -23,6 +23,7 @@ import {
   Users, 
   Music, 
   Calendar, 
+  CalendarDays,
   LogOut, 
   Music2, 
   Loader2, 
@@ -67,8 +68,9 @@ import EnrollmentPortal from './components/EnrollmentPortal';
 import PixPaymentPortal from './components/PixPaymentPortal';
 import Documents from './components/Documents';
 import LandingPage from './components/LandingPage';
+import SchoolCalendar from './components/SchoolCalendar';
 
-type View = 'dashboard' | 'students' | 'teachers' | 'schedule' | 'instruments' | 'profile' | 'financial' | 'communication' | 'materials' | 'evaluations' | 'diary' | 'documents';
+type View = 'dashboard' | 'students' | 'teachers' | 'schedule' | 'instruments' | 'profile' | 'financial' | 'communication' | 'materials' | 'evaluations' | 'diary' | 'documents' | 'calendar';
 
 export default function App() {
   const pathname = window.location.pathname;
@@ -92,6 +94,7 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [currentView, setCurrentView] = useState<View>('dashboard');
   const [diaryInitialLesson, setDiaryInitialLesson] = useState<{ studentId: string, lessonId: string } | null>(null);
+  const [evaluationInitialData, setEvaluationInitialData] = useState<{ studentId: string, teacherId: string, instrument: string, date: string } | null>(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isDesktopMenuExpanded, setIsDesktopMenuExpanded] = useState(true);
   const [showLogin, setShowLogin] = useState(window.location.hash === '#login');
@@ -197,13 +200,23 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (profile && profile.role === 'teacher' && !['schedule', 'profile', 'materials', 'evaluations'].includes(currentView)) {
+    if (profile && profile.role === 'teacher' && !['schedule', 'profile', 'materials', 'evaluations', 'diary', 'calendar'].includes(currentView)) {
       setCurrentView('schedule');
     }
-    if (profile && profile.role === 'student' && !['schedule', 'financial', 'profile', 'materials', 'evaluations', 'documents'].includes(currentView)) {
+    if (profile && profile.role === 'student' && !['schedule', 'financial', 'profile', 'materials', 'evaluations', 'documents', 'calendar'].includes(currentView)) {
       setCurrentView('schedule');
     }
   }, [profile, currentView]);
+
+  useEffect(() => {
+    const settingsUnsubscribe = onSnapshot(doc(db, 'settings', 'school'), (docSnap) => {
+      if (docSnap.exists()) {
+        setSchoolSettings(docSnap.data());
+      }
+    });
+
+    return () => settingsUnsubscribe();
+  }, []);
 
   useEffect(() => {
     if (!profile || profile.role !== 'admin') {
@@ -249,17 +262,10 @@ export default function App() {
        setPendingDocsCount(count);
     });
 
-    const settingsUnsubscribe = onSnapshot(doc(db, 'settings', 'school'), (docSnap) => {
-      if (docSnap.exists()) {
-        setSchoolSettings(docSnap.data());
-      }
-    });
-
     return () => {
       unsubscribe();
       pendingUnsubscribe();
       pendingDocsUnsubscribe();
-      settingsUnsubscribe();
     };
   }, [profile]);
 
@@ -475,6 +481,7 @@ export default function App() {
     { id: 'materials', label: 'Materiais', icon: BookOpen, roles: ['admin', 'teacher', 'student'] },
     { id: 'documents', label: 'Documentos', icon: Folder, roles: ['admin', 'student'] },
     { id: 'evaluations', label: 'Avaliações', icon: Award, roles: ['admin', 'teacher', 'student'] },
+    { id: 'calendar', label: 'Calendário Escolar', icon: CalendarDays, roles: ['admin', 'teacher', 'student'] },
     { id: 'financial', label: 'Meu Histórico Financeiro', icon: Wallet, roles: ['admin', 'student'] },
     { id: 'communication', label: 'Configurações', icon: Settings, roles: ['admin'] },
   ].filter(item => item.roles.includes(profile.role));
@@ -709,14 +716,15 @@ export default function App() {
             {currentView === 'dashboard' && profile.role === 'admin' && <Dashboard profile={profile} />}
             {currentView === 'students' && profile.role === 'admin' && <Students profile={profile} />}
             {currentView === 'teachers' && profile.role === 'admin' && <Teachers profile={profile} />}
-            {currentView === 'schedule' && (profile.role === 'admin' || profile.role === 'teacher' || profile.role === 'student') && <Schedule profile={profile} onNavigateToDiary={(studentId, lessonId) => { setDiaryInitialLesson({ studentId, lessonId }); setCurrentView('diary'); }} />}
+            {currentView === 'schedule' && (profile.role === 'admin' || profile.role === 'teacher' || profile.role === 'student') && <Schedule profile={profile} onNavigateToDiary={(studentId, lessonId) => { setDiaryInitialLesson({ studentId, lessonId }); setCurrentView('diary'); }} onNavigateToEvaluation={(studentId, teacherId, instrument, date) => { setEvaluationInitialData({ studentId, teacherId, instrument, date }); setCurrentView('evaluations'); }} />}
             {currentView === 'diary' && (profile.role === 'admin' || profile.role === 'teacher') && <ClassDiary profile={profile} initialStudentId={diaryInitialLesson?.studentId} initialLessonId={diaryInitialLesson?.lessonId} />}
             {currentView === 'instruments' && profile.role === 'admin' && <Instruments profile={profile} />}
             {currentView === 'financial' && (profile.role === 'admin' || profile.role === 'student') && <Financial profile={profile} />}
             {currentView === 'communication' && profile.role === 'admin' && <Communication />}
             {currentView === 'materials' && <Materials profile={profile} />}
             {currentView === 'documents' && (profile.role === 'admin' || profile.role === 'student') && <Documents profile={profile} />}
-            {currentView === 'evaluations' && <Evaluations profile={profile} />}
+            {currentView === 'evaluations' && <Evaluations profile={profile} initialData={evaluationInitialData} onInitialDataConsumed={() => setEvaluationInitialData(null)} />}
+            {currentView === 'calendar' && <SchoolCalendar profile={profile} />}
             {currentView === 'profile' && <Profile user={user} profile={profile} />}
           </motion.div>
         </AnimatePresence>

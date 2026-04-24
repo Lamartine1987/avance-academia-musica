@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, onSnapshot, addDoc, serverTimestamp, deleteDoc, doc, getDocs, where, orderBy } from 'firebase/firestore';
+import { collection, query, onSnapshot, addDoc, serverTimestamp, deleteDoc, doc, getDocs, where, orderBy, updateDoc } from 'firebase/firestore';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '../firebase';
 import { UserProfile, Material, Student } from '../types';
-import { BookOpen, Plus, Trash2, X, FileText, Video, Headphones, ExternalLink, Users, PlayCircle, Loader2 } from 'lucide-react';
+import { BookOpen, Plus, Trash2, X, FileText, Video, Headphones, ExternalLink, Users, PlayCircle, Loader2, Pencil, Eye, EyeOff } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import ConfirmModal from './ConfirmModal';
@@ -32,6 +32,7 @@ export default function Materials({ profile }: MaterialsProps) {
   
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [materialToDelete, setMaterialToDelete] = useState<Material | null>(null);
+  const [materialToEdit, setMaterialToEdit] = useState<Material | null>(null);
 
   const isAdmin = profile.role === 'admin';
   const isTeacher = profile.role === 'teacher';
@@ -89,9 +90,14 @@ export default function Materials({ profile }: MaterialsProps) {
         let fetched = Array.from(combinedMaterials.values())
            .sort((a, b) => new Date(b.createdAt?.toDate?.() || 0).getTime() - new Date(a.createdAt?.toDate?.() || 0).getTime());
         
-        // Hide private materials from other teachers (Only admin sees all, or teacher sees their own, or global)
+        // Hide inactive materials for students
+        if (isStudent) {
+          fetched = fetched.filter(m => m.isActive !== false);
+        }
+
+        // Filter materials so teacher only sees their own
         if (isTeacher && profile.teacherId) {
-          fetched = fetched.filter(m => m.studentIds.length === 0 || m.teacherId === profile.teacherId || m.teacherId === profile.uid);
+          fetched = fetched.filter(m => m.teacherId === profile.teacherId || m.teacherId === profile.uid);
         }
 
         setMaterials(fetched);
@@ -114,7 +120,7 @@ export default function Materials({ profile }: MaterialsProps) {
     setIsSubmitting(true);
 
     try {
-      let finalUrl = '';
+      let finalUrl = materialToEdit ? materialToEdit.url : '';
 
       if (inputType === 'url') {
         finalUrl = url;
@@ -145,7 +151,7 @@ export default function Materials({ profile }: MaterialsProps) {
         });
       }
 
-      const materialData = {
+      const materialData: any = {
         title,
         url: finalUrl,
         type,
@@ -153,25 +159,30 @@ export default function Materials({ profile }: MaterialsProps) {
         teacherId: profile.teacherId || profile.uid,
         teacherName: profile.displayName || 'Professor',
         studentIds: shareWithAll ? [] : selectedStudentIds,
-        createdAt: serverTimestamp()
+        isActive: materialToEdit && materialToEdit.isActive !== undefined ? materialToEdit.isActive : true
       };
 
-      const result = await addDoc(collection(db, 'materials'), materialData);
-      
-      try {
-        const functions = getFunctions();
-        const notifyNewMaterial = httpsCallable(functions, 'notifyNewMaterial');
-        const studentsToNotify = shareWithAll ? students.map(s => s.id) : selectedStudentIds;
+      if (materialToEdit) {
+        await updateDoc(doc(db, 'materials', materialToEdit.id), materialData);
+      } else {
+        materialData.createdAt = serverTimestamp();
+        const result = await addDoc(collection(db, 'materials'), materialData);
         
-        if (studentsToNotify.length > 0) {
-          await notifyNewMaterial({
-             materialId: result.id,
-             studentIds: studentsToNotify,
-             originUrl: window.location.origin
-          });
+        try {
+          const functions = getFunctions();
+          const notifyNewMaterial = httpsCallable(functions, 'notifyNewMaterial');
+          const studentsToNotify = shareWithAll ? students.map(s => s.id) : selectedStudentIds;
+          
+          if (studentsToNotify.length > 0) {
+            await notifyNewMaterial({
+               materialId: result.id,
+               studentIds: studentsToNotify,
+               originUrl: window.location.origin
+            });
+          }
+        } catch (notifyErr) {
+          console.error('Error notifying students', notifyErr);
         }
-      } catch (notifyErr) {
-        console.error('Error notifying students', notifyErr);
       }
       
       setShowForm(false);
@@ -181,6 +192,18 @@ export default function Materials({ profile }: MaterialsProps) {
       alert('Erro ao salvar material.');
       setIsSubmitting(false);
     }
+  };
+
+  const handleEdit = (material: Material) => {
+    setTitle(material.title);
+    setUrl(material.url);
+    setType(material.type as any);
+    setDescription(material.description || '');
+    setShareWithAll(material.studentIds.length === 0);
+    setSelectedStudentIds(material.studentIds || []);
+    setInputType(material.url && !material.url.includes('firebasestorage.googleapis.com') ? 'url' : 'upload');
+    setMaterialToEdit(material);
+    setShowForm(true);
   };
 
   const resetForm = () => {
@@ -194,6 +217,17 @@ export default function Materials({ profile }: MaterialsProps) {
     setFile(null);
     setUploadProgress(0);
     setIsSubmitting(false);
+    setMaterialToEdit(null);
+  };
+
+  const handleToggleActive = async (material: Material) => {
+    try {
+      const newStatus = material.isActive === false ? true : false;
+      await updateDoc(doc(db, 'materials', material.id), { isActive: newStatus });
+    } catch (err) {
+      console.error(err);
+      alert('Erro ao alterar status do material.');
+    }
   };
 
   const handleDelete = async () => {
@@ -281,7 +315,10 @@ export default function Materials({ profile }: MaterialsProps) {
               className="bg-white rounded-[32px] p-8 max-w-2xl w-full shadow-2xl relative my-8"
             >
               <button
-                onClick={() => setShowForm(false)}
+                onClick={() => {
+                  setShowForm(false);
+                  resetForm();
+                }}
                 className="absolute top-6 right-6 p-2 text-zinc-400 hover:text-black hover:bg-zinc-100 rounded-full transition-colors"
               >
                 <X className="w-5 h-5" />
@@ -424,7 +461,10 @@ export default function Materials({ profile }: MaterialsProps) {
                 <div className="pt-4 flex justify-end gap-3">
                   <button
                     type="button"
-                    onClick={() => setShowForm(false)}
+                    onClick={() => {
+                      setShowForm(false);
+                      resetForm();
+                    }}
                     className="px-6 py-3 rounded-2xl text-sm font-bold text-zinc-600 hover:bg-zinc-100 transition-all"
                   >
                     Cancelar
@@ -459,23 +499,45 @@ export default function Materials({ profile }: MaterialsProps) {
               initial={{ opacity: 0, scale: 0.9 }}
               animate={{ opacity: 1, scale: 1 }}
               key={material.id}
-              className="bg-white p-6 rounded-[32px] ring-1 ring-zinc-950/5 shadow-xl shadow-black/5 flex flex-col h-full group transition-all hover:shadow-2xl hover:-translate-y-1"
+              className={`bg-white p-6 rounded-[32px] ring-1 flex flex-col h-full group transition-all hover:shadow-2xl hover:-translate-y-1 ${material.isActive === false ? "ring-red-950/10 shadow-xl shadow-red-900/5 opacity-75 grayscale-[0.2]" : "ring-zinc-950/5 shadow-xl shadow-black/5"}`}
             >
               <div className="flex justify-between items-start mb-4">
                 <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ring-1 ${getTypeColor(material.type)}`}>
                   {getTypeIcon(material.type)}
                 </div>
-                {(isAdmin || (isTeacher && material.teacherId === profile.teacherId)) && (
-                  <button
-                    onClick={() => setMaterialToDelete(material)}
-                    className="p-2 text-zinc-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors opacity-0 group-hover:opacity-100"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
+                {(isAdmin || (isTeacher && (material.teacherId === profile.teacherId || material.teacherId === profile.uid))) && (
+                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button
+                      onClick={() => handleToggleActive(material)}
+                      className="p-2 text-zinc-400 hover:text-blue-500 hover:bg-blue-50 rounded-full transition-colors"
+                      title={material.isActive === false ? "Tornar Disponível" : "Ocultar dos Alunos"}
+                    >
+                      {material.isActive === false ? <EyeOff className="w-4 h-4 text-red-500" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                    <button
+                      onClick={() => handleEdit(material)}
+                      className="p-2 text-zinc-400 hover:text-orange-500 hover:bg-orange-50 rounded-full transition-colors"
+                      title="Editar"
+                    >
+                      <Pencil className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => setMaterialToDelete(material)}
+                      className="p-2 text-zinc-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors"
+                      title="Excluir"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
                 )}
               </div>
               
-              <h3 className="text-lg font-bold text-zinc-900 mb-2 leading-tight line-clamp-2" title={material.title}>{material.title}</h3>
+              <div className="flex items-start gap-2 mb-2">
+                <h3 className="text-lg font-bold text-zinc-900 leading-tight line-clamp-2" title={material.title}>{material.title}</h3>
+                {material.isActive === false && (
+                  <span className="bg-red-100 text-red-600 text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wider shrink-0 mt-0.5">Inativo</span>
+                )}
+              </div>
               <p className="text-sm text-zinc-500 flex-1 line-clamp-3 mb-4 leading-relaxed">{material.description || 'Sem descrição.'}</p>
               
               <div className="pt-4 border-t border-zinc-100 grid grid-cols-2 gap-2 text-xs text-zinc-500 mb-6">

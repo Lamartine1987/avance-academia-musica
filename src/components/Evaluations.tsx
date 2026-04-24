@@ -9,6 +9,8 @@ import ConfirmModal from './ConfirmModal';
 
 interface EvaluationsProps {
   profile: UserProfile;
+  initialData?: { studentId: string, teacherId: string, instrument: string, date: string } | null;
+  onInitialDataConsumed?: () => void;
 }
 
 const DEFAULT_METRICS = [
@@ -18,7 +20,7 @@ const DEFAULT_METRICS = [
   { name: 'Repertório', score: 0 }
 ];
 
-export default function Evaluations({ profile }: EvaluationsProps) {
+export default function Evaluations({ profile, initialData, onInitialDataConsumed }: EvaluationsProps) {
   const [evaluations, setEvaluations] = useState<Evaluation[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
   const [loading, setLoading] = useState(true);
@@ -77,6 +79,19 @@ export default function Evaluations({ profile }: EvaluationsProps) {
 
     return () => unsubscribe();
   }, [isAdmin, isTeacher, isStudent, profile.studentId]);
+
+  useEffect(() => {
+    if (initialData && students.length > 0 && !showForm && !editingEvalId) {
+      setSelectedStudentId(initialData.studentId);
+      setInstrument(initialData.instrument);
+      setDate(initialData.date);
+      setMetrics([...DEFAULT_METRICS]);
+      setShowForm(true);
+      if (onInitialDataConsumed) {
+        onInitialDataConsumed();
+      }
+    }
+  }, [initialData, students]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
