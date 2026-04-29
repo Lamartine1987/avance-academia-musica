@@ -118,7 +118,7 @@ service cloud.firestore {
     }
 
     function isValidStudent(data) {
-      return hasOnlyAllowedFields(['name', 'email', 'systemLogin', 'phone', 'cpf', 'rg', 'birthDate', 'enrollmentDate', 'fatherName', 'motherName', 'level', 'enrollments', 'status', 'courseValue', 'dueDate', 'createdAt', 'authUid', 'lastEvaluationDate', 'responsibleName', 'responsibleCpf', 'responsibleRg', 'responsiblePhone', 'responsibleKinship', 'isScholarship', 'discount', 'extraNotes', 'classType', 'nationality', 'maritalStatus', 'profession', 'cep', 'address', 'addressNumber', 'neighborhood', 'city', 'state', 'contractUrl', 'signatureIp', 'imageRightsGranted']) &&
+      return hasOnlyAllowedFields(['name', 'email', 'systemLogin', 'phone', 'cpf', 'rg', 'birthDate', 'enrollmentDate', 'fatherName', 'motherName', 'level', 'enrollments', 'status', 'courseValue', 'dueDate', 'billingStartDate', 'createdAt', 'authUid', 'lastEvaluationDate', 'responsibleName', 'responsibleCpf', 'responsibleRg', 'responsiblePhone', 'responsibleKinship', 'isScholarship', 'discount', 'extraNotes', 'classType', 'nationality', 'maritalStatus', 'profession', 'cep', 'address', 'addressNumber', 'neighborhood', 'city', 'state', 'contractUrl', 'signatureIp', 'imageRightsGranted']) &&
              data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
              data.enrollments is list && data.enrollments.size() > 0 &&
              (!('level' in data) || data.level in ['beginner', 'intermediate', 'advanced']) &&
@@ -143,6 +143,7 @@ service cloud.firestore {
              (!('status' in data) || data.status in ['active', 'inactive', 'pending_approval', 'rejected']) &&
              (!('courseValue' in data) || data.courseValue is number) &&
              (!('dueDate' in data) || data.dueDate is number) &&
+             (!('billingStartDate' in data) || data.billingStartDate is string) &&
              (!('createdAt' in data) || data.createdAt is timestamp) &&
              (!('lastEvaluationDate' in data) || data.lastEvaluationDate is string) &&
              (!('nationality' in data) || data.nationality is string) &&
@@ -174,7 +175,7 @@ service cloud.firestore {
     }
 
     function isValidLesson(data) {
-      return hasOnlyAllowedFields(['studentId', 'teacherId', 'instrument', 'startTime', 'endTime', 'status', 'notes', 'photoUrls', 'createdAt', 'isMakeup', 'absenceId', 'isTrial', 'studentName', 'studentPhone']) &&
+      return hasOnlyAllowedFields(['studentId', 'teacherId', 'instrument', 'startTime', 'endTime', 'status', 'notes', 'photoUrls', 'createdAt', 'isMakeup', 'absenceId', 'isTrial', 'studentName', 'studentPhone', 'isStudyTask', 'topicId', 'topicTitle', 'topicUrl', 'suggestedDuration']) &&
              data.studentId is string && data.teacherId is string && data.instrument is string &&
              data.startTime is timestamp && data.endTime is timestamp &&
              (!('status' in data) || data.status in ['scheduled', 'completed', 'cancelled', 'needs_reschedule', 'rescheduled']) &&
@@ -185,6 +186,11 @@ service cloud.firestore {
              (!('isTrial' in data) || data.isTrial is bool) &&
              (!('studentName' in data) || data.studentName is string) &&
              (!('studentPhone' in data) || data.studentPhone is string) &&
+             (!('isStudyTask' in data) || data.isStudyTask is bool) &&
+             (!('topicId' in data) || data.topicId is string) &&
+             (!('topicTitle' in data) || data.topicTitle is string) &&
+             (!('topicUrl' in data) || data.topicUrl is string) &&
+             (!('suggestedDuration' in data) || data.suggestedDuration is number) &&
              (!('createdAt' in data) || data.createdAt is timestamp);
     }
 
@@ -237,6 +243,16 @@ service cloud.firestore {
              data.status in ['pending', 'paid', 'overdue', 'cancelled'] &&
              data.whatsappSent is list &&
              (!('paidAt' in data) || data.paidAt is timestamp) &&
+             (!('createdAt' in data) || data.createdAt is timestamp);
+    }
+
+    function isValidExpense(data) {
+      return hasOnlyAllowedFields(['description', 'amount', 'date', 'category', 'status', 'createdAt']) &&
+             data.description is string && data.description.size() > 0 &&
+             data.amount is number &&
+             data.date is string &&
+             data.category is string &&
+             data.status in ['paid', 'pending'] &&
              (!('createdAt' in data) || data.createdAt is timestamp);
     }
 
@@ -302,6 +318,24 @@ service cloud.firestore {
              (!('createdAt' in data) || data.createdAt is timestamp);
     }
 
+    function isValidLibraryTopic(data) {
+      return hasOnlyAllowedFields(['moduleName', 'title', 'url', 'type', 'description', 'createdBy', 'createdByName', 'visibleToStudents', 'createdAt']) &&
+             data.moduleName is string && data.moduleName.size() > 0 &&
+             data.title is string && data.title.size() > 0 &&
+             data.url is string &&
+             data.type in ['pdf', 'audio', 'video', 'link'] &&
+             (!('description' in data) || data.description is string) &&
+             data.createdBy is string && data.createdByName is string &&
+             data.visibleToStudents is list &&
+             (!('createdAt' in data) || data.createdAt is timestamp);
+    }
+
+    function isValidLibraryModule(data) {
+      return hasOnlyAllowedFields(['name', 'createdAt']) &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
+             (!('createdAt' in data) || data.createdAt is timestamp);
+    }
+
     // ===============================================================
     // Rules
     // ===============================================================
@@ -332,7 +366,15 @@ service cloud.firestore {
 
     match /lessons/{lessonId} {
       allow read: if isAdmin() || (isAuthenticated() && (resource == null || isLessonTeacher(resource.data.teacherId) || isLessonStudent(resource.data.studentId)));
-      allow create, update: if (isAdmin() || isLessonTeacher(request.resource.data.teacherId)) && isValidLesson(request.resource.data);
+      allow create: if (isAdmin() || isLessonTeacher(request.resource.data.teacherId)) && isValidLesson(request.resource.data);
+      allow update: if (
+        (isAdmin() || isLessonTeacher(request.resource.data.teacherId)) && isValidLesson(request.resource.data)
+      ) || (
+        isLessonStudent(resource.data.studentId) && 
+        resource.data.isStudyTask == true && 
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']) &&
+        request.resource.data.status == 'completed'
+      );
       allow delete: if isAdmin();
     }
 
@@ -354,6 +396,12 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    match /expenses/{expenseId} {
+      allow read: if isAdmin();
+      allow create, update: if isAdmin() && isValidExpense(request.resource.data);
+      allow delete: if isAdmin();
+    }
+
     match /templates/{templateId} {
       allow read: if isAuthenticated();
       allow create, update: if isAdmin() && isValidMessageTemplate(request.resource.data);
@@ -361,7 +409,7 @@ service cloud.firestore {
     }
 
     match /settings/{settingId} {
-      allow read: if isAuthenticated();
+      allow read: if settingId == 'school' || isAuthenticated();
       allow write: if isAdmin() && (settingId != 'school' || isValidSchoolSettings(request.resource.data));
     }
 
@@ -430,6 +478,18 @@ service cloud.firestore {
     match /school_calendar/{eventId} {
       allow read: if isAuthenticated();
       allow create, update: if isAdmin() && isValidSchoolEvent(request.resource.data);
+      allow delete: if isAdmin();
+    }
+
+    match /library/{topicId} {
+      allow read: if isAuthenticated();
+      allow create, update: if (isAdmin() || isTeacher()) && isValidLibraryTopic(request.resource.data);
+      allow delete: if isAdmin() || isTeacher();
+    }
+
+    match /library_modules/{moduleId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isAdmin() && isValidLibraryModule(request.resource.data);
       allow delete: if isAdmin();
     }
   }

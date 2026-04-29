@@ -476,6 +476,7 @@ export default function Schedule({ profile, onNavigateToDiary, onNavigateToEvalu
   const getTeacherName = (id: string) => teachers.find(t => t.id === id)?.name || 'Desconhecido';
 
   const filteredLessons = lessons.filter(l => {
+    if (l.isStudyTask) return false; // Hide study tasks from teacher/admin schedule
     if (profile.role === 'teacher') {
       return teacherId ? l.teacherId === teacherId : false;
     }
@@ -875,6 +876,60 @@ export default function Schedule({ profile, onNavigateToDiary, onNavigateToEvalu
               const tColor = getInstrumentColor(lesson.instrument);
               const lessonStart = toDate(lesson.startTime);
               const needsEvaluation = lessonStart ? checkEvaluationDue(lesson.studentId, lessonStart) : false;
+              
+              if (lesson.isStudyTask) {
+                return (
+                  <div key={lesson.id} className="flex flex-col md:flex-row md:items-center gap-4 md:gap-6 p-4 md:p-6 rounded-2xl border border-emerald-200 bg-emerald-50/50 transition-all relative overflow-hidden">
+                    <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-emerald-500 opacity-50" />
+                    
+                    <div className="flex items-center justify-between w-full md:w-auto">
+                      <div className="w-16 h-16 bg-white rounded-xl flex flex-col items-center justify-center border border-emerald-100 shadow-sm shrink-0 text-emerald-600">
+                        <BookOpen className="w-6 h-6 mb-1" />
+                        <span className="text-[10px] font-bold uppercase tracking-wider">Estudo</span>
+                      </div>
+                      <div className="md:hidden">
+                        <span className="px-3 py-1 rounded-full text-[10px] font-medium text-center bg-emerald-100 text-emerald-700 border border-emerald-200">
+                          Tarefa
+                        </span>
+                      </div>
+                    </div>
+                    
+                    <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-4 w-full">
+                      <div className="flex items-center gap-3">
+                        <User className="w-5 h-5 text-emerald-400" />
+                        <div>
+                          <p className="text-xs text-emerald-600/70 uppercase tracking-wider font-bold">Aluno</p>
+                          <p className="font-bold text-emerald-950 flex items-center gap-1">
+                            {getStudentName(lesson.studentId, lesson)}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <BookOpen className="w-5 h-5 text-emerald-400" />
+                        <div>
+                          <p className="text-xs text-emerald-600/70 uppercase tracking-wider font-bold">Tópico</p>
+                          <p className="font-bold text-emerald-950 truncate max-w-[150px]" title={lesson.topicTitle}>{lesson.topicTitle}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <Clock className="w-5 h-5 text-emerald-400" />
+                        <div>
+                          <p className="text-xs text-emerald-600/70 uppercase tracking-wider font-bold">Sugestão</p>
+                          <p className="font-bold text-emerald-950">{lesson.suggestedDuration} minutos</p>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div className="flex gap-2">
+                       {lesson.topicUrl && (
+                         <a href={lesson.topicUrl} target="_blank" rel="noopener noreferrer" className="px-4 py-2 bg-white border border-emerald-200 text-emerald-700 rounded-xl text-xs font-bold hover:bg-emerald-50 transition-colors">
+                           Acessar
+                         </a>
+                       )}
+                    </div>
+                  </div>
+                );
+              }
               return (
                 <div 
                   key={lesson.id} 
@@ -1007,12 +1062,29 @@ export default function Schedule({ profile, onNavigateToDiary, onNavigateToEvalu
                       <p className="text-[10px] uppercase font-bold tracking-widest opacity-80">
                         {safeFormat(day, 'eee', { locale: ptBR })}
                       </p>
-                      <p className="text-lg font-bold mt-0.5">
+                      <p className="text-lg font-bold mt-0.5 mb-1">
                         {safeFormat(day, 'dd')}
                       </p>
+                      
+                      {/* Tarefas de Estudo */}
+                      <div className="w-full flex flex-col gap-1 px-1">
+                        {filteredLessons.filter(l => l.isStudyTask && isSameDay(toDate(l.startTime)!, day)).map(task => (
+                          <a 
+                             key={task.id}
+                             href={task.topicUrl} target="_blank" rel="noopener noreferrer"
+                             title={`Estudar: ${task.topicTitle} (${task.suggestedDuration} min)`}
+                             className="w-full bg-emerald-100 text-emerald-800 text-[9px] font-bold py-1.5 px-1.5 rounded flex items-center justify-between gap-1 shadow-sm hover:bg-emerald-200 transition-colors cursor-pointer"
+                          >
+                            <span className="truncate flex-1 text-left">{task.topicTitle}</span>
+                            <span className="shrink-0">{task.suggestedDuration}m</span>
+                          </a>
+                        ))}
+                      </div>
+
                     </div>
                     {timeSlots.map((time, timeIdx) => {
                       const dayLessons = filteredLessons.filter(l => {
+                        if (l.isStudyTask) return false;
                         const lessonDate = toDate(l.startTime);
                         if (!lessonDate) return false;
                         return isSameDay(lessonDate, day) && safeFormat(lessonDate, 'HH:00') === time;
@@ -1145,6 +1217,7 @@ export default function Schedule({ profile, onNavigateToDiary, onNavigateToEvalu
                             </div>
                             {visibleTeachers.map((teacher) => {
                           const teacherDayLessons = filteredLessons.filter(l => {
+                            if (l.isStudyTask) return false;
                             const lessonDate = toDate(l.startTime);
                             if (!lessonDate) return false;
                             return isSameDay(lessonDate, selectedDate) && 

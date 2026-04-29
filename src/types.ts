@@ -79,6 +79,7 @@ export interface Student {
   status: 'active' | 'inactive' | 'pending_approval' | 'rejected';
   courseValue?: number;
   dueDate?: number;
+  billingStartDate?: string;
   lastEvaluationDate?: string;
   enrollmentDate?: string;
   contractUrl?: string;
@@ -95,6 +96,7 @@ export interface Teacher {
   role?: 'admin' | 'teacher';
   isTeacher?: boolean;
   maxStudents?: number;
+  canManageLibrary?: boolean;
   createdAt: any;
 }
 
@@ -120,6 +122,11 @@ export interface Lesson {
   isTrial?: boolean;
   studentName?: string;
   studentPhone?: string;
+  isStudyTask?: boolean;
+  topicId?: string;
+  topicTitle?: string;
+  topicUrl?: string;
+  suggestedDuration?: number; // in minutes
 }
 
 export interface BlockedTime {
@@ -178,7 +185,7 @@ export interface MessageTemplate {
   createdAt: any;
 }
 
-export type MaterialType = 'pdf' | 'audio' | 'video' | 'link';
+export type MaterialType = 'pdf' | 'audio' | 'video' | 'link' | 'image';
 
 export interface Material {
   id: string;
@@ -219,5 +226,34 @@ export interface SchoolEvent {
   endDate?: string; // YYYY-MM-DD
   isEnabled: boolean;
   description?: string;
+  createdAt: any;
+}
+
+export interface Expense {
+  id: string;
+  description: string;
+  amount: number;
+  date: string; // YYYY-MM-DD
+  category: string;
+  status: 'paid' | 'pending';
+  createdAt: any;
+}
+
+export interface LibraryTopic {
+  id: string;
+  moduleName: string;
+  title: string;
+  url: string;
+  type: 'pdf' | 'audio' | 'video' | 'link' | 'image';
+  description?: string;
+  createdBy: string;
+  createdByName: string;
+  visibleToStudents?: string[]; // IDs dos alunos
+  createdAt: any;
+}
+
+export interface LibraryModule {
+  id: string;
+  name: string;
   createdAt: any;
 }

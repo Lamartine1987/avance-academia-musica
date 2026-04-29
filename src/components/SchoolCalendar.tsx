@@ -2,7 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { collection, query, onSnapshot, addDoc, updateDoc, serverTimestamp, deleteDoc, doc, orderBy } from 'firebase/firestore';
 import { db } from '../firebase';
 import { UserProfile, SchoolEvent } from '../types';
-import { CalendarDays, Plus, Trash2, X, Loader2, Calendar as CalendarIcon, DownloadCloud, AlertTriangle, EyeOff, Eye, CheckCircle2 } from 'lucide-react';
+import { CalendarDays, Plus, Trash2, X, Loader2, Calendar as CalendarIcon, DownloadCloud, AlertTriangle, EyeOff, Eye, CheckCircle2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { format, startOfMonth, endOfMonth, eachDayOfInterval, getDay, isSameMonth, isSameDay, isToday, addMonths, subMonths } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
 import { motion, AnimatePresence } from 'motion/react';
 import ConfirmModal from './ConfirmModal';
 
@@ -27,6 +29,8 @@ export default function SchoolCalendar({ profile }: SchoolCalendarProps) {
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [filterDate, setFilterDate] = useState('');
+  const [currentMonth, setCurrentMonth] = useState(new Date());
   
   // Form State
   const [title, setTitle] = useState('');
@@ -139,15 +143,47 @@ export default function SchoolCalendar({ profile }: SchoolCalendarProps) {
     }
   };
 
+  // Apply date filter
+  const filteredEvents = events.filter(e => {
+    if (!filterDate) return true;
+    const fDate = new Date(filterDate + 'T12:00:00');
+    const start = new Date(e.date + 'T12:00:00');
+    const end = e.endDate ? new Date(e.endDate + 'T12:00:00') : start;
+    // Set hours to 0 to compare just the dates properly
+    fDate.setHours(0,0,0,0);
+    start.setHours(0,0,0,0);
+    end.setHours(0,0,0,0);
+    return fDate >= start && fDate <= end;
+  });
+
   // Group events by month/year for better visualization
-  const upcomingEvents = events.filter(e => {
+  const upcomingEvents = filteredEvents.filter(e => {
     const eDate = new Date(e.endDate || e.date + 'T12:00:00');
     const today = new Date();
     today.setHours(0,0,0,0);
-    return eDate >= today || !e.endDate && new Date(e.date + 'T12:00:00') >= today;
+    return eDate >= today || (!e.endDate && new Date(e.date + 'T12:00:00') >= today);
   }).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
-  const pastEvents = events.filter(e => !upcomingEvents.includes(e));
+  const pastEvents = filteredEvents.filter(e => !upcomingEvents.includes(e));
+
+  const monthStart = startOfMonth(currentMonth);
+  const monthEnd = endOfMonth(currentMonth);
+  const calStartDate = new Date(monthStart);
+  calStartDate.setDate(calStartDate.getDate() - getDay(monthStart));
+  const calEndDate = new Date(monthEnd);
+  calEndDate.setDate(calEndDate.getDate() + (6 - getDay(monthEnd)));
+
+  const calendarDays = eachDayOfInterval({
+      start: calStartDate,
+      end: calEndDate
+  });
+
+  const nextMonth = () => setCurrentMonth(addMonths(currentMonth, 1));
+  const prevMonth = () => setCurrentMonth(subMonths(currentMonth, 1));
+  const onDateClick = (day: Date) => {
+      const formatted = format(day, 'yyyy-MM-dd');
+      setFilterDate(filterDate === formatted ? '' : formatted);
+  };
 
   if (loading) {
     return (
@@ -169,24 +205,102 @@ export default function SchoolCalendar({ profile }: SchoolCalendarProps) {
           </p>
         </div>
         
-        {isAdmin && (
-          <div className="flex flex-col sm:flex-row items-center gap-3 w-full md:w-auto">
-            <button 
-              onClick={handleImportHolidays}
-              disabled={isSubmitting}
-              className="w-full sm:w-auto flex items-center justify-center gap-2 bg-blue-50 text-blue-600 px-6 py-3 rounded-2xl hover:bg-blue-100 transition-all font-bold whitespace-nowrap"
-            >
-              <DownloadCloud className="w-5 h-5" /> Importar Nacionais
-            </button>
-            <button 
-              onClick={() => { resetForm(); setShowForm(true); }}
-              className="w-full sm:w-auto flex items-center justify-center gap-2 bg-gradient-to-r from-orange-500 to-amber-500 text-white px-6 py-3 rounded-2xl hover:from-orange-600 hover:to-amber-600 transition-all shadow-lg hover:shadow-orange-500/25 active:scale-95 font-bold whitespace-nowrap"
-            >
-              <Plus className="w-5 h-5" /> Novo Evento
-            </button>
-          </div>
-        )}
+        <div className="flex flex-col sm:flex-row items-center gap-3 w-full md:w-auto">
+          {isAdmin && (
+            <>
+              <button 
+                onClick={handleImportHolidays}
+                disabled={isSubmitting}
+                className="w-full sm:w-auto flex items-center justify-center gap-2 bg-blue-50 text-blue-600 px-6 py-3 rounded-2xl hover:bg-blue-100 transition-all font-bold whitespace-nowrap"
+              >
+                <DownloadCloud className="w-5 h-5" /> Importar Nacionais
+              </button>
+              <button 
+                onClick={() => { resetForm(); setShowForm(true); }}
+                className="w-full sm:w-auto flex items-center justify-center gap-2 bg-gradient-to-r from-orange-500 to-amber-500 text-white px-6 py-3 rounded-2xl hover:from-orange-600 hover:to-amber-600 transition-all shadow-lg hover:shadow-orange-500/25 active:scale-95 font-bold whitespace-nowrap"
+              >
+                <Plus className="w-5 h-5" /> Novo Evento
+              </button>
+            </>
+          )}
+        </div>
       </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Calendar Sidebar */}
+        <div className="lg:col-span-1">
+          <div className="bg-white p-6 rounded-[32px] ring-1 ring-zinc-950/5 shadow-xl shadow-black/5 h-max sticky top-6">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="font-bold text-lg text-zinc-900 capitalize">
+                {format(currentMonth, 'MMMM yyyy', { locale: ptBR })}
+              </h3>
+              <div className="flex items-center gap-2">
+                <button onClick={prevMonth} className="p-2 hover:bg-zinc-100 rounded-full transition-colors text-zinc-600">
+                  <ChevronLeft className="w-5 h-5" />
+                </button>
+                <button onClick={nextMonth} className="p-2 hover:bg-zinc-100 rounded-full transition-colors text-zinc-600">
+                  <ChevronRight className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+            
+            <div className="grid grid-cols-7 gap-1 mb-2">
+              {['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'].map(day => (
+                <div key={day} className="text-center text-xs font-bold text-zinc-400 py-2">
+                  {day}
+                </div>
+              ))}
+            </div>
+            
+            <div className="grid grid-cols-7 gap-1">
+              {calendarDays.map((day, idx) => {
+                const isSelected = filterDate === format(day, 'yyyy-MM-dd');
+                const isCurrentMonth = isSameMonth(day, monthStart);
+                const isTodayDate = isToday(day);
+                
+                // Check if this day has any events
+                const dayHasEvent = events.some(e => {
+                  const start = new Date(e.date + 'T12:00:00');
+                  const end = e.endDate ? new Date(e.endDate + 'T12:00:00') : start;
+                  start.setHours(0,0,0,0);
+                  end.setHours(0,0,0,0);
+                  const checkDay = new Date(day);
+                  checkDay.setHours(0,0,0,0);
+                  return checkDay >= start && checkDay <= end;
+                });
+
+                return (
+                  <button
+                    key={idx}
+                    onClick={() => onDateClick(day)}
+                    className={`
+                      aspect-square flex flex-col items-center justify-center rounded-2xl text-sm font-semibold relative transition-all
+                      ${!isCurrentMonth ? 'text-zinc-300' : 'text-zinc-700 hover:bg-zinc-100'}
+                      ${isSelected ? 'bg-orange-500 text-white hover:bg-orange-600 shadow-md shadow-orange-500/20' : ''}
+                      ${isTodayDate && !isSelected ? 'text-orange-600 bg-orange-50' : ''}
+                    `}
+                  >
+                    <span>{format(day, 'd')}</span>
+                    {dayHasEvent && (
+                      <div className={`absolute bottom-1.5 w-1.5 h-1.5 rounded-full ${isSelected ? 'bg-white' : 'bg-orange-400'}`} />
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+            {filterDate && (
+              <button 
+                onClick={() => setFilterDate('')}
+                className="mt-6 w-full py-3 text-sm font-bold text-zinc-500 hover:text-zinc-900 bg-zinc-50 hover:bg-zinc-100 rounded-xl transition-colors"
+              >
+                Limpar Filtro
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Events List */}
+        <div className="lg:col-span-2 space-y-6">
 
       <AnimatePresence>
         {showForm && (
@@ -331,7 +445,9 @@ export default function SchoolCalendar({ profile }: SchoolCalendarProps) {
               ))}
             </div>
           </div>
-        )}
+          )}
+        </div>
+      </div>
       </div>
 
       <ConfirmModal

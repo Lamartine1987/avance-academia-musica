@@ -2,9 +2,9 @@ import React, { useState, useEffect, useRef } from 'react';
 import { collection, onSnapshot, query, where, orderBy, doc, setDoc } from 'firebase/firestore';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '../firebase';
-import { UserProfile, Lesson, Student } from '../types';
+import { UserProfile, Lesson, Student, LibraryTopic } from '../types';
 import { handleFirestoreError, OperationType } from '../lib/error-handler';
-import { Clock, User, FileText, CheckCircle2, AlertCircle, Camera, X, ImageIcon, Loader2, Link, Trash } from 'lucide-react';
+import { Clock, User, FileText, CheckCircle2, AlertCircle, Camera, X, ImageIcon, Loader2, Link, Trash, Headphones } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { cn } from '../lib/utils';
@@ -21,6 +21,8 @@ export default function ClassDiary({ profile, initialStudentId, initialLessonId 
   const [lessons, setLessons] = useState<Lesson[]>([]);
   const [selectedStudentId, setSelectedStudentId] = useState<string>(initialStudentId || '');
   const [selectedLessonId, setSelectedLessonId] = useState<string>(initialLessonId || '');
+  const [activeTab, setActiveTab] = useState<'diary' | 'studies'>('diary');
+  const [topics, setTopics] = useState<LibraryTopic[]>([]);
   
   const [notes, setNotes] = useState('');
   const [selectedPhotos, setSelectedPhotos] = useState<File[]>([]);
@@ -52,9 +54,15 @@ export default function ClassDiary({ profile, initialStudentId, initialLessonId 
       handleFirestoreError(error, OperationType.LIST, 'lessons');
     });
 
+    // Fetch topics
+    const unsubscribeTopics = onSnapshot(collection(db, 'library'), (snapshot) => {
+      setTopics(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as LibraryTopic)));
+    });
+
     return () => {
       unsubscribeStudents();
       unsubscribeLessons();
+      unsubscribeTopics();
     };
   }, [profile]);
 
@@ -96,7 +104,7 @@ export default function ClassDiary({ profile, initialStudentId, initialLessonId 
   };
 
   // Lessons for the selected student
-  const studentLessons = selectedStudentId 
+  const allStudentRecords = selectedStudentId 
     ? lessons.filter(l => l.studentId === selectedStudentId && l.status !== 'cancelled')
              .sort((a, b) => {
                 const dateA = toDate(a.startTime)?.getTime() || 0;
@@ -104,6 +112,9 @@ export default function ClassDiary({ profile, initialStudentId, initialLessonId 
                 return dateB - dateA; // newest first
              })
     : [];
+
+  const studentLessons = allStudentRecords.filter(l => !l.isStudyTask);
+  const studentStudyTasks = allStudentRecords.filter(l => l.isStudyTask);
 
   const completedLessons = studentLessons.filter(l => l.status === 'completed' || !!l.notes);
   const pendingLessons = studentLessons.filter(l => l.status !== 'completed' && !l.notes);
@@ -262,10 +273,35 @@ export default function ClassDiary({ profile, initialStudentId, initialLessonId 
               <p className="text-zinc-500 font-medium">Por favor, selecione um aluno para visualizar o diário.</p>
             </div>
           ) : (
-            <div className="flex flex-col gap-10">
+            <div className="flex flex-col gap-8">
               
-              {/* Top Section: Form */}
-              <div className="max-w-4xl mx-auto w-full space-y-6">
+              <div className="flex bg-zinc-100 p-1 rounded-2xl w-full max-w-md mx-auto relative z-10">
+                <button
+                  onClick={() => setActiveTab('diary')}
+                  className={cn(
+                    "flex-1 py-3 px-4 rounded-xl font-bold text-sm transition-all flex items-center justify-center gap-2",
+                    activeTab === 'diary' ? "bg-white text-orange-600 shadow-sm" : "text-zinc-500 hover:text-zinc-700"
+                  )}
+                >
+                  <FileText className="w-4 h-4" />
+                  Aulas e Anotações
+                </button>
+                <button
+                  onClick={() => setActiveTab('studies')}
+                  className={cn(
+                    "flex-1 py-3 px-4 rounded-xl font-bold text-sm transition-all flex items-center justify-center gap-2",
+                    activeTab === 'studies' ? "bg-white text-emerald-600 shadow-sm" : "text-zinc-500 hover:text-zinc-700"
+                  )}
+                >
+                  <Headphones className="w-4 h-4" />
+                  Estudos Práticos
+                </button>
+              </div>
+
+              {activeTab === 'diary' ? (
+                <>
+                  {/* Top Section: Form */}
+                  <div className="max-w-4xl mx-auto w-full space-y-6">
                 <div className="bg-zinc-50 rounded-3xl p-6 border border-zinc-100">
                   <h3 className="text-lg font-bold display-font mb-4">Preencher Relatório</h3>
                   
@@ -500,6 +536,107 @@ export default function ClassDiary({ profile, initialStudentId, initialLessonId 
                   )}
                 </div>
               </div>
+              </>
+              ) : (
+                <div className="w-full">
+                  <div className="bg-white rounded-3xl p-6 md:p-8 border border-zinc-100 shadow-sm">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+                      <div>
+                        <h3 className="text-lg font-bold display-font flex items-center gap-2">
+                          <Headphones className="w-5 h-5 text-emerald-500" />
+                          Estudos Práticos Concluídos
+                        </h3>
+                        <p className="text-xs text-zinc-500 mt-1">Exibindo os estudos que o aluno marcou como concluído na Sala de Prática.</p>
+                      </div>
+                    </div>
+
+                    {studentStudyTasks.length > 0 && (() => {
+                      const totalStudyTasks = studentStudyTasks.length;
+                      const completedStudyTasks = studentStudyTasks.filter(t => t.status === 'completed').length;
+                      const studyProgress = Math.round((completedStudyTasks / totalStudyTasks) * 100);
+
+                      return (
+                        <div className="mb-8 p-5 bg-emerald-50 rounded-2xl border border-emerald-100 flex items-center gap-4">
+                          <div className="w-12 h-12 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center shrink-0">
+                            <span className="text-sm font-black">{studyProgress}%</span>
+                          </div>
+                          <div className="flex-1">
+                            <div className="flex justify-between items-center mb-2">
+                              <span className="text-sm font-bold text-emerald-900">Progresso Geral das Práticas</span>
+                            </div>
+                            <div className="w-full bg-emerald-200/50 rounded-full h-2">
+                              <div className="bg-emerald-500 h-2 rounded-full transition-all duration-1000 ease-out" style={{ width: `${studyProgress}%` }}></div>
+                            </div>
+                            <p className="text-xs text-emerald-700 mt-2 font-medium">
+                              {completedStudyTasks} de {totalStudyTasks} tarefas agendadas foram concluídas.
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    })()}
+
+                    {studentStudyTasks.length === 0 ? (
+                      <div className="py-20 text-center text-zinc-400">
+                        Nenhum estudo agendado para este aluno.
+                      </div>
+                    ) : (
+                      <div className="space-y-6 relative before:absolute before:inset-0 before:ml-5 before:-translate-x-px md:before:mx-auto md:before:translate-x-0 before:h-full before:w-0.5 before:bg-gradient-to-b before:from-transparent before:via-zinc-200 before:to-transparent">
+                        {studentStudyTasks.map((task) => {
+                          const isCompleted = task.status === 'completed';
+                          const lessonDate = toDate(task.startTime);
+                          const topic = topics.find(t => t.id === task.topicId);
+                          
+                          return (
+                            <div key={task.id} className="relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse group">
+                              {/* Marker */}
+                              <div className={cn(
+                                "flex items-center justify-center w-10 h-10 rounded-full border-4 border-white shrink-0 md:order-1 md:group-odd:-translate-x-1/2 md:group-even:translate-x-1/2 shadow-sm relative z-10 hidden md:flex",
+                                isCompleted ? "bg-emerald-500 text-white" : "bg-orange-500 text-white"
+                              )}>
+                                {isCompleted ? <CheckCircle2 className="w-4 h-4" /> : <Clock className="w-4 h-4" />}
+                              </div>
+
+                              {/* Mobile marker */}
+                              <div className={cn(
+                                "flex md:hidden items-center justify-center w-10 h-10 rounded-full border-4 border-white shrink-0 shadow-sm relative z-10",
+                                isCompleted ? "bg-emerald-500 text-white" : "bg-orange-500 text-white"
+                              )}>
+                                {isCompleted ? <CheckCircle2 className="w-4 h-4" /> : <Clock className="w-4 h-4" />}
+                              </div>
+
+                              {/* Card */}
+                              <div className="w-[calc(100%-4rem)] md:w-[calc(50%-2.5rem)]">
+                                <div className={cn("p-5 rounded-2xl border bg-white", isCompleted ? "border-zinc-100" : "border-orange-100 shadow-[0_0_15px_rgba(249,115,22,0.05)]")}>
+                                  <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
+                                    <div className="flex items-center gap-2">
+                                       <span className="font-bold text-black">{safeFormat(lessonDate, "dd 'de' MMM, yyyy", { locale: ptBR })}</span>
+                                    </div>
+                                    <span className={cn("px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider", isCompleted ? "bg-emerald-100 text-emerald-700" : "bg-orange-100 text-orange-700")}>
+                                      {isCompleted ? 'Concluído' : 'Pendente'}
+                                    </span>
+                                  </div>
+                                  
+                                  <div className={cn("p-4 rounded-xl border", isCompleted ? "bg-emerald-50 border-emerald-100" : "bg-orange-50 border-orange-100")}>
+                                     <p className={cn("text-sm font-bold mb-1", isCompleted ? "text-emerald-900" : "text-orange-900")}>
+                                        {topic?.title || 'Material da Biblioteca'}
+                                     </p>
+                                     {topic?.moduleName && (
+                                        <p className={cn("text-[10px] uppercase font-bold tracking-wider mb-2", isCompleted ? "text-emerald-600" : "text-orange-600")}>{topic.moduleName}</p>
+                                     )}
+                                     <p className={cn("text-xs font-medium flex items-center gap-1.5", isCompleted ? "text-emerald-700" : "text-orange-700")}>
+                                        <Clock className="w-3.5 h-3.5" /> {isCompleted ? 'Praticou por' : 'Sugerido:'} {task.suggestedDuration || 30} min
+                                     </p>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>

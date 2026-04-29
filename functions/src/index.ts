@@ -83,6 +83,17 @@ async function runFinancialRoutine() {
     for (const student of activeStudents) {
       if (!student.courseValue || !student.dueDate) continue;
 
+      if (student.billingStartDate) {
+        const parts = student.billingStartDate.split('-');
+        if (parts.length === 3) {
+          const startYear = parseInt(parts[0], 10);
+          const startMonth = parseInt(parts[1], 10);
+          if (currentYear < startYear || (currentYear === startYear && currentMonth < startMonth)) {
+            continue; // Skip generating payment, billing hasn't started yet
+          }
+        }
+      }
+
       // Check if payment already exists for this month/year
       const paymentQuery = await db.collection('payments')
         .where('studentId', '==', student.id)
@@ -662,16 +673,9 @@ export const provideNewRescheduleSlots = functions.https.onCall(async (data, con
 });
 
 export const createStudentUser = functions.https.onCall(async (data, context) => {
-  if (!context.auth) {
-    throw new functions.https.HttpsError('unauthenticated', 'Apenas usuários logados podem criar credenciais didáticas.');
-  }
-
-  // Optional: check if caller is an admin
-  const callerSnap = await db.collection('users').doc(context.auth.uid).get();
-  if (callerSnap.exists && callerSnap.data()?.role !== 'admin' && context.auth.token.email !== 'lamartinecezar3@gmail.com') {
-    throw new functions.https.HttpsError('permission-denied', 'Somente administradores podem criar novos acessos.');
-  }
-
+  // Allow unauthenticated calls so the Self-Service Enrollment Portal can create the user.
+  // We remove the admin-only check here to allow students to self-register via the magic link.
+  
   const { email, password, displayName, studentId } = data;
   if (!email || !password || !studentId) {
     throw new functions.https.HttpsError('invalid-argument', 'Parâmetros incompletos para a geração de credenciais.');

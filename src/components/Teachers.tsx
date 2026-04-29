@@ -26,7 +26,8 @@ export default function Teachers({ profile }: { profile: UserProfile }) {
     phone: '',
     role: 'teacher' as 'teacher' | 'admin',
     isTeacher: true as boolean,
-    maxStudents: undefined as number | undefined
+    maxStudents: undefined as number | undefined,
+    canManageLibrary: false
   });
 
   useEffect(() => {
@@ -71,7 +72,8 @@ export default function Teachers({ profile }: { profile: UserProfile }) {
           instruments: newTeacher.isTeacher ? newTeacher.instruments : [],
           bio: newTeacher.bio,
           role: newTeacher.role,
-          isTeacher: newTeacher.isTeacher
+          isTeacher: newTeacher.isTeacher,
+          canManageLibrary: newTeacher.canManageLibrary
         });
 
         // Update user document if it exists
@@ -103,6 +105,7 @@ export default function Teachers({ profile }: { profile: UserProfile }) {
           bio: newTeacher.bio,
           role: newTeacher.role,
           isTeacher: newTeacher.isTeacher,
+          canManageLibrary: newTeacher.canManageLibrary,
           createdAt: serverTimestamp()
         });
 
@@ -118,7 +121,7 @@ export default function Teachers({ profile }: { profile: UserProfile }) {
       }
       setIsModalOpen(false);
       setEditingTeacherId(null);
-      setNewTeacher({ name: '', email: '', password: '', phone: '', instruments: [], bio: '', role: 'teacher', isTeacher: true });
+      setNewTeacher({ name: '', email: '', password: '', phone: '', instruments: [], bio: '', role: 'teacher', isTeacher: true, canManageLibrary: false });
     } catch (error: any) {
       if (error && error.code && error.code.startsWith('auth/')) {
         let msg = 'Erro ao criar credenciais de acesso.';
@@ -155,14 +158,15 @@ export default function Teachers({ profile }: { profile: UserProfile }) {
       bio: teacher.bio || '',
       role: teacher.role || 'teacher',
       isTeacher: initialIsTeacher,
-      maxStudents: teacher.maxStudents
+      maxStudents: teacher.maxStudents,
+      canManageLibrary: teacher.canManageLibrary || false
     });
     setIsModalOpen(true);
   };
 
   const openAddModal = () => {
     setEditingTeacherId(null);
-    setNewTeacher({ name: '', email: '', password: '', phone: '', instruments: [], bio: '', role: 'teacher', isTeacher: true, maxStudents: undefined });
+    setNewTeacher({ name: '', email: '', password: '', phone: '', instruments: [], bio: '', role: 'teacher', isTeacher: true, maxStudents: undefined, canManageLibrary: false });
     setIsModalOpen(true);
   };
 
@@ -414,6 +418,20 @@ export default function Teachers({ profile }: { profile: UserProfile }) {
                   onChange={e => setNewTeacher({...newTeacher, bio: e.target.value})}
                   className="w-full bg-zinc-50 border border-zinc-100 rounded-2xl px-6 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 transition-all resize-none"
                 />
+              </div>
+              <div>
+                <label className="flex items-center gap-3 p-4 border border-zinc-100 rounded-2xl cursor-pointer hover:bg-zinc-50 transition-colors">
+                  <input 
+                    type="checkbox"
+                    checked={newTeacher.canManageLibrary}
+                    onChange={e => setNewTeacher({...newTeacher, canManageLibrary: e.target.checked})}
+                    className="w-5 h-5 text-orange-500 rounded border-zinc-300 focus:ring-orange-500"
+                  />
+                  <div className="flex flex-col">
+                    <span className="text-sm text-zinc-900 font-bold">Permissão de Biblioteca Oficial</span>
+                    <span className="text-xs text-zinc-500">Permitir que este professor adicione Módulos e Tópicos na Biblioteca da Escola.</span>
+                  </div>
+                </label>
               </div>
               <button 
                 type="submit"

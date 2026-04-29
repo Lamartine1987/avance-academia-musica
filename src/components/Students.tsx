@@ -5,7 +5,7 @@ import { db, storage } from '../firebase';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { UserProfile, Student, Teacher, Instrument, CourseEnrollment } from '../types';
 import { handleFirestoreError, OperationType } from '../lib/error-handler';
-import { Plus, Trash2, X, Calendar, Clock, User, Pencil, Eye, Loader2, ChevronLeft, Music2 } from 'lucide-react';
+import { Plus, Trash2, X, Calendar, Clock, User, Pencil, Eye, EyeOff, Loader2, ChevronLeft, Music2 } from 'lucide-react';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, getDay, setHours, setMinutes, isAfter, addYears } from 'date-fns';
 import { cn } from '../lib/utils';
 import ConfirmModal from './ConfirmModal';
@@ -52,6 +52,7 @@ export default function Students({ profile }: { profile: UserProfile }) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [cepLoading, setCepLoading] = useState(false);
   const [viewingStudent, setViewingStudent] = useState<Student | null>(null);
+  const [isPrivacyMode, setIsPrivacyMode] = useState(false);
   const [schoolSettings, setSchoolSettings] = useState({ 
     defaultMaxStudents: 1,
     defaultCoursePrice: null as number | null,
@@ -62,6 +63,8 @@ export default function Students({ profile }: { profile: UserProfile }) {
   const [filterInstrument, setFilterInstrument] = useState('');
   const [filterTeacher, setFilterTeacher] = useState('');
   const [filterDiscount, setFilterDiscount] = useState<'all' | 'with_discount' | 'without_discount'>('all');
+  const [filterStartDate, setFilterStartDate] = useState('');
+  const [filterEndDate, setFilterEndDate] = useState('');
   const [selectedStudents, setSelectedStudents] = useState<Set<string>>(new Set());
   const [isLinkModalOpen, setIsLinkModalOpen] = useState(false);
   const [isRejectModalOpen, setIsRejectModalOpen] = useState(false);
@@ -108,6 +111,7 @@ export default function Students({ profile }: { profile: UserProfile }) {
     enrollments: [] as CourseEnrollment[],
     courseValue: 0,
     dueDate: 10,
+    billingStartDate: new Date().toISOString().split('T')[0],
     responsibleName: '',
     responsibleCpf: '',
     responsiblePhone: '',
@@ -405,10 +409,18 @@ export default function Students({ profile }: { profile: UserProfile }) {
 
     setIsSubmitting(true);
     try {
+      let derivedDueDate = 10;
+      if (newStudent.billingStartDate) {
+        const parts = newStudent.billingStartDate.split('-');
+        if (parts.length === 3) {
+          derivedDueDate = parseInt(parts[2], 10);
+        }
+      }
+
       const payload = {
         ...newStudent,
         courseValue: Number(newStudent.courseValue) || 0,
-        dueDate: Number(newStudent.dueDate) || 10
+        dueDate: derivedDueDate
       };
 
       if (editingStudentId) {
@@ -524,28 +536,28 @@ export default function Students({ profile }: { profile: UserProfile }) {
           await generateLessonsForYear(docRef.id, newStudent.enrollments);
         }
 
-        // Generate initial payment for the current month
-        if (newStudent.status === 'active' && newStudent.courseValue && newStudent.dueDate) {
+        // Generate initial payment for the billing start date
+        if (newStudent.status === 'active' && newStudent.courseValue && newStudent.billingStartDate) {
           try {
-            const today = new Date();
-            const currentMonth = today.getMonth() + 1;
-            const currentYear = today.getFullYear();
-            let dueD = newStudent.dueDate;
+            const [startYearStr, startMonthStr, startDayStr] = newStudent.billingStartDate.split('-');
+            const startYear = parseInt(startYearStr, 10);
+            const startMonth = parseInt(startMonthStr, 10);
+            let dueD = parseInt(startDayStr, 10);
             
-            const daysInMonth = new Date(currentYear, currentMonth, 0).getDate();
+            const daysInMonth = new Date(startYear, startMonth, 0).getDate();
             if (dueD > daysInMonth) dueD = daysInMonth;
             
-            const dueDateStr = `${currentYear}-${String(currentMonth).padStart(2, '0')}-${String(dueD).padStart(2, '0')}`;
+            const dueDateStr = `${startYear}-${String(startMonth).padStart(2, '0')}-${String(dueD).padStart(2, '0')}`;
             
             await addDoc(collection(db, 'payments'), {
               studentId: docRef.id,
               studentName: newStudent.name,
               amount: Math.max(0, Number(newStudent.courseValue) - (Number(newStudent.discount) || 0)),
               dueDate: dueDateStr,
-              month: currentMonth,
-              year: currentYear,
+              month: startMonth,
+              year: startYear,
               status: 'pending',
-              whatsappSent: [],
+              whatsappSent: ['pre-due', 'due', 'overdue'], // Evita que o robô envie mensagens automáticas para a 1ª mensalidade
               createdAt: serverTimestamp()
             });
           } catch(err) {
@@ -1026,7 +1038,16 @@ export default function Students({ profile }: { profile: UserProfile }) {
     const matchDiscount = filterDiscount === 'all' || 
                          (filterDiscount === 'with_discount' && hasDiscount) ||
                          (filterDiscount === 'without_discount' && !hasDiscount);
-    return matchName && matchStatus && matchInstrument && matchTeacher && matchDiscount;
+                         
+    let matchDate = true;
+    if ((filterStartDate || filterEndDate) && student.enrollmentDate) {
+      if (filterStartDate && student.enrollmentDate < filterStartDate) matchDate = false;
+      if (filterEndDate && student.enrollmentDate > filterEndDate) matchDate = false;
+    } else if (filterStartDate || filterEndDate) {
+      matchDate = false;
+    }
+
+    return matchName && matchStatus && matchInstrument && matchTeacher && matchDiscount && matchDate;
   });
 
   const toggleSelectAll = () => {
@@ -1102,6 +1123,51 @@ export default function Students({ profile }: { profile: UserProfile }) {
             <option value="with_discount">Apenas com Desconto</option>
             <option value="without_discount">Sem Desconto</option>
           </select>
+          <div className="flex flex-col sm:flex-row items-center gap-2 bg-zinc-50 border border-zinc-200 rounded-2xl p-2 sm:p-1 shadow-sm w-full lg:w-auto">
+            <div className="flex items-center px-2 w-full sm:w-auto justify-between sm:justify-center">
+              <span className="text-xs font-bold text-zinc-500 uppercase tracking-wider">Período:</span>
+              {(filterStartDate || filterEndDate) && (
+                <button
+                  onClick={() => {
+                    setFilterStartDate('');
+                    setFilterEndDate('');
+                  }}
+                  className="sm:hidden p-1 hover:bg-zinc-200 rounded-lg transition-colors text-zinc-400 hover:text-zinc-700"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              <input
+                type="date"
+                value={filterStartDate}
+                onChange={(e) => setFilterStartDate(e.target.value)}
+                className="flex-1 min-w-0 bg-white border border-zinc-200 rounded-xl px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 transition-all text-zinc-700 font-medium cursor-pointer"
+                title="Data de Início"
+              />
+              <span className="text-zinc-400 font-medium text-sm">até</span>
+              <input
+                type="date"
+                value={filterEndDate}
+                onChange={(e) => setFilterEndDate(e.target.value)}
+                className="flex-1 min-w-0 bg-white border border-zinc-200 rounded-xl px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 transition-all text-zinc-700 font-medium cursor-pointer"
+                title="Data Final"
+              />
+              {(filterStartDate || filterEndDate) && (
+                <button
+                  onClick={() => {
+                    setFilterStartDate('');
+                    setFilterEndDate('');
+                  }}
+                  className="hidden sm:block p-2 hover:bg-zinc-200 rounded-xl transition-colors text-zinc-400 hover:text-zinc-700 ml-1 shrink-0"
+                  title="Limpar período"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+          </div>
         </div>
         
         <div className="flex items-center gap-3 self-end lg:self-auto">
@@ -1137,7 +1203,16 @@ export default function Students({ profile }: { profile: UserProfile }) {
       <div className="bg-white rounded-[32px] ring-1 ring-zinc-950/5 shadow-xl shadow-black/[0.03] overflow-hidden flex flex-col">
         <div className="p-8 border-b border-zinc-100 flex items-center justify-between bg-zinc-50/50">
           <h3 className="text-xl font-medium">Lista de Alunos</h3>
-          <span className="text-zinc-400 text-sm">{filteredStudents.length} de {students.length} alunos</span>
+          <div className="flex items-center gap-4">
+            <button
+              onClick={() => setIsPrivacyMode(!isPrivacyMode)}
+              className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-white ring-1 ring-zinc-200 text-zinc-500 hover:text-black hover:ring-zinc-300 transition-all text-sm font-medium shadow-sm"
+            >
+              {isPrivacyMode ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              {isPrivacyMode ? 'Ocultar Detalhes' : 'Ocultar Detalhes'}
+            </button>
+            <span className="text-zinc-400 text-sm">{filteredStudents.length} de {students.length} alunos</span>
+          </div>
         </div>
         <div className="px-8 pb-8 overflow-x-auto">
           <table className="w-full text-left min-w-[800px]">
@@ -1186,40 +1261,47 @@ export default function Students({ profile }: { profile: UserProfile }) {
                         )}
                       </div>
                       <div className="text-xs text-zinc-500 mt-2 flex flex-col gap-0.5">
-                        <span className="font-medium text-emerald-700">Login Acesso: {student.systemLogin || '(Não salvo na base de dados)'}</span>
+                        <span className="font-medium text-emerald-700">Login Acesso: {isPrivacyMode ? '••••••' : student.systemLogin || '(Não salvo na base de dados)'}</span>
                         <span>Matrícula: {student.enrollmentDate ? format(new Date(student.enrollmentDate + 'T12:00:00'), 'dd/MM/yyyy') : 'Não informada'}</span>
                       </div>
                     </td>
                     <td className="py-5">
-                      <div className="flex flex-col gap-1">
-                        {!!student.courseValue && !student.discount && (
-                          <span className="text-sm font-medium text-emerald-600">
-                            {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(student.courseValue)}
-                          </span>
-                        )}
-                        {!!student.courseValue && !!student.discount && (
-                          <div className="flex flex-col">
-                            <span className="text-xs font-semibold text-zinc-400 line-through">
+                      {isPrivacyMode ? (
+                        <span className="text-zinc-400">••••••</span>
+                      ) : (
+                        <div className="flex flex-col gap-1">
+                          {!!student.courseValue && !student.discount && (
+                            <span className="text-sm font-medium text-emerald-600">
                               {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(student.courseValue)}
                             </span>
-                            <span className="text-sm font-bold text-orange-600">
-                              {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Math.max(0, student.courseValue - student.discount))}
-                              <span className="text-[10px] ml-1 bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded">Com desc.</span>
+                          )}
+                          {!!student.courseValue && !!student.discount && (
+                            <div className="flex flex-col">
+                              <span className="text-xs font-semibold text-zinc-400 line-through">
+                                {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(student.courseValue)}
+                              </span>
+                              <span className="text-sm font-bold text-orange-600">
+                                {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Math.max(0, student.courseValue - student.discount))}
+                                <span className="text-[10px] ml-1 bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded">Com desc.</span>
+                              </span>
+                            </div>
+                          )}
+                          {!!student.dueDate && (
+                            <span className="text-xs text-zinc-500 mt-1">
+                              Vence dia {student.dueDate}
                             </span>
-                          </div>
-                        )}
-                        {!!student.dueDate && (
-                          <span className="text-xs text-zinc-500 mt-1">
-                            Vence dia {student.dueDate}
-                          </span>
-                        )}
-                        {!student.courseValue && !student.dueDate && (
-                          <span className="text-xs text-zinc-400 italic">Não informado</span>
-                        )}
-                      </div>
+                          )}
+                          {!student.courseValue && !student.dueDate && (
+                            <span className="text-xs text-zinc-400 italic">Não informado</span>
+                          )}
+                        </div>
+                      )}
                     </td>
                     <td colSpan={3} className="py-5">
-                      <div className="space-y-3">
+                      {isPrivacyMode ? (
+                        <span className="text-zinc-400">••••••</span>
+                      ) : (
+                        <div className="space-y-3">
                         {(student.enrollments || []).map((enrollment, eIdx) => {
                           const teacher = teachers.find(t => t.id === enrollment.teacherId);
                           return (
@@ -1248,16 +1330,21 @@ export default function Students({ profile }: { profile: UserProfile }) {
                           );
                         })}
                       </div>
+                      )}
                     </td>
                     <td className="py-5">
-                      <span className={cn(
-                        "px-3 py-1 rounded-full text-xs font-medium capitalize",
-                        student.status === 'active' ? "bg-emerald-50 text-emerald-600 ring-1 ring-inset ring-emerald-600/20" : 
-                        student.status === 'pending_approval' ? "bg-orange-100 text-orange-700 ring-1 ring-inset ring-orange-500/30 font-bold" :
-                        "bg-zinc-50 text-zinc-600 ring-1 ring-inset ring-zinc-500/20"
-                      )}>
-                        {student.status === 'active' ? 'Ativo' : student.status === 'pending_approval' ? 'Pendente de Aprovação' : 'Inativo'}
-                      </span>
+                      {isPrivacyMode ? (
+                        <span className="text-zinc-400">••••••</span>
+                      ) : (
+                        <span className={cn(
+                          "px-3 py-1 rounded-full text-xs font-medium capitalize",
+                          student.status === 'active' ? "bg-emerald-50 text-emerald-600 ring-1 ring-inset ring-emerald-600/20" : 
+                          student.status === 'pending_approval' ? "bg-orange-100 text-orange-700 ring-1 ring-inset ring-orange-500/30 font-bold" :
+                          "bg-zinc-50 text-zinc-600 ring-1 ring-inset ring-zinc-500/20"
+                        )}>
+                          {student.status === 'active' ? 'Ativo' : student.status === 'pending_approval' ? 'Pendente de Aprovação' : 'Inativo'}
+                        </span>
+                      )}
                     </td>
                     <td className="py-5 text-right">
                       {profile.role === 'admin' && (
@@ -1753,16 +1840,14 @@ export default function Students({ profile }: { profile: UserProfile }) {
                     <p className="text-[10px] text-orange-600/70 mt-2 ml-1 font-medium">* O valor se auto-preenche com base na Modalidade</p>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-zinc-700 mb-2">Dia de Vencimento</label>
+                    <label className="block text-sm font-medium text-zinc-700 mb-2">1º Vencimento (Início da Cobrança)</label>
                     <input 
-                      type="number" 
-                      min="1"
-                      max="31"
-                      value={newStudent.dueDate || ''}
-                      onChange={e => setNewStudent({...newStudent, dueDate: Number(e.target.value)})}
-                      className="w-full bg-white border border-orange-100 rounded-2xl px-6 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 transition-all font-medium"
-                      placeholder="Ex: 10"
+                      type="date"
+                      value={newStudent.billingStartDate || ''}
+                      onChange={e => setNewStudent({...newStudent, billingStartDate: e.target.value})}
+                      className="w-full bg-white border border-orange-100 rounded-2xl px-6 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 transition-all font-medium font-sans"
                     />
+                    <p className="text-[10px] text-orange-600/70 mt-2 ml-1 font-medium">* O dia selecionado se tornará o vencimento fixo dos próximos meses.</p>
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-zinc-700 mb-2">Desconto Mensal (R$)</label>

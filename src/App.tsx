@@ -40,7 +40,8 @@ import {
   BookOpen,
   Award,
   Settings,
-  Folder
+  Folder,
+  GraduationCap
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { auth, db } from './firebase';
@@ -69,8 +70,9 @@ import PixPaymentPortal from './components/PixPaymentPortal';
 import Documents from './components/Documents';
 import LandingPage from './components/LandingPage';
 import SchoolCalendar from './components/SchoolCalendar';
+import Library from './components/Library';
 
-type View = 'dashboard' | 'students' | 'teachers' | 'schedule' | 'instruments' | 'profile' | 'financial' | 'communication' | 'materials' | 'evaluations' | 'diary' | 'documents' | 'calendar';
+type View = 'dashboard' | 'students' | 'teachers' | 'schedule' | 'instruments' | 'profile' | 'financial' | 'communication' | 'materials' | 'library' | 'evaluations' | 'diary' | 'documents' | 'calendar';
 
 export default function App() {
   const pathname = window.location.pathname;
@@ -200,10 +202,10 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (profile && profile.role === 'teacher' && !['schedule', 'profile', 'materials', 'evaluations', 'diary', 'calendar'].includes(currentView)) {
+    if (profile && profile.role === 'teacher' && !['schedule', 'profile', 'materials', 'library', 'evaluations', 'diary', 'calendar'].includes(currentView)) {
       setCurrentView('schedule');
     }
-    if (profile && profile.role === 'student' && !['schedule', 'financial', 'profile', 'materials', 'evaluations', 'documents', 'calendar'].includes(currentView)) {
+    if (profile && profile.role === 'student' && !['schedule', 'financial', 'profile', 'materials', 'library', 'evaluations', 'documents', 'calendar'].includes(currentView)) {
       setCurrentView('schedule');
     }
   }, [profile, currentView]);
@@ -478,7 +480,8 @@ export default function App() {
     { id: 'teachers', label: 'Professores', icon: Music, roles: ['admin'] },
     { id: 'diary', label: 'Diário de Aula', icon: BookOpen, roles: ['admin', 'teacher'] },
     { id: 'instruments', label: 'Instrumentos', icon: Music2, roles: ['admin'] },
-    { id: 'materials', label: 'Materiais', icon: BookOpen, roles: ['admin', 'teacher', 'student'] },
+    // { id: 'materials', label: 'Materiais (Apoio)', icon: BookOpen, roles: ['admin', 'teacher', 'student'] },
+    { id: 'library', label: profile?.role === 'student' ? 'Sala de Estudos' : 'Biblioteca', icon: GraduationCap, roles: ['admin', 'teacher', 'student'] },
     { id: 'documents', label: 'Documentos', icon: Folder, roles: ['admin', 'student'] },
     { id: 'evaluations', label: 'Avaliações', icon: Award, roles: ['admin', 'teacher', 'student'] },
     { id: 'calendar', label: 'Calendário Escolar', icon: CalendarDays, roles: ['admin', 'teacher', 'student'] },
@@ -722,6 +725,7 @@ export default function App() {
             {currentView === 'financial' && (profile.role === 'admin' || profile.role === 'student') && <Financial profile={profile} />}
             {currentView === 'communication' && profile.role === 'admin' && <Communication />}
             {currentView === 'materials' && <Materials profile={profile} />}
+            {currentView === 'library' && <Library profile={profile} />}
             {currentView === 'documents' && (profile.role === 'admin' || profile.role === 'student') && <Documents profile={profile} />}
             {currentView === 'evaluations' && <Evaluations profile={profile} initialData={evaluationInitialData} onInitialDataConsumed={() => setEvaluationInitialData(null)} />}
             {currentView === 'calendar' && <SchoolCalendar profile={profile} />}
