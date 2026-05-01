@@ -41,7 +41,8 @@ import {
   Award,
   Settings,
   Folder,
-  GraduationCap
+  GraduationCap,
+  Banknote
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { auth, db } from './firebase';
@@ -71,8 +72,9 @@ import Documents from './components/Documents';
 import LandingPage from './components/LandingPage';
 import SchoolCalendar from './components/SchoolCalendar';
 import Library from './components/Library';
+import TeacherPayments from './components/TeacherPayments';
 
-type View = 'dashboard' | 'students' | 'teachers' | 'schedule' | 'instruments' | 'profile' | 'financial' | 'communication' | 'materials' | 'library' | 'evaluations' | 'diary' | 'documents' | 'calendar';
+type View = 'dashboard' | 'students' | 'teachers' | 'schedule' | 'instruments' | 'profile' | 'financial' | 'communication' | 'materials' | 'library' | 'evaluations' | 'diary' | 'documents' | 'calendar' | 'teacher_payments';
 
 export default function App() {
   const pathname = window.location.pathname;
@@ -486,6 +488,7 @@ export default function App() {
     { id: 'evaluations', label: 'Avaliações', icon: Award, roles: ['admin', 'teacher', 'student'] },
     { id: 'calendar', label: 'Calendário Escolar', icon: CalendarDays, roles: ['admin', 'teacher', 'student'] },
     { id: 'financial', label: 'Meu Histórico Financeiro', icon: Wallet, roles: ['admin', 'student'] },
+    { id: 'teacher_payments', label: 'Pagamentos Professores', icon: Banknote, roles: ['admin'] },
     { id: 'communication', label: 'Configurações', icon: Settings, roles: ['admin'] },
   ].filter(item => item.roles.includes(profile.role));
 
@@ -723,6 +726,7 @@ export default function App() {
             {currentView === 'diary' && (profile.role === 'admin' || profile.role === 'teacher') && <ClassDiary profile={profile} initialStudentId={diaryInitialLesson?.studentId} initialLessonId={diaryInitialLesson?.lessonId} />}
             {currentView === 'instruments' && profile.role === 'admin' && <Instruments profile={profile} />}
             {currentView === 'financial' && (profile.role === 'admin' || profile.role === 'student') && <Financial profile={profile} />}
+            {currentView === 'teacher_payments' && profile.role === 'admin' && <TeacherPayments profile={profile} />}
             {currentView === 'communication' && profile.role === 'admin' && <Communication />}
             {currentView === 'materials' && <Materials profile={profile} />}
             {currentView === 'library' && <Library profile={profile} />}

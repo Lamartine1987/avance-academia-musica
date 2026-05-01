@@ -257,3 +257,30 @@ export interface LibraryModule {
   name: string;
   createdAt: any;
 }
+
+export interface TeacherPaymentSettings {
+  paymentDates: number[]; // e.g. [5, 15, 25]
+  amountPerStudent: number; // e.g. 80.00
+  amountPerTrialLesson: number; // e.g. 80.00
+}
+
+export interface TeacherPaymentAdjustment {
+  id: string;
+  teacherId: string;
+  teacherName: string;
+  description: string; // "Aula Teste", "Aula Avulsa", "Desconto", etc.
+  amount: number; // Positive for additions, negative for discounts
+  date: string; // YYYY-MM-DD
+  createdAt: any;
+}
+
+export interface TeacherPaymentCycle {
+  id?: string;
+  teacherId: string;
+  cycle: 1 | 2 | 3;
+  month: number;
+  year: number;
+  amount: number;
+  paidAt: any;
+  expenseId?: string;
+}

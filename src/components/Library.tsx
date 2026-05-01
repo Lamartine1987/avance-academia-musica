@@ -1183,11 +1183,24 @@ export default function Library({ profile }: LibraryProps) {
             let totalCount = 0;
 
             if (isStudent) {
-              const tasksInModule = studyTasks.filter(t => moduleTopics.some(topic => topic.id === t.topicId));
-              if (tasksInModule.length > 0) {
-                totalCount = tasksInModule.length;
-                completedCount = tasksInModule.filter(t => t.status === 'completed').length;
+              totalCount = 0;
+              completedCount = 0;
+              
+              moduleTopics.forEach(topic => {
+                const topicTasks = studyTasks.filter(t => t.topicId === topic.id);
+                if (topicTasks.length > 0) {
+                  totalCount += topicTasks.length;
+                  completedCount += topicTasks.filter(t => t.status === 'completed').length;
+                } else {
+                  // Tópico sem tarefa conta como 1 atividade pendente (estudo autônomo)
+                  totalCount += 1;
+                }
+              });
+
+              if (totalCount > 0) {
                 moduleProgress = Math.round((completedCount / totalCount) * 100);
+              } else {
+                moduleProgress = 0;
               }
             }
 
@@ -1214,7 +1227,7 @@ export default function Library({ profile }: LibraryProps) {
                       {moduleProgress !== null ? (
                         <div className="w-full">
                           <div className="flex justify-between items-center text-xs mb-1">
-                            <span className="text-zinc-500 font-medium">{completedCount} de {totalCount} tarefas</span>
+                            <span className="text-zinc-500 font-medium">{completedCount} de {totalCount} atividades</span>
                             <span className="text-emerald-600 font-bold">{moduleProgress}%</span>
                           </div>
                           <div className="w-full bg-zinc-200/80 rounded-full h-1.5 overflow-hidden">
@@ -1489,9 +1502,28 @@ export default function Library({ profile }: LibraryProps) {
         <StudySession 
           topic={activeSessionTopic}
           task={activeSessionTask || undefined}
+          isAlreadyCompleted={isStudent && studyTasks.some(t => t.topicId === activeSessionTopic.id && t.status === 'completed')}
           onClose={() => {
             setActiveSessionTopic(null);
             setActiveSessionTask(null);
+          }}
+          onCompleteAutonomous={async () => {
+            if (isStudent && profile.studentId) {
+              await addDoc(collection(db, 'lessons'), {
+                studentId: profile.studentId,
+                teacherId: activeSessionTopic.createdBy || '',
+                instrument: 'Estudo',
+                startTime: serverTimestamp(),
+                endTime: serverTimestamp(),
+                status: 'completed',
+                isStudyTask: true,
+                topicId: activeSessionTopic.id,
+                topicTitle: activeSessionTopic.title,
+                topicUrl: activeSessionTopic.url,
+                suggestedDuration: 30,
+                createdAt: serverTimestamp()
+              });
+            }
           }}
         />
       )}

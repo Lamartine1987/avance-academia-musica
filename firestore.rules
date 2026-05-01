@@ -212,7 +212,7 @@ service cloud.firestore {
     }
 
     function isValidSchoolSettings(data) {
-      return hasOnlyAllowedFields(['startHour', 'endHour', 'availableDays', 'defaultMaxStudents', 'updatedAt', 'defaultCoursePrice', 'defaultIndividualCoursePrice', 'contractTemplate', 'declarationTemplate', 'companyName', 'tradingName', 'cnpj', 'address', 'city', 'state', 'cep', 'email', 'phone', 'website', 'logoUrl']) &&
+      return hasOnlyAllowedFields(['startHour', 'endHour', 'availableDays', 'defaultMaxStudents', 'updatedAt', 'defaultCoursePrice', 'defaultIndividualCoursePrice', 'trialClassValue', 'contractTemplate', 'declarationTemplate', 'companyName', 'tradingName', 'cnpj', 'address', 'city', 'state', 'cep', 'email', 'phone', 'website', 'logoUrl']) &&
              data.startHour is number && data.startHour >= 0 && data.startHour <= 23 &&
              data.endHour is number && data.endHour >= 0 && data.endHour <= 23 &&
              data.startHour < data.endHour &&
@@ -220,6 +220,7 @@ service cloud.firestore {
              (!('defaultMaxStudents' in data) || data.defaultMaxStudents is number) &&
              (!('defaultCoursePrice' in data) || data.defaultCoursePrice == null || data.defaultCoursePrice is number) &&
              (!('defaultIndividualCoursePrice' in data) || data.defaultIndividualCoursePrice == null || data.defaultIndividualCoursePrice is number) &&
+             (!('trialClassValue' in data) || data.trialClassValue == null || data.trialClassValue is number) &&
              (!('contractTemplate' in data) || data.contractTemplate == null || data.contractTemplate is string) &&
              (!('declarationTemplate' in data) || data.declarationTemplate == null || data.declarationTemplate is string) &&
              (!('companyName' in data) || data.companyName == null || data.companyName is string) &&
@@ -366,7 +367,14 @@ service cloud.firestore {
 
     match /lessons/{lessonId} {
       allow read: if isAdmin() || (isAuthenticated() && (resource == null || isLessonTeacher(resource.data.teacherId) || isLessonStudent(resource.data.studentId)));
-      allow create: if (isAdmin() || isLessonTeacher(request.resource.data.teacherId)) && isValidLesson(request.resource.data);
+      allow create: if (
+        (isAdmin() || isLessonTeacher(request.resource.data.teacherId)) && isValidLesson(request.resource.data)
+      ) || (
+        isLessonStudent(request.resource.data.studentId) &&
+        request.resource.data.isStudyTask == true &&
+        request.resource.data.status == 'completed' &&
+        isValidLesson(request.resource.data)
+      );
       allow update: if (
         (isAdmin() || isLessonTeacher(request.resource.data.teacherId)) && isValidLesson(request.resource.data)
       ) || (
@@ -491,6 +499,14 @@ service cloud.firestore {
       allow read: if isAuthenticated();
       allow create, update: if isAdmin() && isValidLibraryModule(request.resource.data);
       allow delete: if isAdmin();
+    }
+
+    match /teacher_payment_adjustments/{adjId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /teacher_payment_cycles/{cycleId} {
+      allow read, write: if isAdmin();
     }
   }
 }

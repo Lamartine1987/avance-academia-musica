@@ -13,6 +13,7 @@ import FeedbackModal from './FeedbackModal';
 export default function Financial({ profile }: { profile?: any }) {
   const [activeTab, setActiveTab] = useState<'panel' | 'payments' | 'expenses' | 'reports'>(profile?.role === 'student' ? 'payments' : 'panel');
   const [payments, setPayments] = useState<Payment[]>([]);
+  const [studentsList, setStudentsList] = useState<any[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [reportStats, setReportStats] = useState({ totalActiveStudents: 0, totalMRR: 0, averageTicket: 0, instrumentData: [] as {name: string, value: number}[] });
   const [chartPeriod, setChartPeriod] = useState<6 | 12>(6);
@@ -34,6 +35,9 @@ export default function Financial({ profile }: { profile?: any }) {
   const [customCategories, setCustomCategories] = useState<string[]>([]);
   const [isCreatingCategory, setIsCreatingCategory] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState('');
+  
+  const [showNewInvoiceModal, setShowNewInvoiceModal] = useState(false);
+  const [newInvoice, setNewInvoice] = useState({ studentId: '', amount: 0, dueDate: format(new Date(), 'yyyy-MM-dd'), status: 'pending' });
 
   const [confirmModal, setConfirmModal] = useState<{
     isOpen: boolean;
@@ -109,9 +113,11 @@ export default function Financial({ profile }: { profile?: any }) {
         let activeCount = 0;
         let mrr = 0;
         const instrumentCounts: Record<string, number> = {};
+        const sList: any[] = [];
 
         sSnap.forEach(d => {
           const data = d.data();
+          sList.push({ id: d.id, ...data });
           activeCount++;
           mrr += Math.max(0, (Number(data.courseValue) || 0) - (Number(data.discount) || 0));
 
@@ -135,6 +141,7 @@ export default function Financial({ profile }: { profile?: any }) {
           averageTicket: activeCount > 0 ? mrr / activeCount : 0,
           instrumentData
         });
+        setStudentsList(sList.sort((a, b) => a.name.localeCompare(b.name)));
 
         const eSnap = await getDocs(query(collection(db, 'expenses')));
         const eList: Expense[] = [];
@@ -202,6 +209,25 @@ export default function Financial({ profile }: { profile?: any }) {
     }
   };
 
+  const handleDeleteInvoice = (paymentId: string) => {
+    setConfirmModal({
+      isOpen: true,
+      title: 'Excluir Fatura',
+      message: 'Tem certeza que deseja excluir esta fatura permanentemente? Isso alterará seus relatórios financeiros e não poderá ser desfeito.',
+      onConfirm: async () => {
+        setConfirmModal(prev => ({ ...prev, isOpen: false }));
+        try {
+          await deleteDoc(doc(db, 'payments', paymentId));
+          setFeedbackModal({ isOpen: true, type: 'success', title: 'Excluída', message: 'Fatura excluída com sucesso!' });
+          fetchData();
+        } catch (err) {
+          console.error(err);
+          setFeedbackModal({ isOpen: true, type: 'error', title: 'Erro', message: 'Não foi possível excluir a fatura.' });
+        }
+      }
+    });
+  };
+
   const handleCreateCategory = async () => {
     if (!newCategoryName.trim()) return;
     const updatedCategories = [...customCategories, newCategoryName.trim()];
@@ -256,6 +282,41 @@ export default function Financial({ profile }: { profile?: any }) {
     } catch (error) {
       console.error(error);
       setFeedbackModal({ isOpen: true, type: 'error', title: 'Erro', message: 'Erro ao salvar despesa.' });
+    } finally {
+      setSavingExpense(false);
+    }
+  };
+
+  const handleCreateInvoice = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newInvoice.studentId || !newInvoice.amount || !newInvoice.dueDate) {
+      setFeedbackModal({ isOpen: true, type: 'error', title: 'Erro', message: 'Preencha todos os campos obrigatórios.' });
+      return;
+    }
+    const student = studentsList.find(s => s.id === newInvoice.studentId);
+    if (!student) return;
+    
+    setSavingExpense(true);
+    try {
+      const [year, month] = newInvoice.dueDate.split('-');
+      await addDoc(collection(db, 'payments'), {
+        studentId: student.id,
+        studentName: student.name,
+        amount: Number(newInvoice.amount),
+        dueDate: newInvoice.dueDate,
+        month: parseInt(month, 10),
+        year: parseInt(year, 10),
+        status: newInvoice.status,
+        whatsappSent: ['pre-due', 'due', 'overdue'], // Evita mensagens para faturas avulsas
+        createdAt: new Date()
+      });
+      setFeedbackModal({ isOpen: true, type: 'success', title: 'Sucesso', message: 'Fatura avulsa criada com sucesso!' });
+      setShowNewInvoiceModal(false);
+      setNewInvoice({ studentId: '', amount: 0, dueDate: format(new Date(), 'yyyy-MM-dd'), status: 'pending' });
+      fetchData();
+    } catch (error) {
+      console.error(error);
+      setFeedbackModal({ isOpen: true, type: 'error', title: 'Erro', message: 'Erro ao criar fatura.' });
     } finally {
       setSavingExpense(false);
     }
@@ -995,7 +1056,7 @@ export default function Financial({ profile }: { profile?: any }) {
 
         return (
           <div className="space-y-4">
-            <div className="bg-white p-6 rounded-[32px] ring-1 ring-zinc-950/5 shadow-sm grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="bg-white p-6 rounded-[32px] ring-1 ring-zinc-950/5 shadow-sm grid grid-cols-1 md:grid-cols-5 gap-4">
               <div className="relative">
                 <Search className="w-4 h-4 text-zinc-400 absolute left-4 top-1/2 -translate-y-1/2" />
                 <input
@@ -1033,6 +1094,13 @@ export default function Financial({ profile }: { profile?: any }) {
                 <option value="due">No Vencimento</option>
                 <option value="overdue">Cobrança Atraso</option>
               </select>
+              <button
+                onClick={() => setShowNewInvoiceModal(true)}
+                className="w-full bg-black text-white px-4 py-3 rounded-2xl text-sm font-bold flex items-center justify-center gap-2 hover:bg-zinc-800 transition-colors shadow-lg shadow-black/20"
+              >
+                <Plus className="w-4 h-4" />
+                Nova Fatura
+              </button>
             </div>
 
             <div className="bg-white rounded-[32px] ring-1 ring-zinc-950/5 shadow-xl overflow-hidden">
@@ -1099,14 +1167,23 @@ export default function Financial({ profile }: { profile?: any }) {
                     </td>
                     {profile?.role !== 'student' && (
                       <td className="py-4 px-6 text-right">
-                        {payment.status !== 'paid' && (
+                        <div className="flex justify-end items-center gap-3">
+                          {payment.status !== 'paid' && (
+                            <button 
+                              onClick={() => markAsPaid(payment.id)}
+                              className="text-xs font-bold text-emerald-600 hover:text-emerald-700 bg-emerald-50 hover:bg-emerald-100 transition-colors px-3 py-1.5 rounded-lg"
+                            >
+                              Marcar Pago
+                            </button>
+                          )}
                           <button 
-                            onClick={() => markAsPaid(payment.id)}
-                            className="text-xs font-bold text-emerald-600 hover:text-emerald-700 bg-emerald-50 hover:bg-emerald-100 transition-colors px-3 py-1.5 rounded-lg"
+                            onClick={() => handleDeleteInvoice(payment.id)}
+                            className="text-zinc-400 hover:text-red-500 transition-colors p-1"
+                            title="Excluir Fatura"
                           >
-                            Marcar Pago
+                            <Trash2 className="w-5 h-5" />
                           </button>
-                        )}
+                        </div>
                       </td>
                     )}
                   </tr>
@@ -1241,6 +1318,88 @@ export default function Financial({ profile }: { profile?: any }) {
                 )}
               </ul>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* New Invoice Modal */}
+      {showNewInvoiceModal && (
+        <div className="fixed inset-0 bg-zinc-950/40 backdrop-blur-md flex items-center justify-center p-4 z-50">
+          <div className="bg-white w-full max-w-md rounded-[32px] p-8 shadow-2xl shadow-black/10 ring-1 ring-zinc-950/5">
+            <div className="flex items-center justify-between mb-8">
+              <h3 className="text-2xl font-bold display-font">Nova Fatura Avulsa</h3>
+              <button onClick={() => setShowNewInvoiceModal(false)} className="text-zinc-400 hover:text-black transition-colors">
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            <form onSubmit={handleCreateInvoice} className="space-y-6">
+              <div>
+                <label className="block text-sm font-medium text-zinc-700 mb-2">Aluno</label>
+                <select
+                  required
+                  value={newInvoice.studentId}
+                  onChange={e => setNewInvoice({...newInvoice, studentId: e.target.value})}
+                  className="w-full bg-zinc-50 border border-zinc-100 rounded-2xl px-6 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 transition-all font-bold text-zinc-800"
+                >
+                  <option value="">Selecione um aluno...</option>
+                  {studentsList.map(student => (
+                    <option key={student.id} value={student.id}>{student.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-zinc-700 mb-2">Valor (R$)</label>
+                <input
+                  type="number"
+                  required
+                  min="0"
+                  step="0.01"
+                  value={newInvoice.amount || ''}
+                  onChange={e => setNewInvoice({...newInvoice, amount: Number(e.target.value)})}
+                  className="w-full bg-zinc-50 border border-zinc-100 rounded-2xl px-6 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 transition-all font-bold text-orange-600"
+                  placeholder="Ex: 150.00"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-zinc-700 mb-2">Data de Vencimento</label>
+                <input
+                  type="date"
+                  required
+                  value={newInvoice.dueDate}
+                  onChange={e => setNewInvoice({...newInvoice, dueDate: e.target.value})}
+                  className="w-full bg-zinc-50 border border-zinc-100 rounded-2xl px-6 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 transition-all font-medium font-sans text-zinc-800"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-zinc-700 mb-2">Status Inicial</label>
+                <select
+                  value={newInvoice.status}
+                  onChange={e => setNewInvoice({...newInvoice, status: e.target.value})}
+                  className="w-full bg-zinc-50 border border-zinc-100 rounded-2xl px-6 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 transition-all font-bold text-zinc-800"
+                >
+                  <option value="pending">Pendente / Em Aberto</option>
+                  <option value="paid">Já Pago (Confirmado)</option>
+                </select>
+                <p className="text-[10px] text-zinc-400 mt-2 leading-relaxed">Faturas criadas aqui <b>NÃO</b> disparam WhatsApp automaticamente de forma retroativa, sendo seguras para registro manual de pagamentos.</p>
+              </div>
+              <div className="flex gap-3 pt-4">
+                <button
+                  type="button"
+                  onClick={() => setShowNewInvoiceModal(false)}
+                  className="flex-1 px-6 py-4 bg-zinc-100 text-zinc-600 rounded-2xl font-bold hover:bg-zinc-200 transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingExpense}
+                  className="flex-1 justify-center flex items-center gap-2 bg-gradient-to-r from-orange-500 to-amber-500 text-white py-4 rounded-2xl font-bold hover:from-orange-600 hover:to-amber-600 transition-all shadow-lg shadow-orange-500/25 active:scale-[0.98] disabled:opacity-70"
+                >
+                  {savingExpense ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
+                  Salvar Fatura
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

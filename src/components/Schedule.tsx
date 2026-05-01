@@ -55,7 +55,8 @@ export default function Schedule({ profile, onNavigateToDiary, onNavigateToEvalu
     startHour: 7,
     endHour: 21,
     availableDays: [1, 2, 3, 4, 5], // Default Mon-Fri
-    defaultMaxStudents: 1
+    defaultMaxStudents: 1,
+    trialClassValue: 0
   });
   const [integrationsSettings, setIntegrationsSettings] = useState<IntegrationsSettings | null>(null);
   const [newLesson, setNewLesson] = useState({
@@ -113,7 +114,8 @@ export default function Schedule({ profile, onNavigateToDiary, onNavigateToEvalu
           startHour: data.startHour ?? 7,
           endHour: data.endHour ?? 21,
           availableDays: data.availableDays ?? [1, 2, 3, 4, 5],
-          defaultMaxStudents: data.defaultMaxStudents ?? 1
+          defaultMaxStudents: data.defaultMaxStudents ?? 1,
+          trialClassValue: data.trialClassValue ?? 0
         });
       }
     });
@@ -330,6 +332,24 @@ export default function Schedule({ profile, onNavigateToDiary, onNavigateToEvalu
         
         setIsModalOpen(false);
         setFormError(null);
+
+        if (newLesson.isTrial && Number(schoolSettings.trialClassValue) > 0) {
+          try {
+            await addDoc(collection(db, 'payments'), {
+              studentId: 'trial',
+              studentName: newLesson.studentName || 'Aula Teste',
+              amount: Number(schoolSettings.trialClassValue),
+              dueDate: newLesson.date,
+              month: parseInt(newLesson.date.split('-')[1], 10),
+              year: parseInt(newLesson.date.split('-')[0], 10),
+              status: 'pending',
+              whatsappSent: [],
+              createdAt: Timestamp.now()
+            });
+          } catch (e) {
+            console.error('Erro ao gerar fatura da aula teste', e);
+          }
+        }
 
         if (newLesson.isTrial) {
           try {

@@ -157,6 +157,7 @@ export default function Communication() {
   const [schoolSettings, setSchoolSettings] = useState({
     defaultCoursePrice: '' as string | number,
     defaultIndividualCoursePrice: '' as string | number,
+    trialClassValue: '' as string | number,
     contractTemplate: '' as string,
     declarationTemplate: '' as string,
     companyName: '' as string,
@@ -225,6 +226,7 @@ export default function Communication() {
         setSchoolSettings({
           defaultCoursePrice: d.defaultCoursePrice ?? '',
           defaultIndividualCoursePrice: d.defaultIndividualCoursePrice ?? '',
+          trialClassValue: d.trialClassValue ?? '',
           contractTemplate: d.contractTemplate || DEFAULT_CONTRACT_TEMPLATE,
           declarationTemplate: d.declarationTemplate || DEFAULT_DECLARATION_TEMPLATE,
           companyName: d.companyName ?? '',
@@ -266,6 +268,7 @@ export default function Communication() {
       await setDoc(doc(db, 'settings', 'school'), {
         defaultCoursePrice: schoolSettings.defaultCoursePrice ? Number(schoolSettings.defaultCoursePrice) : null,
         defaultIndividualCoursePrice: schoolSettings.defaultIndividualCoursePrice ? Number(schoolSettings.defaultIndividualCoursePrice) : null,
+        trialClassValue: schoolSettings.trialClassValue ? Number(schoolSettings.trialClassValue) : null,
         contractTemplate: schoolSettings.contractTemplate || null,
         declarationTemplate: schoolSettings.declarationTemplate || null,
         companyName: schoolSettings.companyName || null,
@@ -520,9 +523,9 @@ export default function Communication() {
             </div>
             
             <form onSubmit={handleSaveSchoolSettings} className="space-y-6">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
-                  <label className="block text-sm font-semibold uppercase tracking-widest text-zinc-600 mb-2">Valor Geral Padrão (Turma)</label>
+                  <label className="block text-sm font-semibold uppercase tracking-widest text-zinc-600 mb-2">Padrão (Turma)</label>
                   <input 
                     type="number" 
                     min="0"
@@ -534,7 +537,7 @@ export default function Communication() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-semibold uppercase tracking-widest text-zinc-600 mb-2">Valor Geral (Individual)</label>
+                  <label className="block text-sm font-semibold uppercase tracking-widest text-zinc-600 mb-2">Padrão (Individual)</label>
                   <input 
                     type="number" 
                     min="0"
@@ -542,6 +545,18 @@ export default function Communication() {
                     placeholder="R$ 0,00"
                     value={schoolSettings.defaultIndividualCoursePrice}
                     onChange={e => setSchoolSettings({...schoolSettings, defaultIndividualCoursePrice: e.target.value})}
+                    className="w-full bg-zinc-50 border border-zinc-100 rounded-2xl px-6 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 transition-all font-medium"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold uppercase tracking-widest text-zinc-600 mb-2">Aula Teste (Escola)</label>
+                  <input 
+                    type="number" 
+                    min="0"
+                    step="0.01"
+                    placeholder="R$ 0,00"
+                    value={schoolSettings.trialClassValue}
+                    onChange={e => setSchoolSettings({...schoolSettings, trialClassValue: e.target.value})}
                     className="w-full bg-zinc-50 border border-zinc-100 rounded-2xl px-6 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 transition-all font-medium"
                   />
                 </div>

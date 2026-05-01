@@ -9,11 +9,13 @@ import { format } from 'date-fns';
 interface StudySessionProps {
   topic: LibraryTopic;
   task?: Lesson; // Optional, if there's a scheduled task to mark as completed
+  isAlreadyCompleted?: boolean;
   onClose: () => void;
   onComplete?: () => void;
+  onCompleteAutonomous?: () => Promise<void>;
 }
 
-export default function StudySession({ topic, task, onClose, onComplete }: StudySessionProps) {
+export default function StudySession({ topic, task, isAlreadyCompleted, onClose, onComplete, onCompleteAutonomous }: StudySessionProps) {
   // Timer State
   const initialTime = (task?.suggestedDuration || 30) * 60; // in seconds
   const [timeLeft, setTimeLeft] = useState(initialTime);
@@ -135,18 +137,17 @@ export default function StudySession({ topic, task, onClose, onComplete }: Study
 
   // --- COMPLETION LOGIC ---
   const handleComplete = async () => {
-    if (!task) {
-      // Just close if there's no task
-      onClose();
-      return;
-    }
-    
     setIsCompleting(true);
     try {
-      await updateDoc(doc(db, 'lessons', task.id), {
-        status: 'completed'
-      });
-      if (onComplete) onComplete();
+      if (task) {
+        await updateDoc(doc(db, 'lessons', task.id), {
+          status: 'completed'
+        });
+        if (onComplete) onComplete();
+      } else if (onCompleteAutonomous && !isAlreadyCompleted) {
+        await onCompleteAutonomous();
+        if (onComplete) onComplete();
+      }
       onClose();
     } catch (error) {
       console.error(error);
@@ -329,11 +330,15 @@ export default function StudySession({ topic, task, onClose, onComplete }: Study
             
             <button 
               onClick={handleComplete}
-              disabled={isCompleting}
+              disabled={isCompleting || (!task && isAlreadyCompleted)}
               className="w-full bg-emerald-500 text-white py-4 rounded-2xl font-bold hover:bg-emerald-600 transition-all shadow-lg hover:shadow-emerald-500/25 active:scale-95 flex items-center justify-center gap-2 disabled:opacity-50"
             >
               {isCompleting ? <Loader2 className="w-5 h-5 animate-spin" /> : <CheckCircle2 className="w-5 h-5" />}
-              {task ? 'Marcar como Concluído' : 'Fechar Estudo'}
+              {task 
+                ? 'Marcar como Concluído' 
+                : isAlreadyCompleted 
+                  ? 'Tópico Concluído' 
+                  : 'Marcar como Concluído'}
             </button>
           </div>
         </div>
