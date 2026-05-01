@@ -185,7 +185,7 @@ export interface MessageTemplate {
   createdAt: any;
 }
 
-export type MaterialType = 'pdf' | 'audio' | 'video' | 'link' | 'image';
+export type MaterialType = 'pdf' | 'audio' | 'video' | 'link' | 'image' | 'interactive_sheet';
 
 export interface Material {
   id: string;
@@ -244,7 +244,7 @@ export interface LibraryTopic {
   moduleName: string;
   title: string;
   url: string;
-  type: 'pdf' | 'audio' | 'video' | 'link' | 'image';
+  type: 'pdf' | 'audio' | 'video' | 'link' | 'image' | 'interactive_sheet';
   description?: string;
   createdBy: string;
   createdByName: string;

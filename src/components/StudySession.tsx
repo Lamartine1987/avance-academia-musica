@@ -5,6 +5,7 @@ import { LibraryTopic, Lesson } from '../types';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { format } from 'date-fns';
+import AlphaTabPlayer from './AlphaTabPlayer';
 
 interface StudySessionProps {
   topic: LibraryTopic;
@@ -187,6 +188,13 @@ export default function StudySession({ topic, task, isAlreadyCompleted, onClose,
       return (
         <div className="flex items-center justify-center h-full bg-black rounded-2xl overflow-hidden p-2">
           <img src={topic.url} alt={topic.title} className="max-w-full max-h-full object-contain rounded-xl" />
+        </div>
+      );
+    }
+    if (topic.type === 'interactive_sheet') {
+      return (
+        <div className="w-full h-full">
+          <AlphaTabPlayer url={topic.url} />
         </div>
       );
     }

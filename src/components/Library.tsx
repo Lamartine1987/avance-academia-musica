@@ -34,7 +34,7 @@ export default function Library({ profile }: LibraryProps) {
   const [moduleName, setModuleName] = useState('');
   const [title, setTitle] = useState('');
   const [url, setUrl] = useState('');
-  const [type, setType] = useState<'pdf' | 'audio' | 'video' | 'link'>('link');
+  const [type, setType] = useState<MaterialType>('link');
   const [description, setDescription] = useState('');
   
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -526,7 +526,18 @@ export default function Library({ profile }: LibraryProps) {
       case 'pdf': return <FileText className="w-5 h-5" />;
       case 'video': return <Video className="w-5 h-5" />;
       case 'audio': return <Headphones className="w-5 h-5" />;
+      case 'interactive_sheet': return <FileText className="w-5 h-5" />;
       default: return <ExternalLink className="w-5 h-5" />;
+    }
+  };
+
+  const getTypeName = (mType: string) => {
+    switch (mType) {
+      case 'pdf': return 'Documento / Partitura';
+      case 'video': return 'Vídeo';
+      case 'audio': return 'Áudio';
+      case 'interactive_sheet': return 'Partitura Interativa';
+      default: return 'Link Externo';
     }
   };
 
@@ -704,6 +715,7 @@ export default function Library({ profile }: LibraryProps) {
                       <option value="video">Vídeo</option>
                       <option value="audio">Áudio</option>
                       <option value="link">Link Externo</option>
+                      <option value="interactive_sheet">Partitura Interativa (Guitar Pro/XML)</option>
                     </select>
                   </div>
                 </div>
@@ -1271,7 +1283,7 @@ export default function Library({ profile }: LibraryProps) {
                               </div>
                               <div className="flex-1 min-w-0">
                                 <h4 className="font-bold text-zinc-900 leading-tight line-clamp-2" title={topic.title}>{topic.title}</h4>
-                                <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider">{topic.type}</span>
+                                <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider">{getTypeName(topic.type)}</span>
                               </div>
                             </div>
                             

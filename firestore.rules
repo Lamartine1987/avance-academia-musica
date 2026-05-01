@@ -270,7 +270,7 @@ service cloud.firestore {
       return hasOnlyAllowedFields(['title', 'url', 'type', 'description', 'teacherId', 'teacherName', 'studentIds', 'isActive', 'createdAt']) &&
              data.title is string && data.title.size() > 0 &&
              data.url is string && data.url.size() > 0 &&
-             data.type in ['pdf', 'audio', 'video', 'link'] &&
+             data.type in ['pdf', 'audio', 'video', 'link', 'interactive_sheet', 'image'] &&
              (!('description' in data) || data.description is string) &&
              data.teacherId is string && data.teacherName is string &&
              data.studentIds is list &&
@@ -324,7 +324,7 @@ service cloud.firestore {
              data.moduleName is string && data.moduleName.size() > 0 &&
              data.title is string && data.title.size() > 0 &&
              data.url is string &&
-             data.type in ['pdf', 'audio', 'video', 'link'] &&
+             data.type in ['pdf', 'audio', 'video', 'link', 'interactive_sheet', 'image'] &&
              (!('description' in data) || data.description is string) &&
              data.createdBy is string && data.createdByName is string &&
              data.visibleToStudents is list &&

@@ -25,7 +25,7 @@ export default function Materials({ profile }: MaterialsProps) {
   
   const [title, setTitle] = useState('');
   const [url, setUrl] = useState('');
-  const [type, setType] = useState<'pdf' | 'audio' | 'video' | 'link'>('link');
+  const [type, setType] = useState<MaterialType>('link');
   const [description, setDescription] = useState('');
   const [shareWithAll, setShareWithAll] = useState(true);
   const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>([]);
@@ -353,6 +353,7 @@ export default function Materials({ profile }: MaterialsProps) {
                       <option value="video">Vídeo (YouTube / Drive)</option>
                       <option value="audio">Áudio / Backing Track</option>
                       <option value="link">Outro Link Externo</option>
+                      <option value="interactive_sheet">Partitura Interativa (Guitar Pro/XML)</option>
                     </select>
                   </div>
                 </div>
