@@ -1,6 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
-import * as alphaTab from '@coderline/alphatab';
-import { Play, Pause, Square, Volume2, VolumeX, Loader2 } from 'lucide-react';
+import { Play, Pause, Square, Volume2, VolumeX, Loader2, Bell, BellOff } from 'lucide-react';
+
+// Use globally injected alphaTab from CDN to bypass Vite WebWorker bundling issues
+const alphaTab = (window as any).alphaTab;
 
 interface AlphaTabPlayerProps {
   url: string;
@@ -9,11 +11,12 @@ interface AlphaTabPlayerProps {
 export default function AlphaTabPlayer({ url }: AlphaTabPlayerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
-  const apiRef = useRef<alphaTab.AlphaTabApi | null>(null);
+  const apiRef = useRef<any | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [volume, setVolume] = useState(1);
   const [isMuted, setIsMuted] = useState(false);
   const [isReady, setIsReady] = useState(false);
+  const [isMetronomeActive, setIsMetronomeActive] = useState(false);
 
   const togglePlay = () => {
     if (!apiRef.current) return;
@@ -45,6 +48,7 @@ export default function AlphaTabPlayer({ url }: AlphaTabPlayerProps) {
 
     const api = new alphaTab.AlphaTabApi(containerRef.current, {
       core: {
+        scriptFile: 'https://cdn.jsdelivr.net/npm/@coderline/alphatab@latest/dist/alphaTab.js',
         fontDirectory: 'https://cdn.jsdelivr.net/npm/@coderline/alphatab@latest/dist/font/',
       },
       display: {
@@ -122,6 +126,13 @@ export default function AlphaTabPlayer({ url }: AlphaTabPlayerProps) {
     }
   };
 
+  const toggleMetronome = () => {
+    if (!apiRef.current) return;
+    const newState = !isMetronomeActive;
+    setIsMetronomeActive(newState);
+    apiRef.current.metronomeVolume = newState ? 1 : 0;
+  };
+
   return (
     <div className="flex flex-col h-full bg-white rounded-2xl shadow-inner border border-zinc-200 overflow-hidden">
       {/* Toolbar */}
@@ -144,7 +155,7 @@ export default function AlphaTabPlayer({ url }: AlphaTabPlayerProps) {
         <div className="h-8 w-px bg-zinc-200 mx-2"></div>
         
         <div className="flex items-center gap-3">
-          <button onClick={toggleMute} className="text-zinc-400 hover:text-zinc-700 transition-colors">
+          <button onClick={toggleMute} className="text-zinc-400 hover:text-zinc-700 transition-colors" title={isMuted ? "Desmutar" : "Mutar"}>
             {isMuted ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
           </button>
           <input 
@@ -155,6 +166,23 @@ export default function AlphaTabPlayer({ url }: AlphaTabPlayerProps) {
             className="w-24 accent-emerald-500"
           />
         </div>
+
+        <div className="h-8 w-px bg-zinc-200 mx-2 hidden sm:block"></div>
+
+        {/* Metronome Control */}
+        <button 
+          onClick={toggleMetronome}
+          disabled={!isReady}
+          title="Metrônomo da Partitura"
+          className={`p-2 rounded-lg flex items-center gap-2 transition-colors disabled:opacity-50 text-sm font-medium ${
+            isMetronomeActive 
+              ? 'bg-emerald-100 text-emerald-700 border border-emerald-200' 
+              : 'bg-white text-zinc-600 border border-zinc-200 hover:bg-zinc-50'
+          }`}
+        >
+          {isMetronomeActive ? <Bell className="w-4 h-4" /> : <BellOff className="w-4 h-4" />}
+          <span className="hidden md:inline">Metrônomo</span>
+        </button>
 
         <div className="h-8 w-px bg-zinc-200 mx-2 hidden sm:block"></div>
 
