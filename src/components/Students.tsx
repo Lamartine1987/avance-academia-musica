@@ -6,7 +6,7 @@ import { getFunctions, httpsCallable } from 'firebase/functions';
 import { UserProfile, Student, Teacher, Instrument, CourseEnrollment } from '../types';
 import { handleFirestoreError, OperationType } from '../lib/error-handler';
 import { Plus, Trash2, X, Calendar, Clock, User, Pencil, Eye, EyeOff, Loader2, ChevronLeft, Music2 } from 'lucide-react';
-import { format, startOfMonth, endOfMonth, eachDayOfInterval, getDay, setHours, setMinutes, isAfter, addYears } from 'date-fns';
+import { format, startOfMonth, endOfMonth, eachDayOfInterval, getDay, setHours, setMinutes, isAfter, addYears, addMonths, parseISO } from 'date-fns';
 import { cn } from '../lib/utils';
 import ConfirmModal from './ConfirmModal';
 import FeedbackModal from './FeedbackModal';
@@ -56,13 +56,16 @@ export default function Students({ profile }: { profile: UserProfile }) {
   const [schoolSettings, setSchoolSettings] = useState({ 
     defaultMaxStudents: 1,
     defaultCoursePrice: null as number | null,
-    defaultIndividualCoursePrice: null as number | null
+    defaultIndividualCoursePrice: null as number | null,
+    newCycleCutoffDate: '',
+    legacyGracePeriodMonths: 0
   });
   const [filterName, setFilterName] = useState('');
   const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'inactive' | 'pending_approval'>('all');
   const [filterInstrument, setFilterInstrument] = useState('');
   const [filterTeacher, setFilterTeacher] = useState('');
   const [filterDiscount, setFilterDiscount] = useState<'all' | 'with_discount' | 'without_discount'>('all');
+  const [filterGracePeriod, setFilterGracePeriod] = useState<'all' | 'active' | 'expired'>('all');
   const [filterStartDate, setFilterStartDate] = useState('');
   const [filterEndDate, setFilterEndDate] = useState('');
   const [selectedStudents, setSelectedStudents] = useState<Set<string>>(new Set());
@@ -120,7 +123,8 @@ export default function Students({ profile }: { profile: UserProfile }) {
     isScholarship: false,
     discount: 0,
     extraNotes: '',
-    classType: 'group' as 'individual' | 'group'
+    classType: 'group' as 'individual' | 'group',
+    gracePeriodDeadline: ''
   });
 
   useEffect(() => {
@@ -159,7 +163,9 @@ export default function Students({ profile }: { profile: UserProfile }) {
           ...data,
           defaultMaxStudents: data.defaultMaxStudents || 1,
           defaultCoursePrice: data.defaultCoursePrice || null,
-          defaultIndividualCoursePrice: data.defaultIndividualCoursePrice || null
+          defaultIndividualCoursePrice: data.defaultIndividualCoursePrice || null,
+          newCycleCutoffDate: data.newCycleCutoffDate || '',
+          legacyGracePeriodMonths: data.legacyGracePeriodMonths ? Number(data.legacyGracePeriodMonths) : 0
         });
       }
     });
@@ -172,6 +178,30 @@ export default function Students({ profile }: { profile: UserProfile }) {
       unsubSettings();
     };
   }, []);
+
+  // Auto-calculate grace period when enrollmentDate changes
+  useEffect(() => {
+    if (viewMode === 'form' && !editingStudentId && schoolSettings.newCycleCutoffDate && newStudent.enrollmentDate) {
+      const enrollmentDateObj = parseISO(newStudent.enrollmentDate);
+      const cutoffDateObj = parseISO(schoolSettings.newCycleCutoffDate);
+      
+      if (enrollmentDateObj < cutoffDateObj && schoolSettings.legacyGracePeriodMonths > 0) {
+        // It's an old student
+        const now = new Date();
+        const deadlineObj = addMonths(now, schoolSettings.legacyGracePeriodMonths);
+        const formattedDeadline = format(deadlineObj, 'yyyy-MM-dd');
+        
+        if (newStudent.gracePeriodDeadline !== formattedDeadline) {
+          setNewStudent(prev => ({ ...prev, gracePeriodDeadline: formattedDeadline }));
+        }
+      } else {
+        // It's a new student or no legacy settings
+        if (newStudent.gracePeriodDeadline !== '') {
+          setNewStudent(prev => ({ ...prev, gracePeriodDeadline: '' }));
+        }
+      }
+    }
+  }, [newStudent.enrollmentDate, schoolSettings.newCycleCutoffDate, schoolSettings.legacyGracePeriodMonths, viewMode, editingStudentId]);
 
   const fetchAddressByCep = async (cep: string) => {
     const cleanCep = cep.replace(/\D/g, '');
@@ -420,7 +450,8 @@ export default function Students({ profile }: { profile: UserProfile }) {
       const payload = {
         ...newStudent,
         courseValue: Number(newStudent.courseValue) || 0,
-        dueDate: derivedDueDate
+        dueDate: derivedDueDate,
+        gracePeriodDeadline: newStudent.gracePeriodDeadline || null
       };
 
       if (editingStudentId) {
@@ -658,6 +689,7 @@ export default function Students({ profile }: { profile: UserProfile }) {
       enrollments: student.enrollments || [],
       courseValue: student.courseValue || 0,
       dueDate: student.dueDate || 10,
+      billingStartDate: student.billingStartDate || '',
       responsibleName: student.responsibleName || '',
       responsibleCpf: student.responsibleCpf || '',
       responsiblePhone: student.responsiblePhone || '',
@@ -666,6 +698,7 @@ export default function Students({ profile }: { profile: UserProfile }) {
       discount: student.discount || 0,
       extraNotes: student.extraNotes || '',
       classType: student.classType || 'group',
+      gracePeriodDeadline: student.gracePeriodDeadline || '',
       nationality: student.nationality || '',
       maritalStatus: student.maritalStatus || '',
       profession: student.profession || '',
@@ -695,6 +728,7 @@ export default function Students({ profile }: { profile: UserProfile }) {
       enrollments: [],
       courseValue: 0,
       dueDate: 10,
+      billingStartDate: '',
       responsibleName: '',
       responsibleCpf: '',
       responsiblePhone: '',
@@ -1047,7 +1081,12 @@ export default function Students({ profile }: { profile: UserProfile }) {
       matchDate = false;
     }
 
-    return matchName && matchStatus && matchInstrument && matchTeacher && matchDiscount && matchDate;
+    const todayStr = new Date().toISOString().split('T')[0];
+    const matchGracePeriod = filterGracePeriod === 'all' || 
+      (filterGracePeriod === 'active' && !!student.gracePeriodDeadline && student.gracePeriodDeadline >= todayStr) ||
+      (filterGracePeriod === 'expired' && !!student.gracePeriodDeadline && student.gracePeriodDeadline < todayStr);
+
+    return matchName && matchStatus && matchInstrument && matchTeacher && matchDiscount && matchDate && matchGracePeriod;
   });
 
   const toggleSelectAll = () => {
@@ -1103,6 +1142,15 @@ export default function Students({ profile }: { profile: UserProfile }) {
             {instruments.map(i => (
               <option key={i.id} value={i.name}>{i.name}</option>
             ))}
+          </select>
+          <select
+            value={filterGracePeriod}
+            onChange={(e) => setFilterGracePeriod(e.target.value as any)}
+            className="w-full sm:w-auto bg-zinc-50 border border-zinc-100 rounded-2xl px-5 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 transition-all text-zinc-600 font-medium"
+          >
+            <option value="all">Qualquer Carência</option>
+            <option value="active">Com Carência Ativa</option>
+            <option value="expired">Carência Expirada</option>
           </select>
           <select
             value={filterTeacher}
@@ -1461,6 +1509,21 @@ export default function Students({ profile }: { profile: UserProfile }) {
                       className="w-full bg-zinc-50 border border-zinc-100 rounded-2xl px-6 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 transition-all font-medium"
                     />
                   </div>
+                  {newStudent.gracePeriodDeadline !== '' && (
+                    <div className="bg-orange-50 border border-orange-200 rounded-2xl p-4 md:col-span-2">
+                      <label className="block text-sm font-bold text-orange-700 mb-2 flex items-center gap-2">
+                        <Calendar className="w-4 h-4" />
+                        Manter valor antigo até (Carência)
+                      </label>
+                      <input 
+                        type="date" 
+                        value={newStudent.gracePeriodDeadline}
+                        onChange={e => setNewStudent({...newStudent, gracePeriodDeadline: e.target.value})}
+                        className="w-full bg-white border border-orange-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 transition-all font-medium text-orange-800"
+                      />
+                      <p className="text-xs text-orange-600 mt-2 font-medium">Este aluno é de um ciclo antigo. O sistema sugeriu esta data automaticamente baseada na carência de {schoolSettings.legacyGracePeriodMonths} meses, mas você pode editá-la.</p>
+                    </div>
+                  )}
                   <div>
                     <label className="block text-sm font-medium text-zinc-700 mb-2">E-mail</label>
                     <input 

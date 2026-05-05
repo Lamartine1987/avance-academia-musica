@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { db } from '../firebase';
 import { collection, query, getDocs, doc, getDoc, setDoc, addDoc, deleteDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { MessageTemplate, IntegrationsSettings } from '../types';
-import { Loader2, MessageSquareText, Settings, Plus, Save, Trash2, Edit2, X, Bold, Italic, Strikethrough, Link as LinkIcon, Smile, Play, Upload, Building2, Printer, AlertTriangle, CheckCircle2, FileText } from 'lucide-react';
+import { Loader2, MessageSquareText, Settings, Plus, Save, Trash2, Edit2, X, Bold, Italic, Strikethrough, Link as LinkIcon, Smile, Play, Upload, Building2, Printer, AlertTriangle, CheckCircle2, FileText, Calendar } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
@@ -160,6 +160,8 @@ export default function Communication() {
     trialClassValue: '' as string | number,
     contractTemplate: '' as string,
     declarationTemplate: '' as string,
+    newCycleCutoffDate: '' as string,
+    legacyGracePeriodMonths: '' as string | number,
     companyName: '' as string,
     tradingName: '' as string,
     cnpj: '' as string,
@@ -229,6 +231,8 @@ export default function Communication() {
           trialClassValue: d.trialClassValue ?? '',
           contractTemplate: d.contractTemplate || DEFAULT_CONTRACT_TEMPLATE,
           declarationTemplate: d.declarationTemplate || DEFAULT_DECLARATION_TEMPLATE,
+          newCycleCutoffDate: d.newCycleCutoffDate ?? '',
+          legacyGracePeriodMonths: d.legacyGracePeriodMonths ?? '',
           companyName: d.companyName ?? '',
           tradingName: d.tradingName ?? '',
           cnpj: d.cnpj ?? '',
@@ -271,6 +275,8 @@ export default function Communication() {
         trialClassValue: schoolSettings.trialClassValue ? Number(schoolSettings.trialClassValue) : null,
         contractTemplate: schoolSettings.contractTemplate || null,
         declarationTemplate: schoolSettings.declarationTemplate || null,
+        newCycleCutoffDate: schoolSettings.newCycleCutoffDate || null,
+        legacyGracePeriodMonths: schoolSettings.legacyGracePeriodMonths ? Number(schoolSettings.legacyGracePeriodMonths) : null,
         companyName: schoolSettings.companyName || null,
         tradingName: schoolSettings.tradingName || null,
         cnpj: schoolSettings.cnpj || null,
@@ -474,6 +480,7 @@ export default function Communication() {
       case 'enrollment_rejected': return 'Matrícula Reprovada';
       case 'pix_payment': return 'PIX / Faturamento (Baixa Automática)';
       case 'holiday_reminder': return 'Lembrete de Feriado/Recesso';
+      case 'grace_period_expiry': return 'Aviso de Fim de Carência';
       case 'custom': return 'Outros';
       default: return type;
     }
@@ -562,7 +569,38 @@ export default function Communication() {
                 </div>
               </div>
 
-
+              <div className="pt-6 border-t border-zinc-200">
+                <div className="mb-4 flex items-center justify-between">
+                  <h4 className="text-lg font-bold text-zinc-900 flex items-center gap-2">
+                    <Calendar className="w-5 h-5 text-orange-500" />
+                    Regras de Ciclo de Cobrança
+                  </h4>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-semibold uppercase tracking-widest text-zinc-600 mb-2">Data de Início do Novo Ciclo</label>
+                    <input 
+                      type="date" 
+                      value={schoolSettings.newCycleCutoffDate}
+                      onChange={e => setSchoolSettings({...schoolSettings, newCycleCutoffDate: e.target.value})}
+                      className="w-full bg-zinc-50 border border-zinc-100 rounded-2xl px-6 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 transition-all font-medium"
+                    />
+                    <p className="text-xs text-zinc-500 mt-1">Alunos matriculados a partir desta data não terão carência para os novos valores.</p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold uppercase tracking-widest text-zinc-600 mb-2">Carência p/ Alunos Antigos (Meses)</label>
+                    <input 
+                      type="number" 
+                      min="0"
+                      placeholder="Ex: 6"
+                      value={schoolSettings.legacyGracePeriodMonths}
+                      onChange={e => setSchoolSettings({...schoolSettings, legacyGracePeriodMonths: e.target.value})}
+                      className="w-full bg-zinc-50 border border-zinc-100 rounded-2xl px-6 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 transition-all font-medium"
+                    />
+                    <p className="text-xs text-zinc-500 mt-1">Tempo de espera para cobrar o valor atualizado de alunos matriculados antes da data acima.</p>
+                  </div>
+                </div>
+              </div>
 
               <div className="pt-6 border-t border-zinc-200">
                 <div className="mb-4 flex items-center justify-between">
@@ -1418,12 +1456,13 @@ export default function Communication() {
                       <option value="pix_payment">PIX / Faturamento (Baixa Automática)</option>
                       <option value="declaration_issued">Declaração Emitida</option>
                       <option value="holiday_reminder">Lembrete de Feriado/Recesso</option>
+                      <option value="grace_period_expiry">Aviso de Fim de Carência</option>
                       <option value="custom">Outros</option>
                     </select>
                   </div>
                   
                   
-                  {['welcome', 'material_added', 'enrollment_approved', 'enrollment_rejected', 'declaration_issued', 'holiday_reminder'].includes(currentTemplate.type || '') && (
+                  {['welcome', 'material_added', 'enrollment_approved', 'enrollment_rejected', 'declaration_issued', 'holiday_reminder', 'grace_period_expiry'].includes(currentTemplate.type || '') && (
                     <div className="flex flex-col justify-center">
                       <label className="block text-sm font-bold text-zinc-700 mb-2">Disparo Automático</label>
                       <label className="flex items-center cursor-pointer">
@@ -1468,10 +1507,10 @@ export default function Communication() {
                           {currentTemplate.type === 'declaration_issued' && <li><strong>{'{link_documento}'}</strong> - Link para baixar o PDF da Declaração;</li>}
                         </>
                       )}
-                      {currentTemplate.type?.startsWith('reminder') && (
+                      {(currentTemplate.type?.startsWith('reminder') || currentTemplate.type === 'grace_period_expiry') && (
                         <>
                           <li><strong>{'{valor}'}</strong> - Valor da mensalidade (ex: R$ 150,00);</li>
-                          <li><strong>{'{vencimento}'}</strong> - Data de vencimento (ex: 15/05/2026);</li>
+                          <li><strong>{'{vencimento}'}</strong> - Data de vencimento ou fim da carência (ex: 15/05/2026);</li>
                         </>
                       )}
                       {currentTemplate.type === 'reschedule' && (

@@ -82,6 +82,7 @@ export interface Student {
   billingStartDate?: string;
   lastEvaluationDate?: string;
   enrollmentDate?: string;
+  gracePeriodDeadline?: string;
   contractUrl?: string;
   createdAt: any;
 }

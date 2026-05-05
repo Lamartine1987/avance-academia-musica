@@ -166,7 +166,7 @@ async function runFinancialRoutine() {
     const formatBRL = (val: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
 
     // Load custom message templates for billing
-    const templatesSnap = await db.collection('templates').where('type', 'in', ['reminder_predue', 'reminder_due', 'reminder_overdue']).get();
+    const templatesSnap = await db.collection('templates').where('type', 'in', ['reminder_predue', 'reminder_due', 'reminder_overdue', 'grace_period_expiry']).get();
     const templatesMap = new Map();
     templatesSnap.docs.forEach(d => {
        const t = d.data();
@@ -182,6 +182,37 @@ async function runFinancialRoutine() {
       text = text.replace(/{vencimento}/g, dueDateStr);
       return `🔔 *Aviso do Sistema Avance*\n\n${text}`;
     };
+
+    // 2.5 GRACE PERIOD EXPIRY NOTIFICATIONS
+    const tomorrow = new Date(currentYear, currentMonth - 1, today.getDate() + 1);
+    const tomorrowStr = `${tomorrow.getFullYear()}-${String(tomorrow.getMonth() + 1).padStart(2, '0')}-${String(tomorrow.getDate()).padStart(2, '0')}`;
+    const todayYMD = `${currentYear}-${String(currentMonth).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    const schoolPhone = settingsSnap.data()?.schoolPhone;
+
+    for (const student of activeStudents) {
+      if (!student.gracePeriodDeadline) continue;
+
+      const [y, m, d] = student.gracePeriodDeadline.split('-');
+      
+      // Notify Admin exactly 1 day before via WhatsApp
+      if (student.gracePeriodDeadline === tomorrowStr && schoolPhone) {
+        console.log(`[DEBUG] Grace period for ${student.name} expires tomorrow! Notifying Admin.`);
+        const defaultMsg = `O período de carência do aluno {nome} encerra amanhã ({vencimento}). Por favor, acesse o sistema e atualize o valor da mensalidade (plano) no cadastro do aluno.`;
+        const msg = getReminderText('grace_period_expiry', student.name, Number(student.courseValue) || 0, Number(d), Number(m), Number(y), defaultMsg);
+        await sendWhatsApp(schoolPhone, msg);
+      }
+      
+      // Notify via System Notification exactly on the day
+      if (student.gracePeriodDeadline === todayYMD) {
+        console.log(`[DEBUG] Grace period for ${student.name} expires today! Creating system notification.`);
+        await db.collection('notifications').add({
+          title: 'Carência Expirada',
+          message: `A carência do aluno ${student.name} encerrou hoje. Atualize o valor da mensalidade no cadastro.`,
+          read: false,
+          createdAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+      }
+    }
 
     // Evaluate pending payments
     const pendingSnaps = await db.collection('payments').where('status', 'in', ['pending', 'overdue']).get();
