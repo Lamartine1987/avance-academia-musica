@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, Play, Pause, Square, CheckCircle2, RotateCcw, AlertCircle, ExternalLink, Loader2 } from 'lucide-react';
+import { X, Play, Pause, Square, CheckCircle2, RotateCcw, AlertCircle, ExternalLink, Loader2, Plus, Minus, Pencil } from 'lucide-react';
 import { LibraryTopic, Lesson } from '../types';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { format } from 'date-fns';
 import AlphaTabPlayer from './AlphaTabPlayer';
+import PdfViewer from './PdfViewer';
 
 interface StudySessionProps {
   topic: LibraryTopic;
@@ -18,15 +19,19 @@ interface StudySessionProps {
 
 export default function StudySession({ topic, task, isAlreadyCompleted, onClose, onComplete, onCompleteAutonomous }: StudySessionProps) {
   // Timer State
-  const initialTime = (task?.suggestedDuration || 30) * 60; // in seconds
-  const [timeLeft, setTimeLeft] = useState(initialTime);
+  const defaultDuration = (task?.suggestedDuration || 30) * 60; // in seconds
+  const [customDuration, setCustomDuration] = useState(defaultDuration);
+  const [timeLeft, setTimeLeft] = useState(defaultDuration);
   const [isTimerRunning, setIsTimerRunning] = useState(false);
   const [isCompleting, setIsCompleting] = useState(false);
+  const [isEditingTime, setIsEditingTime] = useState(false);
+  const [editMinutes, setEditMinutes] = useState("");
 
   // Metronome State
   const [bpm, setBpm] = useState(100);
   const [beatsPerMeasure, setBeatsPerMeasure] = useState(4);
   const [isMetronomePlaying, setIsMetronomePlaying] = useState(false);
+  const [studyMetronomeVolume, setStudyMetronomeVolume] = useState(1);
   
   const audioContextRef = useRef<AudioContext | null>(null);
   const nextNoteTimeRef = useRef<number>(0);
@@ -55,7 +60,28 @@ export default function StudySession({ topic, task, isAlreadyCompleted, onClose,
   const toggleTimer = () => setIsTimerRunning(!isTimerRunning);
   const resetTimer = () => {
     setIsTimerRunning(false);
-    setTimeLeft(initialTime);
+    setTimeLeft(customDuration);
+  };
+
+  const adjustTimer = (amountInSeconds: number) => {
+    if (isTimerRunning) return;
+    const newDuration = Math.max(60, customDuration + amountInSeconds); // minimum 1 minute
+    setCustomDuration(newDuration);
+    setTimeLeft(newDuration);
+  };
+
+  const handleEditTime = () => {
+    setIsEditingTime(true);
+    setEditMinutes(Math.floor(timeLeft / 60).toString());
+  };
+
+  const saveEditedTime = () => {
+    const mins = parseInt(editMinutes);
+    if (!isNaN(mins) && mins > 0) {
+      setCustomDuration(mins * 60);
+      setTimeLeft(mins * 60);
+    }
+    setIsEditingTime(false);
   };
 
   // --- METRONOME LOGIC ---
@@ -63,14 +89,21 @@ export default function StudySession({ topic, task, isAlreadyCompleted, onClose,
     if (!audioContextRef.current) return;
     const osc = audioContextRef.current.createOscillator();
     const envelope = audioContextRef.current.createGain();
+    const volumeNode = audioContextRef.current.createGain();
     
     osc.frequency.value = isAccent ? 1200 : 800; // High pitch for beat 1, lower for others
+    
+    // Click envelope shape
     envelope.gain.value = 1;
     envelope.gain.exponentialRampToValueAtTime(1, time + 0.001);
     envelope.gain.exponentialRampToValueAtTime(0.001, time + 0.1);
     
+    // Overall volume
+    volumeNode.gain.value = studyMetronomeVolume;
+    
     osc.connect(envelope);
-    envelope.connect(audioContextRef.current.destination);
+    envelope.connect(volumeNode);
+    volumeNode.connect(audioContextRef.current.destination);
     
     osc.start(time);
     osc.stop(time + 0.1);
@@ -94,7 +127,7 @@ export default function StudySession({ topic, task, isAlreadyCompleted, onClose,
       currentBeatInBarRef.current = (currentBeatInBarRef.current + 1) % beatsPerMeasure;
     }
     timerIDRef.current = requestAnimationFrame(scheduler);
-  }, [bpm, beatsPerMeasure]);
+  }, [bpm, beatsPerMeasure, studyMetronomeVolume]);
 
   useEffect(() => {
     if (isMetronomePlaying) {
@@ -171,10 +204,9 @@ export default function StudySession({ topic, task, isAlreadyCompleted, onClose,
     }
     if (topic.type === 'pdf') {
       return (
-        <iframe 
-          src={topic.url} 
-          className="w-full h-full rounded-2xl border-0 shadow-inner bg-zinc-100"
-        ></iframe>
+        <div className="w-full h-full rounded-2xl overflow-hidden border border-zinc-200">
+          <PdfViewer url={topic.url} />
+        </div>
       );
     }
     if (topic.type === 'audio') {
@@ -224,10 +256,10 @@ export default function StudySession({ topic, task, isAlreadyCompleted, onClose,
         initial={{ opacity: 0, y: 50 }}
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: 50 }}
-        className="fixed inset-0 z-50 bg-white flex flex-col md:flex-row overflow-hidden"
+        className="fixed inset-0 z-50 bg-white flex flex-col md:flex-row overflow-y-auto md:overflow-hidden"
       >
         {/* Main Content Area (Left) */}
-        <div className="flex-1 p-4 md:p-6 bg-zinc-50 flex flex-col min-h-0">
+        <div className="min-h-[65vh] shrink-0 md:min-h-0 md:h-auto md:flex-1 p-4 md:p-6 bg-zinc-50 flex flex-col">
            <div className="flex items-center justify-between mb-4">
              <div className="flex items-center gap-3">
                <button 
@@ -249,7 +281,7 @@ export default function StudySession({ topic, task, isAlreadyCompleted, onClose,
         </div>
 
         {/* Sidebar Tools (Right) */}
-        <div className="w-full md:w-80 bg-white border-t md:border-t-0 md:border-l border-zinc-200 p-6 flex flex-col overflow-y-auto shrink-0 shadow-[-10px_0_30px_rgba(0,0,0,0.02)]">
+        <div className="w-full md:w-80 bg-white border-t md:border-t-0 md:border-l border-zinc-200 p-6 flex flex-col shrink-0 md:overflow-y-auto shadow-[-10px_0_30px_rgba(0,0,0,0.02)]">
           <h3 className="text-sm font-bold text-zinc-400 uppercase tracking-wider mb-6 flex items-center gap-2">
              Ferramentas de Estudo
           </h3>
@@ -257,10 +289,55 @@ export default function StudySession({ topic, task, isAlreadyCompleted, onClose,
           {/* Cronômetro */}
           <div className="bg-zinc-50 rounded-[24px] p-5 border border-zinc-100 mb-6">
             <h4 className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-3">Cronômetro</h4>
-            <div className="text-center mb-4">
-              <span className={`text-4xl font-black display-font tracking-tight ${timeLeft === 0 ? 'text-red-500' : 'text-zinc-900'}`}>
-                {formatTime(timeLeft)}
-              </span>
+            <div className="text-center mb-4 flex items-center justify-center gap-4 h-14">
+              {!task?.suggestedDuration && !isTimerRunning && !isEditingTime && (
+                <button 
+                  onClick={() => adjustTimer(-60)} // -1 minute
+                  className="p-2 text-zinc-400 hover:text-zinc-700 bg-zinc-200/50 hover:bg-zinc-200 rounded-full transition-colors shrink-0"
+                  title="Diminuir 1 minuto"
+                >
+                  <Minus className="w-5 h-5" />
+                </button>
+              )}
+              
+              {isEditingTime ? (
+                <div className="flex items-center justify-center gap-2">
+                  <input 
+                    type="number" 
+                    value={editMinutes} 
+                    onChange={(e) => setEditMinutes(e.target.value)}
+                    onBlur={saveEditedTime}
+                    onKeyDown={(e) => e.key === 'Enter' && saveEditedTime()}
+                    autoFocus
+                    className="w-20 text-center text-3xl font-black display-font tracking-tight text-zinc-900 bg-white border-2 border-orange-500 rounded-xl outline-none"
+                    min="1"
+                  />
+                  <span className="text-sm font-bold text-zinc-500">min</span>
+                </div>
+              ) : (
+                <div 
+                  className={`flex items-center justify-center gap-2 ${!task?.suggestedDuration && !isTimerRunning ? 'cursor-pointer hover:opacity-80 transition-opacity' : ''}`}
+                  onClick={() => { if (!task?.suggestedDuration && !isTimerRunning) handleEditTime(); }}
+                  title={!task?.suggestedDuration && !isTimerRunning ? "Clique para digitar o tempo" : ""}
+                >
+                  <span className={`text-4xl font-black display-font tracking-tight ${timeLeft === 0 ? 'text-red-500' : 'text-zinc-900'}`}>
+                    {formatTime(timeLeft)}
+                  </span>
+                  {!task?.suggestedDuration && !isTimerRunning && (
+                    <Pencil className="w-4 h-4 text-zinc-400" />
+                  )}
+                </div>
+              )}
+
+              {!task?.suggestedDuration && !isTimerRunning && !isEditingTime && (
+                <button 
+                  onClick={() => adjustTimer(60)} // +1 minute
+                  className="p-2 text-zinc-400 hover:text-zinc-700 bg-zinc-200/50 hover:bg-zinc-200 rounded-full transition-colors shrink-0"
+                  title="Aumentar 1 minuto"
+                >
+                  <Plus className="w-5 h-5" />
+                </button>
+              )}
             </div>
             <div className="flex gap-2">
               <button 
@@ -295,6 +372,21 @@ export default function StudySession({ topic, task, isAlreadyCompleted, onClose,
               max="240" 
               value={bpm} 
               onChange={(e) => setBpm(parseInt(e.target.value))}
+              className="w-full accent-orange-500 mb-6"
+            />
+
+            <div className="flex items-center justify-between mb-4">
+              <span className="text-sm font-bold text-zinc-700">Volume</span>
+              <span className="text-sm font-bold text-zinc-900">{Math.round(studyMetronomeVolume * 100)}%</span>
+            </div>
+            
+            <input 
+              type="range" 
+              min="0" 
+              max="2" 
+              step="0.1" 
+              value={studyMetronomeVolume} 
+              onChange={(e) => setStudyMetronomeVolume(parseFloat(e.target.value))}
               className="w-full accent-orange-500 mb-6"
             />
             

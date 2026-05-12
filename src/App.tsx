@@ -114,6 +114,7 @@ export default function App() {
   const [password, setPassword] = useState('');
   const [authError, setAuthError] = useState<string | null>(null);
   const [authLoading, setAuthLoading] = useState(false);
+  const [sessionKickedMessage, setSessionKickedMessage] = useState<string | null>(null);
 
   // Reset password states
   const [isResetting, setIsResetting] = useState(false);
@@ -146,23 +147,23 @@ export default function App() {
   const unreadCount = notifications.filter((n) => !n.read).length;
 
   useEffect(() => {
+    let profileUnsubscribe: (() => void) | undefined;
+
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
         setUser(firebaseUser);
+        
+        let localSessionId = localStorage.getItem('device_session_id');
+        if (!localSessionId) {
+          localSessionId = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+          localStorage.setItem('device_session_id', localSessionId);
+        }
+        const currentSessionId = localSessionId;
+
         const profileRef = doc(db, 'users', firebaseUser.uid);
         const profileSnap = await getDoc(profileRef);
 
-        if (profileSnap.exists()) {
-          const existingProfile = profileSnap.data() as UserProfile;
-          // If profile name is empty but firebase user has it, update it
-          if (!existingProfile.displayName && firebaseUser.displayName) {
-            const updatedProfile = { ...existingProfile, displayName: firebaseUser.displayName };
-            await setDoc(profileRef, updatedProfile, { merge: true });
-            setProfile(updatedProfile);
-          } else {
-            setProfile(existingProfile);
-          }
-        } else {
+        if (!profileSnap.exists()) {
           // Check if user is a teacher
           const teachersRef = collection(db, 'teachers');
           const teacherQuery = query(teachersRef, where('email', '==', firebaseUser.email));
@@ -191,16 +192,78 @@ export default function App() {
           }
 
           await setDoc(profileRef, newProfile);
-          setProfile(newProfile);
         }
+
+        // Setup real-time listener for profile to handle session limits
+        let hasEstablishedSession = false;
+
+        profileUnsubscribe = onSnapshot(profileRef, async (docSnap) => {
+          if (docSnap.exists()) {
+            const data = docSnap.data() as UserProfile;
+            
+            // Device limit logic (only for students)
+            if (data.role === 'student') {
+              let sessions = data.activeSessions || [];
+              const mySessionIndex = sessions.findIndex((s: any) => s.id === currentSessionId);
+              
+              if (mySessionIndex === -1) {
+                if (!hasEstablishedSession) {
+                  // Register session
+                  const maxLastActive = sessions.reduce((max: number, s: any) => Math.max(max, s.lastActive || 0), 0);
+                  const newSession = { 
+                    id: currentSessionId, 
+                    lastActive: Math.max(Date.now(), maxLastActive + 1) 
+                  };
+
+                  if (sessions.length >= 3) {
+                    sessions.sort((a: any, b: any) => (a.lastActive || 0) - (b.lastActive || 0));
+                    sessions = sessions.slice(sessions.length - 2); // keep the 2 most recent
+                  }
+                  sessions.push(newSession); // Add ours at the end, guaranteed to stay!
+                  
+                  hasEstablishedSession = true;
+                  await setDoc(profileRef, { activeSessions: sessions }, { merge: true });
+                } else {
+                  // Kicked out by a new login
+                  setSessionKickedMessage("Sua conta foi conectada em outro dispositivo. Você foi desconectado por segurança.");
+                  await signOut(auth);
+                  return;
+                }
+              } else {
+                hasEstablishedSession = true;
+                // Refresh last active if older than 1 hour to prevent being unfairly kicked
+                const mySession = sessions[mySessionIndex];
+                if (Date.now() - mySession.lastActive > 1000 * 60 * 60) {
+                  sessions[mySessionIndex].lastActive = Date.now();
+                  await setDoc(profileRef, { activeSessions: sessions }, { merge: true });
+                }
+              }
+            }
+
+            // Normal profile update
+            if (!data.displayName && firebaseUser.displayName) {
+              const updatedProfile = { ...data, displayName: firebaseUser.displayName };
+              await setDoc(profileRef, updatedProfile, { merge: true });
+              setProfile(updatedProfile);
+            } else {
+              setProfile(data);
+            }
+            setLoading(false);
+          }
+        });
+
       } else {
         setUser(null);
         setProfile(null);
+        setLoading(false);
+        if (profileUnsubscribe) profileUnsubscribe();
       }
-      setLoading(false);
     });
 
-    return () => unsubscribe();
+    return () => {
+      unsubscribe();
+      if (profileUnsubscribe) profileUnsubscribe();
+    };
   }, []);
 
   useEffect(() => {
@@ -435,6 +498,13 @@ export default function App() {
                   placeholder="••••••••"
                 />
               </div>
+
+              {sessionKickedMessage && (
+                <div className="bg-red-50 text-red-600 p-4 rounded-2xl border border-red-100/50 text-sm text-center mb-4 leading-relaxed font-medium">
+                  <span className="block font-bold mb-1">Acesso Interrompido</span>
+                  {sessionKickedMessage}
+                </div>
+              )}
 
               {authError && (
                 <p className="text-red-500 text-xs mt-2 ml-1">{authError}</p>

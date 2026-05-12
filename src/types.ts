@@ -247,6 +247,7 @@ export interface LibraryTopic {
   url: string;
   type: 'pdf' | 'audio' | 'video' | 'link' | 'image' | 'interactive_sheet';
   description?: string;
+  instrument?: string; // Optional, empty means general
   createdBy: string;
   createdByName: string;
   visibleToStudents?: string[]; // IDs dos alunos
@@ -256,6 +257,7 @@ export interface LibraryTopic {
 export interface LibraryModule {
   id: string;
   name: string;
+  instrument?: string; // Optional instrument binding
   createdAt: any;
 }
 

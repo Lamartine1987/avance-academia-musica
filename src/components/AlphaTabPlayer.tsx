@@ -17,6 +17,9 @@ export default function AlphaTabPlayer({ url }: AlphaTabPlayerProps) {
   const [isMuted, setIsMuted] = useState(false);
   const [isReady, setIsReady] = useState(false);
   const [isMetronomeActive, setIsMetronomeActive] = useState(false);
+  const [metronomeVolume, setMetronomeVolume] = useState(1);
+  const [originalBpm, setOriginalBpm] = useState(100);
+  const [currentBpm, setCurrentBpm] = useState(100);
 
   const togglePlay = () => {
     if (!apiRef.current) return;
@@ -66,6 +69,9 @@ export default function AlphaTabPlayer({ url }: AlphaTabPlayerProps) {
 
     api.scoreLoaded.on((score: any) => {
       console.log("AlphaTab Score Loaded:", score);
+      const initialBpm = score?.tempo || 100;
+      setOriginalBpm(initialBpm);
+      setCurrentBpm(initialBpm);
       setIsReady(true);
     });
 
@@ -130,83 +136,103 @@ export default function AlphaTabPlayer({ url }: AlphaTabPlayerProps) {
     if (!apiRef.current) return;
     const newState = !isMetronomeActive;
     setIsMetronomeActive(newState);
-    apiRef.current.metronomeVolume = newState ? 1 : 0;
+    apiRef.current.metronomeVolume = newState ? metronomeVolume : 0;
+  };
+
+  const handleMetronomeVolume = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = parseFloat(e.target.value);
+    setMetronomeVolume(val);
+    if (isMetronomeActive && apiRef.current) {
+      apiRef.current.metronomeVolume = val;
+    }
+  };
+
+  const handleBpm = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newBpm = parseInt(e.target.value);
+    setCurrentBpm(newBpm);
+    if (apiRef.current && originalBpm > 0) {
+      apiRef.current.playbackSpeed = newBpm / originalBpm;
+    }
   };
 
   return (
     <div className="flex flex-col h-full bg-white rounded-2xl shadow-inner border border-zinc-200 overflow-hidden">
       {/* Toolbar */}
-      <div className="flex items-center gap-4 p-4 bg-zinc-50 border-b border-zinc-200">
+      <div className="flex flex-wrap items-center gap-2 md:gap-4 p-3 md:p-4 bg-zinc-50 border-b border-zinc-200">
         <button 
           onClick={togglePlay}
           disabled={!isReady}
-          className="p-3 bg-emerald-500 text-white rounded-xl hover:bg-emerald-600 transition-colors disabled:opacity-50 flex items-center justify-center w-12 h-12 shadow-sm"
+          className="p-2 md:p-3 bg-emerald-500 text-white rounded-xl hover:bg-emerald-600 transition-colors disabled:opacity-50 flex items-center justify-center w-10 h-10 md:w-12 md:h-12 shadow-sm shrink-0"
         >
-          {isPlaying ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5 fill-current" />}
+          {isPlaying ? <Pause className="w-4 h-4 md:w-5 md:h-5" /> : <Play className="w-4 h-4 md:w-5 md:h-5 fill-current" />}
         </button>
         <button 
           onClick={stop}
           disabled={!isReady}
-          className="p-3 bg-white text-zinc-600 border border-zinc-200 rounded-xl hover:bg-zinc-50 hover:text-red-500 transition-colors disabled:opacity-50 flex items-center justify-center w-12 h-12"
+          className="p-2 md:p-3 bg-white text-zinc-600 border border-zinc-200 rounded-xl hover:bg-zinc-50 hover:text-red-500 transition-colors disabled:opacity-50 flex items-center justify-center w-10 h-10 md:w-12 md:h-12 shrink-0"
         >
-          <Square className="w-5 h-5 fill-current" />
+          <Square className="w-4 h-4 md:w-5 md:h-5 fill-current" />
         </button>
         
         <div className="h-8 w-px bg-zinc-200 mx-2"></div>
         
-        <div className="flex items-center gap-3">
-          <button onClick={toggleMute} className="text-zinc-400 hover:text-zinc-700 transition-colors" title={isMuted ? "Desmutar" : "Mutar"}>
-            {isMuted ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
+        <div className="flex items-center gap-2 md:gap-3 shrink-0">
+          <button onClick={toggleMute} className="text-zinc-400 hover:text-zinc-700 transition-colors p-2" title={isMuted ? "Desmutar" : "Mutar"}>
+            {isMuted ? <VolumeX className="w-4 h-4 md:w-5 md:h-5" /> : <Volume2 className="w-4 h-4 md:w-5 md:h-5" />}
           </button>
           <input 
             type="range" 
             min="0" max="2" step="0.1" 
             value={volume} 
             onChange={handleVolume}
-            className="w-24 accent-emerald-500"
+            className="w-16 md:w-24 accent-emerald-500"
           />
         </div>
 
         <div className="h-8 w-px bg-zinc-200 mx-2 hidden sm:block"></div>
 
         {/* Metronome Control */}
-        <button 
-          onClick={toggleMetronome}
-          disabled={!isReady}
-          title="Metrônomo da Partitura"
-          className={`p-2 rounded-lg flex items-center gap-2 transition-colors disabled:opacity-50 text-sm font-medium ${
-            isMetronomeActive 
-              ? 'bg-emerald-100 text-emerald-700 border border-emerald-200' 
-              : 'bg-white text-zinc-600 border border-zinc-200 hover:bg-zinc-50'
-          }`}
-        >
-          {isMetronomeActive ? <Bell className="w-4 h-4" /> : <BellOff className="w-4 h-4" />}
-          <span className="hidden md:inline">Metrônomo</span>
-        </button>
+        <div className="flex items-center gap-2 shrink-0 bg-white border border-zinc-200 rounded-lg pr-2">
+          <button 
+            onClick={toggleMetronome}
+            disabled={!isReady}
+            title="Metrônomo da Partitura"
+            className={`p-2 rounded-l-lg flex items-center gap-2 transition-colors disabled:opacity-50 text-xs md:text-sm font-medium ${
+              isMetronomeActive 
+                ? 'bg-emerald-100 text-emerald-700' 
+                : 'text-zinc-600 hover:bg-zinc-50'
+            }`}
+          >
+            {isMetronomeActive ? <Bell className="w-4 h-4" /> : <BellOff className="w-4 h-4" />}
+            <span className="inline">Metrônomo</span>
+          </button>
+          <input 
+            type="range" 
+            min="0" max="2" step="0.1" 
+            value={metronomeVolume} 
+            onChange={handleMetronomeVolume}
+            disabled={!isReady}
+            className="w-16 md:w-20 accent-emerald-500"
+            title="Volume do Metrônomo"
+          />
+        </div>
 
         <div className="h-8 w-px bg-zinc-200 mx-2 hidden sm:block"></div>
 
-        {/* Speed Control */}
-        <div className="flex items-center gap-2">
-          <select 
-            className="text-sm bg-white border border-zinc-200 text-zinc-700 rounded-lg px-2 py-1 focus:ring-2 focus:ring-emerald-500 outline-none cursor-pointer font-medium"
-            defaultValue="1"
-            title="Velocidade de Reprodução"
-            onChange={(e) => {
-              if (apiRef.current) {
-                apiRef.current.playbackSpeed = parseFloat(e.target.value);
-              }
-            }}
+        {/* BPM Control */}
+        <div className="flex items-center gap-2 shrink-0 bg-white border border-zinc-200 rounded-lg px-2 py-1">
+          <span className="text-xs md:text-sm font-bold text-zinc-600 w-8 md:w-10 text-center">
+            {currentBpm}
+          </span>
+          <input 
+            type="range" 
+            min="40" max="240" step="1" 
+            value={currentBpm} 
+            onChange={handleBpm}
             disabled={!isReady}
-          >
-            <option value="0.25">0.25x</option>
-            <option value="0.5">0.5x</option>
-            <option value="0.75">0.75x</option>
-            <option value="1">1x Normal</option>
-            <option value="1.25">1.25x</option>
-            <option value="1.5">1.5x</option>
-            <option value="2">2x</option>
-          </select>
+            title="BPM da Partitura"
+            className="w-20 md:w-24 accent-emerald-500"
+          />
         </div>
 
         {!isReady && (

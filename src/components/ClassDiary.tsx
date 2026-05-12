@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { collection, onSnapshot, query, where, orderBy, doc, setDoc } from 'firebase/firestore';
+import { collection, onSnapshot, query, where, orderBy, doc, setDoc, writeBatch, getDoc, Timestamp } from 'firebase/firestore';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 import { db, storage } from '../firebase';
-import { UserProfile, Lesson, Student, LibraryTopic } from '../types';
+import { UserProfile, Lesson, Student, LibraryTopic, LibraryModule } from '../types';
 import { handleFirestoreError, OperationType } from '../lib/error-handler';
-import { Clock, User, FileText, CheckCircle2, AlertCircle, Camera, X, ImageIcon, Loader2, Link, Trash, Headphones } from 'lucide-react';
+import { Clock, User, FileText, CheckCircle2, AlertCircle, Camera, X, ImageIcon, Loader2, Link, Trash, Headphones, BookOpen, CalendarDays } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { cn } from '../lib/utils';
@@ -23,9 +24,14 @@ export default function ClassDiary({ profile, initialStudentId, initialLessonId 
   const [selectedLessonId, setSelectedLessonId] = useState<string>(initialLessonId || '');
   const [activeTab, setActiveTab] = useState<'diary' | 'studies'>('diary');
   const [topics, setTopics] = useState<LibraryTopic[]>([]);
+  const [libraryModules, setLibraryModules] = useState<LibraryModule[]>([]);
   
   const [notes, setNotes] = useState('');
   const [selectedPhotos, setSelectedPhotos] = useState<File[]>([]);
+  const [selectedModuleToUnlock, setSelectedModuleToUnlock] = useState<string>('');
+  const [studyDates, setStudyDates] = useState<string[]>([]);
+  const [tempStudyDate, setTempStudyDate] = useState(format(new Date(), 'yyyy-MM-dd'));
+  const [studyDuration, setStudyDuration] = useState('30');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [feedback, setFeedback] = useState<{isOpen: boolean, type: 'success' | 'error' | 'warning', title: string, message: string}>({ isOpen: false, type: 'success', title: '', message: '' });
 
@@ -59,10 +65,17 @@ export default function ClassDiary({ profile, initialStudentId, initialLessonId 
       setTopics(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as LibraryTopic)));
     });
 
+    // Fetch library modules
+    const qModules = query(collection(db, 'library_modules'), orderBy('name', 'asc'));
+    const unsubscribeModules = onSnapshot(qModules, (snapshot) => {
+      setLibraryModules(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as LibraryModule)));
+    });
+
     return () => {
       unsubscribeStudents();
       unsubscribeLessons();
       unsubscribeTopics();
+      unsubscribeModules();
     };
   }, [profile]);
 
@@ -150,6 +163,16 @@ export default function ClassDiary({ profile, initialStudentId, initialLessonId 
     setSelectedPhotos(prev => prev.filter((_, i) => i !== index));
   };
 
+  const handleAddStudyDate = () => {
+    if (tempStudyDate && !studyDates.includes(tempStudyDate)) {
+      setStudyDates(prev => [...prev, tempStudyDate].sort());
+    }
+  };
+
+  const handleRemoveStudyDate = (dateToRemove: string) => {
+    setStudyDates(prev => prev.filter(d => d !== dateToRemove));
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedLesson) return;
@@ -178,16 +201,79 @@ export default function ClassDiary({ profile, initialStudentId, initialLessonId 
         photoUrls: photoUrls
       }, { merge: true });
 
+      // Handle Module Unlock if selected
+      if (selectedModuleToUnlock) {
+        const moduleTopics = topics.filter(t => t.moduleName === selectedModuleToUnlock);
+        if (moduleTopics.length > 0) {
+          const batch = writeBatch(db);
+          for (const topic of moduleTopics) {
+            const currentIds = topic.visibleToStudents || [];
+            const newIdsSet = new Set([...currentIds, selectedStudentId]);
+            batch.update(doc(db, 'library', topic.id), {
+              visibleToStudents: Array.from(newIdsSet)
+            });
+          }
+
+          // Schedule topics if dates are provided
+          let finalDates = [...studyDates];
+          if (finalDates.length === 0 && tempStudyDate) {
+            finalDates.push(tempStudyDate);
+          }
+
+          if (finalDates.length > 0) {
+            const teacherId = profile.role === 'teacher' ? profile.teacherId : profile.uid;
+            for (const topic of moduleTopics) {
+              for (const dateStr of finalDates) {
+                 const startDateTime = new Date(`${dateStr}T00:00:00`);
+                 const endDateTime = new Date(`${dateStr}T23:59:59`);
+                 const taskRef = doc(collection(db, 'lessons'));
+                 batch.set(taskRef, {
+                    studentId: selectedStudentId,
+                    teacherId: teacherId || '',
+                    instrument: 'Estudo',
+                    startTime: Timestamp.fromDate(startDateTime),
+                    endTime: Timestamp.fromDate(endDateTime),
+                    status: 'scheduled',
+                    isStudyTask: true,
+                    topicId: topic.id,
+                    topicTitle: topic.title,
+                    topicUrl: topic.url || '',
+                    suggestedDuration: Number(studyDuration) || 30
+                 });
+              }
+            }
+          }
+
+          await batch.commit();
+
+          // Send WhatsApp Notification
+          const student = students.find(s => s.id === selectedStudentId);
+          if (student && student.phone) {
+            const settingsDoc = await getDoc(doc(db, 'settings', 'integrations'));
+            const whatsappEngine = settingsDoc.exists() ? settingsDoc.data().whatsappEngine : 'api';
+            
+            const fn = getFunctions();
+            const notifyMaterialUnlocked = httpsCallable(fn, 'notifyMaterialUnlocked');
+            await notifyMaterialUnlocked({
+              studentId: student.id,
+              studentName: student.name,
+              studentPhone: student.phone,
+              topicTitle: `Módulo completo: ${selectedModuleToUnlock}`,
+              teacherName: profile.displayName || 'Professor',
+              engine: whatsappEngine
+            }).catch(console.error);
+          }
+        }
+      }
+
       setFeedback({ isOpen: true, type: 'success', title: 'Sucesso!', message: 'Diário de aula salvo com sucesso.' });
       
       setSelectedPhotos([]);
+      setSelectedModuleToUnlock('');
+      setStudyDates([]);
       if (fileInputRef.current) {
         fileInputRef.current.value = '';
       }
-      
-      // Keep lesson selected if user wants to review, or we can reset to empty
-      // setSelectedLessonId('');
-      // setNotes('');
     } catch (err: any) {
       console.error(err);
       setFeedback({ isOpen: true, type: 'error', title: 'Erro', message: 'Erro ao salvar: ' + err.message });
@@ -408,6 +494,71 @@ export default function ClassDiary({ profile, initialStudentId, initialLessonId 
                              <ImageIcon className="w-8 h-8 text-zinc-300 mb-2" />
                              <p className="text-xs text-zinc-400">Nenhuma foto adicionada ainda.</p>
                            </div>
+                        )}
+                      </div>
+
+                      <div className="bg-orange-50 p-4 rounded-2xl border border-orange-100 mt-6">
+                        <label className="block text-sm font-bold text-orange-900 mb-2 flex items-center gap-2">
+                           <BookOpen className="w-4 h-4" />
+                           Liberar Material de Estudo (Opcional)
+                        </label>
+                        <p className="text-xs text-orange-700 mb-3">Selecione um módulo da biblioteca. Ao salvar, todos os tópicos deste módulo serão liberados para o aluno e ele será notificado no WhatsApp.</p>
+                        <select
+                          value={selectedModuleToUnlock}
+                          onChange={(e) => setSelectedModuleToUnlock(e.target.value)}
+                          className="w-full bg-white border border-orange-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 font-medium text-black"
+                        >
+                          <option value="">Nenhum material adicional</option>
+                          {libraryModules.map(m => (
+                            <option key={m.id} value={m.name}>{m.name}</option>
+                          ))}
+                        </select>
+                        
+                        {selectedModuleToUnlock && (
+                          <div className="mt-4 pt-4 border-t border-orange-200/50">
+                             <label className="block text-sm font-bold text-orange-900 mb-3 flex items-center gap-2">
+                               <CalendarDays className="w-4 h-4" />
+                               Agendar Estudo na Sala de Prática
+                             </label>
+                             <div className="flex flex-col sm:flex-row gap-3 mb-4">
+                               <input 
+                                 type="date"
+                                 value={tempStudyDate}
+                                 onChange={e => setTempStudyDate(e.target.value)}
+                                 className="flex-1 bg-white border border-orange-200 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-orange-500/20 outline-none"
+                               />
+                               <button
+                                 type="button"
+                                 onClick={handleAddStudyDate}
+                                 className="bg-orange-100 text-orange-700 px-4 py-2 rounded-xl text-sm font-bold hover:bg-orange-200 transition-colors"
+                               >
+                                 Adicionar Data
+                               </button>
+                             </div>
+
+                             {studyDates.length > 0 && (
+                               <div className="flex flex-wrap gap-2 mb-4">
+                                 {studyDates.map(d => (
+                                   <div key={d} className="flex items-center gap-1 bg-white border border-orange-200 text-orange-700 px-3 py-1.5 rounded-lg text-xs font-bold">
+                                     {format(new Date(d + 'T12:00:00'), 'dd/MM/yyyy')}
+                                     <button type="button" onClick={() => handleRemoveStudyDate(d)} className="hover:text-red-500 ml-1"><X className="w-3 h-3" /></button>
+                                   </div>
+                                 ))}
+                               </div>
+                             )}
+
+                             <div>
+                               <label className="block text-xs font-bold text-orange-700 mb-1">Duração Sugerida (minutos por tópico)</label>
+                               <input 
+                                 type="number"
+                                 min="1"
+                                 step="1"
+                                 value={studyDuration}
+                                 onChange={e => setStudyDuration(e.target.value)}
+                                 className="w-full bg-white border border-orange-200 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-orange-500/20 outline-none"
+                               />
+                             </div>
+                          </div>
                         )}
                       </div>
 

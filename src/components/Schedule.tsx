@@ -1213,14 +1213,29 @@ export default function Schedule({ profile, onNavigateToDiary, onNavigateToEvalu
       ) : (
         <div className="bg-white rounded-[32px] ring-1 ring-zinc-950/5 shadow-xl shadow-black/[0.03] overflow-hidden">
           {(() => {
-            const visibleTeachers = profile.role === 'teacher' ? teachers.filter(t => t.id === profile.teacherId) : teachers;
+            const visibleTeachers = profile.role === 'teacher' 
+              ? teachers.filter(t => t.id === profile.teacherId) 
+              : teachers.filter(t => t.isTeacher !== false && (filterTeacherId === 'all' || t.id === filterTeacherId));
+
+            const orphanLessons = filteredLessons.filter(l => {
+              if (l.isStudyTask) return false;
+              const lessonDate = toDate(l.startTime);
+              if (!lessonDate) return false;
+              return isSameDay(lessonDate, selectedDate) && !teachers.some(t => t.id === l.teacherId);
+            });
+
+            const finalTeachers = [...visibleTeachers];
+            if (orphanLessons.length > 0 && profile.role !== 'teacher' && filterTeacherId === 'all') {
+              finalTeachers.push({ id: 'unknown', name: 'Sem Professor', email: '', role: 'teacher', status: 'active', isTeacher: true } as Teacher);
+            }
+
             return (
               <div className="overflow-x-auto pb-4">
                 <div className="min-w-[800px]">
                   {/* Header: Teachers */}
-                  <div className="grid border-b border-zinc-100" style={{ gridTemplateColumns: `80px repeat(${visibleTeachers.length}, 1fr)` }}>
+                  <div className="grid border-b border-zinc-100" style={{ gridTemplateColumns: finalTeachers.length > 0 ? `80px repeat(${finalTeachers.length}, 1fr)` : '80px 1fr' }}>
                     <div className="p-4 border-r border-zinc-100 bg-zinc-100/50"></div>
-                    {visibleTeachers.map((teacher) => (
+                    {finalTeachers.map((teacher) => (
                       <div key={teacher.id} className="p-4 text-center border-r border-zinc-100 last:border-r-0 bg-zinc-50/50">
                         <p className="text-[10px] uppercase font-bold tracking-widest opacity-60">Professor</p>
                         <p className="text-sm font-bold truncate">{teacher.name}</p>
@@ -1231,15 +1246,22 @@ export default function Schedule({ profile, onNavigateToDiary, onNavigateToEvalu
                   {/* Grid Body */}
                   <div className="relative">
                         {timeSlots.map((time, timeIdx) => (
-                          <div key={timeIdx} className="grid border-b border-zinc-50 last:border-b-0 group" style={{ gridTemplateColumns: `80px repeat(${visibleTeachers.length}, 1fr)` }}>
+                          <div key={timeIdx} className="grid border-b border-zinc-50 last:border-b-0 group" style={{ gridTemplateColumns: finalTeachers.length > 0 ? `80px repeat(${finalTeachers.length}, 1fr)` : '80px 1fr' }}>
                             <div className="p-4 border-r border-zinc-100 text-[10px] font-bold text-black text-center bg-zinc-100/50">
                               {time}
                             </div>
-                            {visibleTeachers.map((teacher) => {
+                            {finalTeachers.map((teacher) => {
                           const teacherDayLessons = filteredLessons.filter(l => {
                             if (l.isStudyTask) return false;
                             const lessonDate = toDate(l.startTime);
                             if (!lessonDate) return false;
+                            
+                            if (teacher.id === 'unknown') {
+                              return isSameDay(lessonDate, selectedDate) && 
+                                     safeFormat(lessonDate, 'HH:00') === time &&
+                                     !teachers.some(t => t.id === l.teacherId);
+                            }
+                            
                             return isSameDay(lessonDate, selectedDate) && 
                                    safeFormat(lessonDate, 'HH:00') === time &&
                                    l.teacherId === teacher.id;

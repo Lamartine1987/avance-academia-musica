@@ -2,13 +2,14 @@ import React, { useState, useEffect } from 'react';
 import { collection, query, onSnapshot, addDoc, serverTimestamp, deleteDoc, doc, updateDoc, getDocs, where, orderBy, getDoc, writeBatch, Timestamp } from 'firebase/firestore';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '../firebase';
-import { UserProfile, LibraryTopic, Student, Teacher, LibraryModule, Lesson } from '../types';
+import { UserProfile, LibraryTopic, Student, Teacher, LibraryModule, Lesson, Instrument } from '../types';
 import { BookOpen, Plus, Trash2, X, FileText, Video, Headphones, ExternalLink, Loader2, ChevronDown, ChevronUp, LockOpen, GraduationCap, Settings, CalendarDays, CheckCircle2, AlertCircle } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { motion, AnimatePresence } from 'motion/react';
 import ConfirmModal from './ConfirmModal';
 import StudySession from './StudySession';
+import FeedbackModal from './FeedbackModal';
 import { cn } from '../lib/utils';
 
 interface LibraryProps {
@@ -24,7 +25,12 @@ export default function Library({ profile }: LibraryProps) {
   const [showUnlockModal, setShowUnlockModal] = useState(false);
   const [showModulesModal, setShowModulesModal] = useState(false);
   const [libraryModules, setLibraryModules] = useState<LibraryModule[]>([]);
-  const [newModuleName, setNewModuleName] = useState('');
+const [newModuleName, setNewModuleName] = useState('');
+  const [newModuleInstrument, setNewModuleInstrument] = useState('');
+  const [instruments, setInstruments] = useState<Instrument[]>([]);
+  const [feedback, setFeedback] = useState<{isOpen: boolean, type: 'success' | 'error' | 'warning', title: string, message: string}>({ isOpen: false, type: 'success', title: '', message: '' });
+  const [moduleToDelete, setModuleToDelete] = useState<{id: string | undefined, name: string} | null>(null);
+  const showError = (message: string) => { setFeedback({ isOpen: true, type: 'error', title: 'Erro', message }); };
   
   // Form Activity
   const [inputType, setInputType] = useState<'upload' | 'url'>('upload');
@@ -155,10 +161,13 @@ export default function Library({ profile }: LibraryProps) {
 
     const qModules = query(collection(db, 'library_modules'), orderBy('name', 'asc'));
     const unsubModules = onSnapshot(qModules, (snap) => {
-       setLibraryModules(snap.docs.map(d => ({ id: d.id, ...d.data() } as LibraryModule)));
+      setLibraryModules(snap.docs.map(d => ({ id: d.id, ...d.data() } as LibraryModule)));
+    });
+    const unsubInstruments = onSnapshot(collection(db, 'instruments'), (snap) => {
+      setInstruments(snap.docs.map(d => ({ id: d.id, ...d.data() } as Instrument)));
     });
 
-    return () => { unsub(); unsubModules(); unsubTasks(); };
+    return () => { unsub(); unsubModules(); unsubTasks(); unsubInstruments(); };
   }, [isStudent, profile.studentId]);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -225,7 +234,7 @@ export default function Library({ profile }: LibraryProps) {
       resetForm();
     } catch (err) {
       console.error(err);
-      alert('Erro ao salvar tópico.');
+      showError('Erro ao salvar tópico.');
       setIsSubmitting(false);
     }
   };
@@ -334,7 +343,7 @@ export default function Library({ profile }: LibraryProps) {
       setSelectedStudentIds([]);
     } catch (err) {
       console.error(err);
-      alert('Erro ao liberar tópico para alunos.');
+      showError('Erro ao liberar tópico para alunos.');
     } finally {
       setIsSubmitting(false);
     }
@@ -385,7 +394,7 @@ export default function Library({ profile }: LibraryProps) {
       setStudyDates([]);
     } catch (err) {
       console.error(err);
-      alert('Erro ao agendar estudo para alunos.');
+      showError('Erro ao agendar estudo para alunos.');
     } finally {
       setIsSubmitting(false);
     }
@@ -436,7 +445,7 @@ export default function Library({ profile }: LibraryProps) {
       setSelectedStudentsForModule([]);
     } catch (err) {
       console.error(err);
-      alert('Erro ao liberar módulo para alunos.');
+      showError('Erro ao liberar módulo para alunos.');
     } finally {
       setIsSubmitting(false);
     }
@@ -462,7 +471,7 @@ export default function Library({ profile }: LibraryProps) {
       setTopicToDelete(null);
     } catch (err) {
       console.error(err);
-      alert('Erro ao excluir tópico.');
+      showError('Erro ao excluir tópico.');
     }
   };
 
@@ -472,13 +481,15 @@ export default function Library({ profile }: LibraryProps) {
     try {
       setIsSubmitting(true);
       await addDoc(collection(db, 'library_modules'), {
-        name: newModuleName.trim(),
+name: newModuleName.trim(),
+        instrument: newModuleInstrument || null,
         createdAt: serverTimestamp()
       });
-      setNewModuleName('');
+setNewModuleName('');
+      setNewModuleInstrument('');
     } catch (err) {
       console.error(err);
-      alert('Erro ao criar módulo.');
+      showError('Erro ao criar módulo.');
     } finally {
       setIsSubmitting(false);
     }
@@ -501,17 +512,27 @@ export default function Library({ profile }: LibraryProps) {
       
     } catch (err) {
       console.error(err);
-      alert('Erro ao atualizar módulo.');
+      showError('Erro ao atualizar módulo.');
     }
   };
 
-  const handleDeleteModule = async (moduleId: string) => {
-    if (!window.confirm('Tem certeza que deseja excluir este módulo? (Os tópicos não serão excluídos, mas ficarão sem módulo visível)')) return;
+  const executeDeleteModule = async () => {
+    if (!moduleToDelete) return;
     try {
-      await deleteDoc(doc(db, 'library_modules', moduleId));
+      const batch = writeBatch(db);
+      if (moduleToDelete.id) {
+        batch.delete(doc(db, 'library_modules', moduleToDelete.id));
+      }
+      const q = query(collection(db, 'library'), where('moduleName', '==', moduleToDelete.name));
+      const snap = await getDocs(q);
+      snap.docs.forEach(d => {
+        batch.update(d.ref, { moduleName: 'Outros' });
+      });
+      await batch.commit();
+      setModuleToDelete(null);
     } catch (err) {
       console.error(err);
-      alert('Erro ao excluir módulo.');
+      showError('Erro ao excluir módulo.');
     }
   };
 
@@ -634,7 +655,7 @@ export default function Library({ profile }: LibraryProps) {
         </div>
         {canManageLibrary && (
           <div className="flex flex-wrap items-center gap-3">
-            {isAdmin && (
+            {isAdmin && moduleName !== 'Outros' && (
               <button 
                 onClick={() => setShowModulesModal(true)}
                 className="flex items-center gap-2 bg-white text-zinc-700 border border-zinc-200 px-5 py-3 rounded-2xl hover:bg-zinc-50 transition-all shadow-sm active:scale-95 font-medium whitespace-nowrap"
@@ -1099,21 +1120,33 @@ export default function Library({ profile }: LibraryProps) {
                 <p className="text-zinc-500 text-sm mt-1">Crie ou exclua os módulos da sua biblioteca.</p>
               </div>
 
-              <form onSubmit={handleAddModule} className="flex gap-3 mb-6">
-                <input
-                  type="text"
-                  required
-                  value={newModuleName}
-                  onChange={(e) => setNewModuleName(e.target.value)}
-                  placeholder="Nome do Novo Módulo"
-                  className="flex-1 bg-zinc-50 border border-zinc-200 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 transition-all"
-                />
+              <form onSubmit={handleAddModule} className="flex flex-col gap-3 mb-6">
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <input
+                    type="text"
+                    required
+                    value={newModuleName}
+                    onChange={(e) => setNewModuleName(e.target.value)}
+                    placeholder="Nome do Novo Módulo"
+                    className="flex-1 bg-zinc-50 border border-zinc-200 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 transition-all"
+                  />
+                  <select
+                    value={newModuleInstrument}
+                    onChange={(e) => setNewModuleInstrument(e.target.value)}
+                    className="sm:w-2/5 bg-zinc-50 border border-zinc-200 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 transition-all text-zinc-700"
+                  >
+                    <option value="">Sem Instrumento (Geral)</option>
+                    {instruments.map(inst => (
+                      <option key={inst.id} value={inst.name}>{inst.name}</option>
+                    ))}
+                  </select>
+                </div>
                 <button
                   type="submit"
                   disabled={isSubmitting || !newModuleName.trim()}
-                  className="bg-emerald-500 text-white px-6 py-3 rounded-2xl font-bold hover:bg-emerald-600 transition-all shadow-md hover:shadow-emerald-500/25 active:scale-95 disabled:opacity-50 flex items-center justify-center"
+                  className="w-full bg-emerald-500 text-white px-6 py-3 rounded-2xl font-bold hover:bg-emerald-600 transition-all shadow-md hover:shadow-emerald-500/25 active:scale-[0.98] disabled:opacity-50 flex items-center justify-center"
                 >
-                  {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Adicionar'}
+                  {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : "Adicionar Módulo"}
                 </button>
               </form>
 
@@ -1124,7 +1157,10 @@ export default function Library({ profile }: LibraryProps) {
                   <div className="space-y-2">
                     {libraryModules.map(mod => (
                       <div key={mod.id} className="flex items-center justify-between bg-white border border-zinc-100 p-3 rounded-xl shadow-sm">
-                        <span className="font-bold text-zinc-700 text-sm">{mod.name}</span>
+                        <div className="flex flex-col">
+                          <span className="font-bold text-zinc-700 text-sm">{mod.name}</span>
+                          {mod.instrument && <span className="text-[10px] uppercase font-bold text-emerald-600 tracking-wider mt-0.5">{mod.instrument}</span>}
+                        </div>
                         <div className="flex items-center gap-1">
                           <button
                             onClick={() => handleEditModule(mod.id, mod.name)}
@@ -1134,7 +1170,7 @@ export default function Library({ profile }: LibraryProps) {
                             <BookOpen className="w-4 h-4" />
                           </button>
                           <button
-                            onClick={() => handleDeleteModule(mod.id)}
+                            onClick={() => setModuleToDelete({ id: mod.id, name: mod.name })}
                             className="p-2 text-zinc-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
                             title="Excluir Módulo"
                           >
@@ -1539,6 +1575,23 @@ export default function Library({ profile }: LibraryProps) {
           }}
         />
       )}
+
+      <ConfirmModal
+        isOpen={!!moduleToDelete}
+        onClose={() => setModuleToDelete(null)}
+        onConfirm={executeDeleteModule}
+        title="Excluir Módulo"
+        message="Tem certeza que deseja excluir este módulo? (Os tópicos não serão excluídos, mas ficarão sem módulo visível)"
+        confirmText="Excluir"
+      />
+
+      <FeedbackModal
+        isOpen={feedback.isOpen}
+        onClose={() => setFeedback(prev => ({...prev, isOpen: false}))}
+        title={feedback.title}
+        message={feedback.message}
+        type={feedback.type}
+      />
     </div>
   );
 }
