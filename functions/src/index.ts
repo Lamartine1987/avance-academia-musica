@@ -4,7 +4,7 @@ import { getFirestore } from 'firebase-admin/firestore';
 import * as crypto from 'crypto';
 
 admin.initializeApp();
-const db = getFirestore(admin.app(), 'ai-studio-00c161e8-693c-4cc9-8d3a-3e1ddae8db8e');
+const db = getFirestore(admin.app());
 
 async function sendSystemWhatsApp(settings: any, phone: string, message: string) {
   const isApiz = settings.whatsappEngine === 'apiz';
@@ -703,6 +703,47 @@ export const provideNewRescheduleSlots = functions.https.onCall(async (data, con
   return { success: true };
 });
 
+export const notifyMaterialUnlocked = functions.https.onCall(async (data, context) => {
+  const { studentName, studentPhone, topicTitle, teacherName } = data;
+  if (!studentPhone) {
+    return { success: false, reason: 'No phone' };
+  }
+
+  try {
+    const templatesSnap = await db.collection('templates').where('type', '==', 'material_added').limit(1).get();
+    if (templatesSnap.empty) {
+      return { success: false, reason: 'Template not found' };
+    }
+    
+    const template = templatesSnap.docs[0].data();
+    if (template.isAutomatic === false) {
+      return { success: false, reason: 'Automatic sending disabled' };
+    }
+
+    let text = template.content || '';
+    if (!text.trim()) {
+      return { success: false, reason: 'Empty template' };
+    }
+
+    text = text.replace(/{nome}/g, studentName.split(' ')[0]);
+    text = text.replace(/{name}/gi, studentName);
+    text = text.replace(/{material}/g, topicTitle);
+    text = text.replace(/{professor}/g, teacherName);
+    
+    const msg = `🔔 *Aviso do Sistema Avance*\n\n${text}`;
+
+    const settingsSnap = await db.collection('settings').doc('integrations').get();
+    if (settingsSnap.exists) {
+      const settings = settingsSnap.data();
+      await sendSystemWhatsApp(settings, studentPhone, msg);
+    }
+    return { success: true };
+  } catch (err: any) {
+    console.error('Error in notifyMaterialUnlocked:', err);
+    throw new functions.https.HttpsError('internal', err.message || 'Error sending notification');
+  }
+});
+
 export const createStudentUser = functions.https.onCall(async (data, context) => {
   // Allow unauthenticated calls so the Self-Service Enrollment Portal can create the user.
   // We remove the admin-only check here to allow students to self-register via the magic link.
@@ -1280,4 +1321,71 @@ export const manualHolidayReminderRoutine = functions.https.onCall(async (data, 
   } catch (err: any) {
     throw new functions.https.HttpsError('internal', err.message);
   }
+});
+
+
+export const checkStudentStatus = functions.https.onRequest(async (req, res) => {
+  const cors = require('cors')({ origin: true });
+  return cors(req, res, async () => {
+    try {
+      let cpf = req.method === 'POST' ? req.body.cpf : req.query.cpf;
+      if (!cpf) return res.status(400).json({ found: false, message: 'CPF não fornecido' });
+      cpf = String(cpf).replace(/\D/g, '');
+
+      const studentsSnap = await db.collection('students').where('cpf', '==', cpf).limit(1).get();
+      if (studentsSnap.empty) return res.json({ found: false, message: 'Nenhum aluno encontrado com este CPF.' });
+
+      const student = { id: studentsSnap.docs[0].id, ...studentsSnap.docs[0].data() } as any;
+      
+      const paymentsSnap = await db.collection('payments').where('studentId', '==', student.id).get();
+      const payments = paymentsSnap.docs.map(d => d.data());
+
+      let overdueCount = 0;
+      let overdueTotal = 0;
+      let nextDue: any = null;
+      let nextTotal = 0;
+      const todayZero = new Date();
+      todayZero.setHours(0,0,0,0);
+
+      payments.forEach(p => {
+        if (p.status === 'overdue') {
+          overdueCount++;
+          overdueTotal += Number(p.amount) || 0;
+        }
+        if (p.status === 'pending') {
+          const [y, m, d] = p.dueDate.split('-');
+          const pDate = new Date(Number(y), Number(m) - 1, Number(d));
+          if (!nextDue || pDate < nextDue.date) {
+             nextDue = { date: pDate, str: `${d}/${m}/${y}` };
+             nextTotal = Number(p.amount) || 0;
+          }
+        }
+      });
+
+      const formatBRL = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v);
+      
+      let resumo = '';
+      if (overdueCount > 0) {
+        resumo = `Você possui ${overdueCount} mensalidade(s) em atraso, totalizando ${formatBRL(overdueTotal)}.`;
+      } else if (nextDue) {
+        resumo = `Suas mensalidades estão em dia! O seu próximo vencimento é dia ${nextDue.str} no valor de ${formatBRL(nextTotal)}.`;
+      } else {
+        resumo = `Você não possui faturas pendentes ou em atraso.`;
+      }
+
+      return res.json({
+        found: true,
+        nome_aluno: student.name,
+        status_matricula: student.status,
+        qtd_atrasadas: overdueCount,
+        valor_atrasado: formatBRL(overdueTotal),
+        tem_atraso: overdueCount > 0 ? 'SIM' : 'NAO',
+        proximo_vencimento: nextDue ? nextDue.str : 'Nenhum',
+        texto_resumo: resumo
+      });
+    } catch(e: any) {
+      console.error('Error in checkStudentStatus:', e);
+      return res.status(500).json({ found: false, message: 'Erro interno no servidor' });
+    }
+  });
 });

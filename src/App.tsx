@@ -49,7 +49,6 @@ import { auth, db } from './firebase';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { UserProfile, UserRole } from './types';
 import { cn } from './lib/utils';
-
 import { ErrorBoundary } from './components/ErrorBoundary';
 
 // Components
@@ -92,6 +91,15 @@ export default function App() {
     const paymentId = pathname.replace('/pagamento/', '');
     return <PixPaymentPortal id={paymentId} />;
   }
+
+  const [currentHash, setCurrentHash] = useState(window.location.hash);
+  useEffect(() => {
+    const onHash = () => setCurrentHash(window.location.hash);
+    window.addEventListener('hashchange', onHash);
+    return () => window.removeEventListener('hashchange', onHash);
+  }, []);
+
+
 
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);

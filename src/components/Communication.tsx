@@ -1382,9 +1382,42 @@ export default function Communication() {
               </div>
             </div>
 
+            <div className="pt-8 border-t border-zinc-100">
+              <div className="flex items-center justify-between mb-6">
+                <div>
+                  <h3 className="text-lg font-bold text-black">Webhooks Públicos (Consulta Externa)</h3>
+                  <p className="text-sm text-zinc-500 mt-1">Utilize estas URLs em sistemas externos (como BotConversa, Make, N8N, Zapier) para consultar dados da escola em tempo real.</p>
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <div className="bg-indigo-50 p-6 rounded-2xl border border-indigo-100/50">
+                  <h4 className="font-bold text-indigo-900 mb-2">1. Consulta Financeira por CPF</h4>
+                  <p className="text-sm text-indigo-700 mb-4">Retorna o total de faturas atrasadas, valores em aberto e data da próxima mensalidade a vencer do aluno.</p>
+                  
+                  <div className="space-y-2 text-sm font-mono bg-white p-4 rounded-xl border border-indigo-100 overflow-x-auto text-indigo-950">
+                    <p><strong>URL:</strong> https://southamerica-east1-avance-31034.cloudfunctions.net/checkStudentStatus</p>
+                    <p><strong>Método:</strong> POST ou GET</p>
+                    <p><strong>Body (JSON):</strong> {`{ "cpf": "000.000.000-00" }`}</p>
+                    <p className="mt-4 text-xs text-indigo-400">/* Exemplo de Resposta */</p>
+                    <pre className="text-xs text-indigo-800">{`{
+  "found": true,
+  "nome_aluno": "João Silva",
+  "status_matricula": "active",
+  "qtd_atrasadas": 1,
+  "valor_atrasado": "R$ 150,00",
+  "tem_atraso": "SIM",
+  "proximo_vencimento": "15/06/2026",
+  "texto_resumo": "Você possui 1 mensalidade(s) em atraso..."
+}`}</pre>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             <button
               disabled={savingConfig}
-              className="px-8 py-4 bg-black text-white rounded-2xl font-bold hover:bg-zinc-800 transition-all flex items-center gap-2"
+              className="px-8 py-4 bg-black text-white rounded-2xl font-bold hover:bg-zinc-800 transition-all flex items-center gap-2 mt-8"
             >
               {savingConfig ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
               Salvar Credenciais

@@ -567,7 +567,7 @@ export default function Schedule({ profile, onNavigateToDiary, onNavigateToEvalu
         ...schoolSettings,
         defaultMaxStudents: typeof schoolSettings.defaultMaxStudents === 'number' ? schoolSettings.defaultMaxStudents : 1,
         updatedAt: serverTimestamp()
-      });
+      }, { merge: true });
       setIsSettingsModalOpen(false);
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, 'settings/school');

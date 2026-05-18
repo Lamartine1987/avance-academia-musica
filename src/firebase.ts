@@ -8,7 +8,7 @@ console.log("Firebase initializing...");
 let app, db, auth, storage;
 try {
   app = initializeApp(firebaseConfig);
-  db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+  db = getFirestore(app);
   auth = getAuth(app);
   storage = getStorage(app);
   console.log("Firebase initialized successfully.");

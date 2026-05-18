@@ -878,27 +878,47 @@ export default function Students({ profile }: { profile: UserProfile }) {
   };
 
   const sendMessage = async (phone: string, templateType: string, variables: any) => {
+    console.log(`[sendMessage] Iniciando envio de mensagem tipo: ${templateType} para o telefone: ${phone}`);
+    console.log(`[sendMessage] Variáveis recebidas:`, variables);
     try {
       const sSnap = await getDoc(doc(db, 'settings', 'integrations'));
-      if (!sSnap.exists()) return;
+      if (!sSnap.exists()) {
+        console.warn(`[sendMessage] Documento settings/integrations não existe! Envio cancelado.`);
+        return;
+      }
       const settings = sSnap.data() as IntegrationsSettings;
+      console.log(`[sendMessage] Configurações de integração carregadas. Engine: ${settings.whatsappEngine}`);
       
       const isApiz = settings.whatsappEngine === 'apiz';
-      if (isApiz && (!settings.apizUrl || !settings.apizToken)) return;
-      if (!isApiz && (!settings.zapiInstance || !settings.zapiToken)) return;
+      if (isApiz && (!settings.apizUrl || !settings.apizToken)) {
+        console.warn(`[sendMessage] Motor APIZ selecionado, mas URL ou Token estão vazios! Envio cancelado.`);
+        return;
+      }
+      if (!isApiz && (!settings.zapiInstance || !settings.zapiToken)) {
+        console.warn(`[sendMessage] Motor ZAPI selecionado, mas Instância ou Token estão vazios! Envio cancelado.`);
+        return;
+      }
 
       const qTemplates = query(collection(db, 'templates'), where('type', '==', templateType));
       const tSnap = await getDocs(qTemplates);
       if (tSnap.empty) {
+         console.warn(`[sendMessage] Template '${templateType}' NÃO ENCONTRADO no banco de dados! Envio cancelado.`);
          if (templateType === 'pix_payment') {
             alert("AVISO: Ops! A fatura não foi enviada para o WhatsApp porque não existe uma mensagem configurada para 'PIX/Faturamento' (pix_payment). Crie a mensagem na aba 'Comunicação > Templates de Mensagem'!");
          }
          return;
       }
       const template = tSnap.docs[0].data();
+      console.log(`[sendMessage] Template encontrado:`, template.title);
+      
+      if (template.isAutomatic === false) {
+         console.warn(`[sendMessage] Template configurado com Disparo Automático = DESLIGADO. Envio cancelado.`);
+         return;
+      }
       
       let message = template.content || '';
       if (!message.trim()) {
+         console.warn(`[sendMessage] O conteúdo do template está vazio! Envio cancelado.`);
          alert("O texto da mensagem dessa notificação está em branco. Preencha lá na aba 'Comunicação'!");
          return;
       }
@@ -909,30 +929,41 @@ export default function Students({ profile }: { profile: UserProfile }) {
 
       // Add the requested system header Title + Bell Emoji
       message = `🔔 *Aviso do Sistema Avance*\n\n${message}`;
+      console.log(`[sendMessage] Mensagem montada (preview):`, message);
 
       let cleanedPhone = phone.replace(/\D/g, '');
       if (cleanedPhone.length === 10 || cleanedPhone.length === 11) {
           cleanedPhone = `55${cleanedPhone}`;
       }
+      console.log(`[sendMessage] Telefone limpo formatado:`, cleanedPhone);
 
       if (isApiz) {
         const baseUrl = settings.apizUrl?.replace(/\/send-text\/?$/, '').replace(/\/$/, '') || '';
-        const response = await fetch(`${baseUrl}/send-text`, {
+        const endpoint = `${baseUrl}/send-text`;
+        const payload = {
+             instanceName: settings.apizInstanceName || 'teste-crm',
+             number: cleanedPhone,
+             text: message
+        };
+        console.log(`[sendMessage] Disparando para APIZ na URL: ${endpoint} com payload:`, { ...payload, text: '...' });
+
+        const response = await fetch(endpoint, {
           method: 'POST',
           headers: {
              'Content-Type': 'application/json',
              'x-api-key': settings.apizToken || ''
           },
-          body: JSON.stringify({
-             instanceName: settings.apizInstanceName || 'teste-crm',
-             number: cleanedPhone,
-             text: message
-          })
+          body: JSON.stringify(payload)
         });
+        
+        console.log(`[sendMessage] Resposta da APIZ: Status ${response.status}`);
+        
         if (!response.ok) {
            const errText = await response.text();
-           console.error("APIZ Error Payload:", { phone: cleanedPhone, message, response: errText });
+           console.error("[sendMessage] APIZ Error Payload:", { phone: cleanedPhone, message, response: errText });
            alert(`Erro da nossa APIZ Própria: ${errText}.`);
+        } else {
+           console.log(`[sendMessage] Mensagem enviada via APIZ com sucesso!`);
         }
       } else {
         const headers: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -940,24 +971,32 @@ export default function Students({ profile }: { profile: UserProfile }) {
             headers['Client-Token'] = settings.zapiSecurityToken;
         }
 
-        const response = await fetch(`https://api.z-api.io/instances/${settings.zapiInstance}/token/${settings.zapiToken}/send-text`, {
-          method: 'POST',
-          headers: headers,
-          body: JSON.stringify({
+        const endpoint = `https://api.z-api.io/instances/${settings.zapiInstance}/token/${settings.zapiToken}/send-text`;
+        const payload = {
             phone: cleanedPhone,
             message: message
-          })
+        };
+        console.log(`[sendMessage] Disparando para Z-API na URL: ${endpoint} com payload:`, { ...payload, message: '...' });
+
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: headers,
+          body: JSON.stringify(payload)
         });
+
+        console.log(`[sendMessage] Resposta da ZAPI: Status ${response.status}`);
 
         if (!response.ok) {
           const errText = await response.text();
-          console.error("ZAPI Error 400 Payload:", { phone: cleanedPhone, message, response: errText });
+          console.error("[sendMessage] ZAPI Error 400 Payload:", { phone: cleanedPhone, message, response: errText });
           alert(`Erro da Z-API (400): ${errText}. Verifique se o telefone tem WhatsApp ou se conectou a instância.`);
+        } else {
+           console.log(`[sendMessage] Mensagem enviada via ZAPI com sucesso!`);
         }
       }
 
     } catch (e) {
-      console.error("WhatsApp Request Error:", e);
+      console.error("[sendMessage] WhatsApp Request Error:", e);
     }
   };
 

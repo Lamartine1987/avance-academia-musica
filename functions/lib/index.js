@@ -1,12 +1,12 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.manualHolidayReminderRoutine = exports.holidayReminderRoutineDaily = exports.notifyTrialLesson = exports.notifyNewMaterial = exports.onUserDeleted = exports.manualPedagogicalRoutine = exports.pedagogicalRoutineDaily = exports.notifyStudentEvaluation = exports.requestPasswordResetWhatsApp = exports.createStudentUser = exports.provideNewRescheduleSlots = exports.rejectRescheduleSlots = exports.confirmReschedule = exports.getRescheduleData = exports.registerTeacherAbsence = exports.manualFinancialRoutine = exports.financialRoutineDaily = void 0;
+exports.checkStudentStatus = exports.manualHolidayReminderRoutine = exports.holidayReminderRoutineDaily = exports.notifyTrialLesson = exports.notifyNewMaterial = exports.onUserDeleted = exports.manualPedagogicalRoutine = exports.pedagogicalRoutineDaily = exports.notifyStudentEvaluation = exports.requestPasswordResetWhatsApp = exports.createStudentUser = exports.notifyMaterialUnlocked = exports.provideNewRescheduleSlots = exports.rejectRescheduleSlots = exports.confirmReschedule = exports.getRescheduleData = exports.registerTeacherAbsence = exports.manualFinancialRoutine = exports.financialRoutineDaily = void 0;
 const functions = require("firebase-functions/v1");
 const admin = require("firebase-admin");
 const firestore_1 = require("firebase-admin/firestore");
 const crypto = require("crypto");
 admin.initializeApp();
-const db = (0, firestore_1.getFirestore)(admin.app(), 'ai-studio-00c161e8-693c-4cc9-8d3a-3e1ddae8db8e');
+const db = (0, firestore_1.getFirestore)(admin.app());
 async function sendSystemWhatsApp(settings, phone, message) {
     var _a, _b;
     const isApiz = settings.whatsappEngine === 'apiz';
@@ -619,6 +619,41 @@ exports.provideNewRescheduleSlots = functions.https.onCall(async (data, context)
     }
     return { success: true };
 });
+exports.notifyMaterialUnlocked = functions.https.onCall(async (data, context) => {
+    const { studentName, studentPhone, topicTitle, teacherName } = data;
+    if (!studentPhone) {
+        return { success: false, reason: 'No phone' };
+    }
+    try {
+        const templatesSnap = await db.collection('templates').where('type', '==', 'material_added').limit(1).get();
+        if (templatesSnap.empty) {
+            return { success: false, reason: 'Template not found' };
+        }
+        const template = templatesSnap.docs[0].data();
+        if (template.isAutomatic === false) {
+            return { success: false, reason: 'Automatic sending disabled' };
+        }
+        let text = template.content || '';
+        if (!text.trim()) {
+            return { success: false, reason: 'Empty template' };
+        }
+        text = text.replace(/{nome}/g, studentName.split(' ')[0]);
+        text = text.replace(/{name}/gi, studentName);
+        text = text.replace(/{material}/g, topicTitle);
+        text = text.replace(/{professor}/g, teacherName);
+        const msg = `🔔 *Aviso do Sistema Avance*\n\n${text}`;
+        const settingsSnap = await db.collection('settings').doc('integrations').get();
+        if (settingsSnap.exists) {
+            const settings = settingsSnap.data();
+            await sendSystemWhatsApp(settings, studentPhone, msg);
+        }
+        return { success: true };
+    }
+    catch (err) {
+        console.error('Error in notifyMaterialUnlocked:', err);
+        throw new functions.https.HttpsError('internal', err.message || 'Error sending notification');
+    }
+});
 exports.createStudentUser = functions.https.onCall(async (data, context) => {
     // Allow unauthenticated calls so the Self-Service Enrollment Portal can create the user.
     // We remove the admin-only check here to allow students to self-register via the magic link.
@@ -1130,5 +1165,67 @@ exports.manualHolidayReminderRoutine = functions.https.onCall(async (data, conte
     catch (err) {
         throw new functions.https.HttpsError('internal', err.message);
     }
+});
+exports.checkStudentStatus = functions.https.onRequest(async (req, res) => {
+    const cors = require('cors')({ origin: true });
+    return cors(req, res, async () => {
+        try {
+            let cpf = req.method === 'POST' ? req.body.cpf : req.query.cpf;
+            if (!cpf)
+                return res.status(400).json({ found: false, message: 'CPF não fornecido' });
+            cpf = String(cpf).replace(/\D/g, '');
+            const studentsSnap = await db.collection('students').where('cpf', '==', cpf).limit(1).get();
+            if (studentsSnap.empty)
+                return res.json({ found: false, message: 'Nenhum aluno encontrado com este CPF.' });
+            const student = Object.assign({ id: studentsSnap.docs[0].id }, studentsSnap.docs[0].data());
+            const paymentsSnap = await db.collection('payments').where('studentId', '==', student.id).get();
+            const payments = paymentsSnap.docs.map(d => d.data());
+            let overdueCount = 0;
+            let overdueTotal = 0;
+            let nextDue = null;
+            let nextTotal = 0;
+            const todayZero = new Date();
+            todayZero.setHours(0, 0, 0, 0);
+            payments.forEach(p => {
+                if (p.status === 'overdue') {
+                    overdueCount++;
+                    overdueTotal += Number(p.amount) || 0;
+                }
+                if (p.status === 'pending') {
+                    const [y, m, d] = p.dueDate.split('-');
+                    const pDate = new Date(Number(y), Number(m) - 1, Number(d));
+                    if (!nextDue || pDate < nextDue.date) {
+                        nextDue = { date: pDate, str: `${d}/${m}/${y}` };
+                        nextTotal = Number(p.amount) || 0;
+                    }
+                }
+            });
+            const formatBRL = (v) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v);
+            let resumo = '';
+            if (overdueCount > 0) {
+                resumo = `Você possui ${overdueCount} mensalidade(s) em atraso, totalizando ${formatBRL(overdueTotal)}.`;
+            }
+            else if (nextDue) {
+                resumo = `Suas mensalidades estão em dia! O seu próximo vencimento é dia ${nextDue.str} no valor de ${formatBRL(nextTotal)}.`;
+            }
+            else {
+                resumo = `Você não possui faturas pendentes ou em atraso.`;
+            }
+            return res.json({
+                found: true,
+                nome_aluno: student.name,
+                status_matricula: student.status,
+                qtd_atrasadas: overdueCount,
+                valor_atrasado: formatBRL(overdueTotal),
+                tem_atraso: overdueCount > 0 ? 'SIM' : 'NAO',
+                proximo_vencimento: nextDue ? nextDue.str : 'Nenhum',
+                texto_resumo: resumo
+            });
+        }
+        catch (e) {
+            console.error('Error in checkStudentStatus:', e);
+            return res.status(500).json({ found: false, message: 'Erro interno no servidor' });
+        }
+    });
 });
 //# sourceMappingURL=index.js.map
