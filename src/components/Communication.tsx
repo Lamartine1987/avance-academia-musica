@@ -1396,7 +1396,7 @@ export default function Communication() {
                   <p className="text-sm text-indigo-700 mb-4">Retorna o total de faturas atrasadas, valores em aberto e data da próxima mensalidade a vencer do aluno.</p>
                   
                   <div className="space-y-2 text-sm font-mono bg-white p-4 rounded-xl border border-indigo-100 overflow-x-auto text-indigo-950">
-                    <p><strong>URL:</strong> https://southamerica-east1-avance-31034.cloudfunctions.net/checkStudentStatus</p>
+                    <p><strong>URL:</strong> https://us-central1-avance-1334e.cloudfunctions.net/checkStudentStatus</p>
                     <p><strong>Método:</strong> POST ou GET</p>
                     <p><strong>Body (JSON):</strong> {`{ "cpf": "000.000.000-00" }`}</p>
                     <p className="mt-4 text-xs text-indigo-400">/* Exemplo de Resposta */</p>
