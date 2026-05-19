@@ -4,7 +4,7 @@ import { collection, query, getDocs, doc, getDoc, setDoc, updateDoc, where, addD
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { Payment, IntegrationsSettings, Expense } from '../types';
 import { Loader2, DollarSign, Wallet, AlertCircle, Save, CheckCircle2, PlayCircle, Search, Filter, BarChart3, Users as UsersIcon, TrendingUp, Receipt, Plus, Trash2, Edit2, X } from 'lucide-react';
-import { format, isThisMonth, isPast, subMonths } from 'date-fns';
+import { format, isThisMonth, isPast, subMonths, startOfMonth, endOfMonth } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, Legend, PieChart, Pie, Cell } from 'recharts';
 import ConfirmModal from './ConfirmModal';
@@ -84,7 +84,8 @@ export default function Financial({ profile }: { profile?: any }) {
   // Filters
   const [filterName, setFilterName] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
-  const [filterMonth, setFilterMonth] = useState('');
+  const [filterStartDate, setFilterStartDate] = useState(format(startOfMonth(new Date()), 'yyyy-MM-dd'));
+  const [filterEndDate, setFilterEndDate] = useState(format(endOfMonth(new Date()), 'yyyy-MM-dd'));
   const [filterNotification, setFilterNotification] = useState('all');
 
   // Expense Filters
@@ -1046,7 +1047,8 @@ export default function Financial({ profile }: { profile?: any }) {
         const filteredPayments = payments.filter(p => {
           if (filterName && !p.studentName.toLowerCase().includes(filterName.toLowerCase())) return false;
           if (filterStatus !== 'all' && p.status !== filterStatus) return false;
-          if (filterMonth && !p.dueDate.startsWith(filterMonth)) return false;
+          if (filterStartDate && p.dueDate < filterStartDate) return false;
+          if (filterEndDate && p.dueDate > filterEndDate) return false;
           if (filterNotification !== 'all') {
             if (filterNotification === 'none' && p.whatsappSent && p.whatsappSent.length > 0) return false;
             if (filterNotification !== 'none' && (!p.whatsappSent || !p.whatsappSent.includes(filterNotification))) return false;
@@ -1077,12 +1079,35 @@ export default function Financial({ profile }: { profile?: any }) {
                 <option value="paid">Pagos</option>
                 <option value="overdue">Atrasados</option>
               </select>
-              <input
-                type="month"
-                value={filterMonth}
-                onChange={e => setFilterMonth(e.target.value)}
-                className="w-full px-4 py-3 bg-zinc-50 border border-zinc-100 rounded-2xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 text-zinc-700 font-sans"
-              />
+              <div className="flex items-center gap-2 bg-zinc-50 border border-zinc-100 rounded-2xl px-2 py-1 shadow-sm col-span-1 md:col-span-2 lg:col-span-1">
+                <input
+                  type="date"
+                  value={filterStartDate}
+                  onChange={(e) => setFilterStartDate(e.target.value)}
+                  className="w-full bg-white border border-zinc-200 rounded-xl px-2 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-orange-500/20 text-zinc-700 font-medium cursor-pointer"
+                  title="Data de Início"
+                />
+                <span className="text-zinc-400 font-medium text-xs">até</span>
+                <input
+                  type="date"
+                  value={filterEndDate}
+                  onChange={(e) => setFilterEndDate(e.target.value)}
+                  className="w-full bg-white border border-zinc-200 rounded-xl px-2 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-orange-500/20 text-zinc-700 font-medium cursor-pointer"
+                  title="Data Final"
+                />
+                {(filterStartDate || filterEndDate) && (
+                  <button
+                    onClick={() => {
+                      setFilterStartDate('');
+                      setFilterEndDate('');
+                    }}
+                    className="p-1.5 hover:bg-zinc-200 rounded-lg transition-colors text-zinc-400 hover:text-zinc-700 shrink-0"
+                    title="Limpar período"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
               <select
                 value={filterNotification}
                 onChange={e => setFilterNotification(e.target.value)}
@@ -1231,60 +1256,36 @@ export default function Financial({ profile }: { profile?: any }) {
 
             <h3 className="text-sm font-bold text-zinc-900 mb-3 ml-1 flex items-center gap-2">
               <PlayCircle className="w-4 h-4 text-emerald-500" />
-              Próximas Faturas (Projeção)
+              Próximas Faturas
             </h3>
             <div className="bg-emerald-50 border border-emerald-100 rounded-2xl overflow-hidden mb-8">
               {(() => {
-                const upcoming = [];
-                if (statementModal.dueDate) {
-                  let baseMonth, baseYear;
-                  if (statementModal.history.length > 0) {
-                    const latest = statementModal.history[0];
-                    baseMonth = latest.month;
-                    baseYear = latest.year;
-                  } else {
-                    const today = new Date();
-                    baseMonth = today.getMonth() + 1;
-                    baseYear = today.getFullYear();
-                    baseMonth--;
-                  }
-
-                  for (let i = 1; i <= 3; i++) {
-                    let nextM = baseMonth + i;
-                    let nextY = baseYear;
-                    if (nextM > 12) {
-                      nextM -= 12;
-                      nextY++;
-                    }
-                    
-                    let dueD = statementModal.dueDate;
-                    const daysInMonth = new Date(nextY, nextM, 0).getDate();
-                    if (dueD > daysInMonth) dueD = daysInMonth;
-
-                    const dateStr = `${nextY}-${String(nextM).padStart(2, '0')}-${String(dueD).padStart(2, '0')}`;
-                    upcoming.push(dateStr);
-                  }
-                }
+                const today = new Date();
+                today.setHours(0,0,0,0);
+                const upcoming = statementModal.history
+                  .filter(p => new Date(p.dueDate + 'T12:00:00') > today)
+                  .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
+                
                 return upcoming.length > 0 ? (
-                  <ul className="divide-y divide-emerald-100">
-                    {upcoming.map((dateStr, i) => (
-                      <li key={i} className="p-4 flex justify-between items-center">
+                  <ul className="divide-y divide-emerald-100 max-h-64 overflow-y-auto">
+                    {upcoming.map((payment, i) => (
+                      <li key={payment.id} className="p-4 flex justify-between items-center hover:bg-emerald-100/50 transition-colors">
                         <div className="flex items-center gap-3">
                           <div className="w-8 h-8 rounded-full bg-white text-emerald-600 flex items-center justify-center font-black text-sm shadow-sm">
                             {i + 1}
                           </div>
                           <span className="font-bold text-emerald-950">
-                            {format(new Date(dateStr + 'T12:00:00'), "dd 'de' MMMM, yyyy", { locale: ptBR })}
+                            {format(new Date(payment.dueDate + 'T12:00:00'), "dd 'de' MMMM, yyyy", { locale: ptBR })}
                           </span>
                         </div>
                         <span className="font-bold text-emerald-700">
-                          {statementModal.courseValue ? formatCurrency(Math.max(0, statementModal.courseValue - (statementModal.discount || 0))) : '-'}
+                          {formatCurrency(payment.amount)}
                         </span>
                       </li>
                     ))}
                   </ul>
                 ) : (
-                  <p className="p-4 text-sm text-emerald-600 font-medium">Não foi possível calcular projeções. Verifique se o aluno tem um dia de vencimento cadastrado.</p>
+                  <p className="p-4 text-sm text-emerald-600 font-medium">Nenhuma fatura futura gerada.</p>
                 );
               })()}
             </div>
@@ -1295,27 +1296,37 @@ export default function Financial({ profile }: { profile?: any }) {
             </h3>
             <div className="border border-zinc-100 rounded-2xl overflow-hidden bg-white">
               <ul className="divide-y divide-zinc-50">
-                {statementModal.history.slice(0, 3).map((payment) => (
-                  <li key={payment.id} className="p-4 flex justify-between items-center hover:bg-zinc-50 transition-colors">
-                    <div className="flex items-center gap-4">
-                      <div className={`w-2 h-2 rounded-full ${payment.status === 'paid' ? 'bg-emerald-500' : payment.status === 'overdue' ? 'bg-red-500' : 'bg-yellow-500'}`}></div>
-                      <div>
-                        <p className="font-bold text-zinc-900 text-sm">
-                          {format(new Date(payment.dueDate + 'T12:00:00'), "dd/MM/yyyy", { locale: ptBR })}
-                        </p>
-                        <p className="text-[10px] uppercase tracking-widest font-bold text-zinc-400 mt-0.5">
-                          {payment.status === 'paid' ? 'Pago' : payment.status === 'overdue' ? 'Atrasado' : 'Pendente'}
-                        </p>
+                {(() => {
+                  const today = new Date();
+                  today.setHours(0,0,0,0);
+                  const pastInvoices = statementModal.history
+                    .filter(p => new Date(p.dueDate + 'T12:00:00') <= today)
+                    .sort((a, b) => new Date(b.dueDate).getTime() - new Date(a.dueDate).getTime())
+                    .slice(0, 6);
+                    
+                  if (pastInvoices.length === 0) {
+                    return <li className="p-6 text-sm text-zinc-400 text-center font-medium">Nenhum histórico passado encontrado.</li>;
+                  }
+                  
+                  return pastInvoices.map((payment) => (
+                    <li key={payment.id} className="p-4 flex justify-between items-center hover:bg-zinc-50 transition-colors">
+                      <div className="flex items-center gap-4">
+                        <div className={`w-2 h-2 rounded-full ${payment.status === 'paid' ? 'bg-emerald-500' : payment.status === 'overdue' ? 'bg-red-500' : 'bg-yellow-500'}`}></div>
+                        <div>
+                          <p className="font-bold text-zinc-900 text-sm">
+                            {format(new Date(payment.dueDate + 'T12:00:00'), "dd/MM/yyyy", { locale: ptBR })}
+                          </p>
+                          <p className="text-[10px] uppercase tracking-widest font-bold text-zinc-400 mt-0.5">
+                            {payment.status === 'paid' ? 'Pago' : payment.status === 'overdue' ? 'Atrasado' : 'Pendente'}
+                          </p>
+                        </div>
                       </div>
-                    </div>
-                    <span className="font-bold text-zinc-900 text-sm">
-                      {formatCurrency(payment.amount)}
-                    </span>
-                  </li>
-                ))}
-                {statementModal.history.length === 0 && (
-                  <li className="p-6 text-sm text-zinc-400 text-center font-medium">Nenhum histórico de faturas encontrado para este aluno.</li>
-                )}
+                      <span className="font-bold text-zinc-900 text-sm">
+                        {formatCurrency(payment.amount)}
+                      </span>
+                    </li>
+                  ));
+                })()}
               </ul>
             </div>
           </div>

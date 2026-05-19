@@ -146,7 +146,8 @@ export default function EnrollmentPortal({ token }: { token: string }) {
         enrollmentDate: new Date().toISOString().split('T')[0],
         enrollments: enrollmentData.enrollments || [],
         courseValue: enrollmentData.courseValue || 0,
-        dueDate: enrollmentData.dueDate || 10,
+        dueDate: enrollmentData.billingStartDate ? parseInt(enrollmentData.billingStartDate.split('-')[2] || '10', 10) : (enrollmentData.dueDate || 10),
+        billingStartDate: enrollmentData.billingStartDate || '',
         classType: enrollmentData.classType || 'group',
         level: formData.level || 'beginner',
         fatherName: formData.fatherName || '',
@@ -191,6 +192,13 @@ export default function EnrollmentPortal({ token }: { token: string }) {
         status: 'completed',
         studentId: docRef.id,
         completedAt: serverTimestamp()
+      });
+
+      await addDoc(collection(db, 'notifications'), {
+        title: 'Nova Matrícula Recebida!',
+        message: `O aluno ${formData.name} assinou o contrato no Portal e aguarda sua aprovação.`,
+        read: false,
+        createdAt: serverTimestamp()
       });
 
       try {

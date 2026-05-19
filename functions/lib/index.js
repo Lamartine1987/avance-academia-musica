@@ -1182,35 +1182,31 @@ exports.checkStudentStatus = functions.https.onRequest(async (req, res) => {
             const payments = paymentsSnap.docs.map(d => d.data());
             let overdueCount = 0;
             let overdueTotal = 0;
+            let overdueList = [];
             let nextDue = null;
             let nextTotal = 0;
             const todayZero = new Date();
             todayZero.setHours(0, 0, 0, 0);
             payments.forEach(p => {
-                if (p.status === 'overdue') {
-                    overdueCount++;
-                    overdueTotal += Number(p.amount) || 0;
-                }
-                if (p.status === 'pending') {
+                if (p.status === 'overdue' || p.status === 'pending') {
                     const [y, m, d] = p.dueDate.split('-');
                     const pDate = new Date(Number(y), Number(m) - 1, Number(d));
-                    if (!nextDue || pDate < nextDue.date) {
-                        nextDue = { date: pDate, str: `${d}/${m}/${y}` };
-                        nextTotal = Number(p.amount) || 0;
+                    if (pDate < todayZero) {
+                        overdueCount++;
+                        overdueTotal += Number(p.amount) || 0;
+                        overdueList.push({ date: pDate, str: `${d}/${m}/${y}` });
+                    }
+                    else {
+                        if (!nextDue || pDate < nextDue.date) {
+                            nextDue = { date: pDate, str: `${d}/${m}/${y}` };
+                            nextTotal = Number(p.amount) || 0;
+                        }
                     }
                 }
             });
+            overdueList.sort((a, b) => a.date.getTime() - b.date.getTime());
+            const vencimentos_atrasados = overdueList.length > 0 ? overdueList.map(item => item.str).join(', ') : 'Nenhum';
             const formatBRL = (v) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v);
-            let resumo = '';
-            if (overdueCount > 0) {
-                resumo = `Você possui ${overdueCount} mensalidade(s) em atraso, totalizando ${formatBRL(overdueTotal)}.`;
-            }
-            else if (nextDue) {
-                resumo = `Suas mensalidades estão em dia! O seu próximo vencimento é dia ${nextDue.str} no valor de ${formatBRL(nextTotal)}.`;
-            }
-            else {
-                resumo = `Você não possui faturas pendentes ou em atraso.`;
-            }
             return res.json({
                 found: true,
                 nome_aluno: student.name,
@@ -1219,7 +1215,8 @@ exports.checkStudentStatus = functions.https.onRequest(async (req, res) => {
                 valor_atrasado: formatBRL(overdueTotal),
                 tem_atraso: overdueCount > 0 ? 'SIM' : 'NAO',
                 proximo_vencimento: nextDue ? nextDue.str : 'Nenhum',
-                texto_resumo: resumo
+                valor_vencimento: formatBRL(nextTotal),
+                vencimentos_atrasados: vencimentos_atrasados
             });
         }
         catch (e) {

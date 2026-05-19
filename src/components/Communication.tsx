@@ -1408,7 +1408,7 @@ export default function Communication() {
   "valor_atrasado": "R$ 150,00",
   "tem_atraso": "SIM",
   "proximo_vencimento": "15/06/2026",
-  "texto_resumo": "Você possui 1 mensalidade(s) em atraso..."
+  "valor_vencimento": "R$ 150,00"
 }`}</pre>
                   </div>
                 </div>
@@ -1495,7 +1495,7 @@ export default function Communication() {
                   </div>
                   
                   
-                  {['welcome', 'material_added', 'enrollment_approved', 'enrollment_rejected', 'declaration_issued', 'holiday_reminder', 'grace_period_expiry'].includes(currentTemplate.type || '') && (
+                  {['welcome', 'material_added', 'enrollment_approved', 'enrollment_rejected', 'declaration_issued', 'holiday_reminder', 'grace_period_expiry', 'pix_payment'].includes(currentTemplate.type || '') && (
                     <div className="flex flex-col justify-center">
                       <label className="block text-sm font-bold text-zinc-700 mb-2">Disparo Automático</label>
                       <label className="flex items-center cursor-pointer">
@@ -1518,6 +1518,7 @@ export default function Communication() {
                          currentTemplate.type === 'declaration_issued' ? 'Envia essa mensagem automaticamente quando a declaração for emitida.' :
                          ['enrollment_approved', 'enrollment_rejected'].includes(currentTemplate.type || '') ? 'O botão Aprovar/Reprovar irá acionar este envio automaticamente.' :
                          currentTemplate.type === 'holiday_reminder' ? 'Se ativo, enviará este alerta no dia anterior ao feriado, apenas para alunos afetados.' :
+                         currentTemplate.type === 'pix_payment' ? 'Envia o PIX via WhatsApp sempre que uma nova fatura for gerada.' :
                          'Envia essa mensagem automaticamente quando um novo material for anexado.'}
                       </p>
                     </div>

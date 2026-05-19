@@ -81,6 +81,7 @@ export default function Students({ profile }: { profile: UserProfile }) {
      courseNames: '',
      courseValue: 0,
      dueDate: 10,
+     billingStartDate: new Date().toISOString().split('T')[0],
      classType: 'group' as 'individual' | 'group',
      classesPerWeek: 1,
      classDuration: 60,
@@ -90,6 +91,7 @@ export default function Students({ profile }: { profile: UserProfile }) {
      discount: 0,
      extraNotes: ''
   });
+  const [approvingStudentId, setApprovingStudentId] = useState<string | null>(null);
   const [newStudent, setNewStudent] = useState({
     name: '',
     email: '',
@@ -567,30 +569,37 @@ export default function Students({ profile }: { profile: UserProfile }) {
           await generateLessonsForYear(docRef.id, newStudent.enrollments);
         }
 
-        // Generate initial payment for the billing start date
+        // Generate initial payments for 12 months automatically
         if (newStudent.status === 'active' && newStudent.courseValue && newStudent.billingStartDate) {
           try {
             const [startYearStr, startMonthStr, startDayStr] = newStudent.billingStartDate.split('-');
             const startYear = parseInt(startYearStr, 10);
             const startMonth = parseInt(startMonthStr, 10);
-            let dueD = parseInt(startDayStr, 10);
+            let originalDueD = parseInt(startDayStr, 10);
             
-            const daysInMonth = new Date(startYear, startMonth, 0).getDate();
-            if (dueD > daysInMonth) dueD = daysInMonth;
-            
-            const dueDateStr = `${startYear}-${String(startMonth).padStart(2, '0')}-${String(dueD).padStart(2, '0')}`;
-            
-            await addDoc(collection(db, 'payments'), {
-              studentId: docRef.id,
-              studentName: newStudent.name,
-              amount: Math.max(0, Number(newStudent.courseValue) - (Number(newStudent.discount) || 0)),
-              dueDate: dueDateStr,
-              month: startMonth,
-              year: startYear,
-              status: 'pending',
-              whatsappSent: ['pre-due', 'due', 'overdue'], // Evita que o robô envie mensagens automáticas para a 1ª mensalidade
-              createdAt: serverTimestamp()
-            });
+            for (let i = 0; i < 12; i++) {
+               const targetDate = new Date(startYear, startMonth - 1 + i, 1);
+               const targetMonth = targetDate.getMonth() + 1;
+               const targetYear = targetDate.getFullYear();
+               
+               let dueD = originalDueD;
+               const daysInMonth = new Date(targetYear, targetMonth, 0).getDate();
+               if (dueD > daysInMonth) dueD = daysInMonth;
+               
+               const dueDateStr = `${targetYear}-${String(targetMonth).padStart(2, '0')}-${String(dueD).padStart(2, '0')}`;
+               
+               await addDoc(collection(db, 'payments'), {
+                 studentId: docRef.id,
+                 studentName: newStudent.name,
+                 amount: Math.max(0, Number(newStudent.courseValue) - (Number(newStudent.discount) || 0)),
+                 dueDate: dueDateStr,
+                 month: targetMonth,
+                 year: targetYear,
+                 status: 'pending',
+                 whatsappSent: i === 0 ? ['pre-due', 'due', 'overdue'] : [], // Evita que o robô envie mensagens automáticas para a 1ª mensalidade
+                 createdAt: serverTimestamp()
+               });
+            }
           } catch(err) {
             console.error("Error generating initial payment:", err);
           }
@@ -1001,6 +1010,7 @@ export default function Students({ profile }: { profile: UserProfile }) {
   };
 
   const handleApproveStudent = async (student: Student) => {
+    setApprovingStudentId(student.id);
     try {
       await updateDoc(doc(db, 'students', student.id), { status: 'active' });
       if (student.enrollments && student.enrollments.length > 0) {
@@ -1028,33 +1038,46 @@ export default function Students({ profile }: { profile: UserProfile }) {
         console.error("Erro ao gerar/salvar contrato PDF: ", pdfErr);
       }
 
-      // Generate initial payment for the current month
-      if (student.courseValue && student.dueDate) {
+      // Generate initial payments for 12 months automatically
+      if (student.courseValue && student.billingStartDate) {
         try {
-          const today = new Date();
-          const currentMonth = today.getMonth() + 1;
-          const currentYear = today.getFullYear();
-          let dueD = student.dueDate;
+          const [startYearStr, startMonthStr, startDayStr] = student.billingStartDate.split('-');
+          const startYear = parseInt(startYearStr, 10);
+          const startMonth = parseInt(startMonthStr, 10);
+          let originalDueD = parseInt(startDayStr, 10);
           
-          const daysInMonth = new Date(currentYear, currentMonth, 0).getDate();
-          if (dueD > daysInMonth) dueD = daysInMonth;
-          
-          const dueDateStr = `${currentYear}-${String(currentMonth).padStart(2, '0')}-${String(dueD).padStart(2, '0')}`;
-          
-          const paymentRef = await addDoc(collection(db, 'payments'), {
-            studentId: student.id,
-            studentName: student.name,
-            amount: Math.max(0, Number(student.courseValue) - (Number(student.discount) || 0)),
-            dueDate: dueDateStr,
-            month: currentMonth,
-            year: currentYear,
-            status: 'pending',
-            whatsappSent: [],
-            createdAt: serverTimestamp()
-          });
+          let firstPaymentId = '';
 
-          if (student.phone) {
-             setPixModalData({ student, paymentId: paymentRef.id });
+          for (let i = 0; i < 12; i++) {
+             const targetDate = new Date(startYear, startMonth - 1 + i, 1);
+             const targetMonth = targetDate.getMonth() + 1;
+             const targetYear = targetDate.getFullYear();
+             
+             let dueD = originalDueD;
+             const daysInMonth = new Date(targetYear, targetMonth, 0).getDate();
+             if (dueD > daysInMonth) dueD = daysInMonth;
+             
+             const dueDateStr = `${targetYear}-${String(targetMonth).padStart(2, '0')}-${String(dueD).padStart(2, '0')}`;
+             
+             const paymentRef = await addDoc(collection(db, 'payments'), {
+               studentId: student.id,
+               studentName: student.name,
+               amount: Math.max(0, Number(student.courseValue) - (Number(student.discount) || 0)),
+               dueDate: dueDateStr,
+               month: targetMonth,
+               year: targetYear,
+               status: 'pending',
+               whatsappSent: i === 0 ? ['pre-due', 'due', 'overdue'] : [], // Evita que o robô envie mensagens automáticas para a 1ª mensalidade
+               createdAt: serverTimestamp()
+             });
+
+             if (i === 0) {
+               firstPaymentId = paymentRef.id;
+             }
+          }
+
+          if (student.phone && firstPaymentId) {
+             setPixModalData({ student, paymentId: firstPaymentId });
           } else {
              setFeedbackData({ title: "Matrícula Aprovada!", message: "A agenda foi preenchida com sucesso." });
           }
@@ -1077,6 +1100,8 @@ export default function Students({ profile }: { profile: UserProfile }) {
     } catch (e: any) {
       console.error(e);
       alert("Erro ao aprovar a matrícula.");
+    } finally {
+      setApprovingStudentId(null);
     }
   };
 
@@ -1438,25 +1463,35 @@ export default function Students({ profile }: { profile: UserProfile }) {
                         <div className="flex items-center justify-end gap-3">
                           {student.status === 'pending_approval' && (
                             <>
-                              <button 
-                                onClick={() => handleApproveStudent(student)}
-                                className="bg-gradient-to-r from-emerald-500 to-green-500 text-white rounded-xl px-4 py-2 text-xs font-bold shadow-md shadow-emerald-500/20 hover:from-emerald-600 hover:to-green-600 transition-all whitespace-nowrap active:scale-[0.98]"
-                              >
-                                ✅ Aprovar
-                              </button>
-                              <button 
-                                onClick={() => { setStudentToReject(student); setIsRejectModalOpen(true); }}
-                                className="bg-gradient-to-r from-red-500 to-rose-500 text-white rounded-xl px-4 py-2 text-xs font-bold shadow-md shadow-red-500/20 hover:from-red-600 hover:to-rose-600 transition-all whitespace-nowrap active:scale-[0.98]"
-                              >
-                                ❌ Reprovar
-                              </button>
-                              {student.status === 'pending_approval' && (
-                                <button 
-                                  onClick={() => setViewingContract(student)}
-                                  className="bg-white border border-zinc-200 text-zinc-600 rounded-xl px-4 py-2 text-xs font-bold shadow-sm hover:bg-zinc-50 transition-all whitespace-nowrap"
-                                >
-                                  📄 Ver Contrato
-                                </button>
+                              {approvingStudentId === student.id ? (
+                                <div className="flex items-center gap-2 bg-orange-100 text-orange-700 px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap">
+                                  <svg className="animate-spin h-4 w-4 text-orange-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                  </svg>
+                                  Aprovando...
+                                </div>
+                              ) : (
+                                <>
+                                  <button 
+                                    onClick={() => handleApproveStudent(student)}
+                                    className="bg-gradient-to-r from-emerald-500 to-green-500 text-white rounded-xl px-4 py-2 text-xs font-bold shadow-md shadow-emerald-500/20 hover:from-emerald-600 hover:to-green-600 transition-all whitespace-nowrap active:scale-[0.98]"
+                                  >
+                                    ✅ Aprovar
+                                  </button>
+                                  <button 
+                                    onClick={() => { setStudentToReject(student); setIsRejectModalOpen(true); }}
+                                    className="bg-gradient-to-r from-red-500 to-rose-500 text-white rounded-xl px-4 py-2 text-xs font-bold shadow-md shadow-red-500/20 hover:from-red-600 hover:to-rose-600 transition-all whitespace-nowrap active:scale-[0.98]"
+                                  >
+                                    ❌ Reprovar
+                                  </button>
+                                  <button 
+                                    onClick={() => setViewingContract(student)}
+                                    className="bg-white border border-zinc-200 text-zinc-600 rounded-xl px-4 py-2 text-xs font-bold shadow-sm hover:bg-zinc-50 transition-all whitespace-nowrap"
+                                  >
+                                    📄 Ver Contrato
+                                  </button>
+                                </>
                               )}
                             </>
                           )}
@@ -2204,7 +2239,7 @@ export default function Students({ profile }: { profile: UserProfile }) {
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-white rounded-[32px] w-full max-w-lg overflow-hidden shadow-2xl relative flex flex-col max-h-[90vh]"
+              className="bg-white rounded-[32px] w-full max-w-2xl overflow-hidden shadow-2xl relative flex flex-col max-h-[90vh]"
             >
               <div className="flex items-center justify-between p-6 border-b border-zinc-100 shrink-0">
                 <h3 className="text-xl font-bold text-zinc-900 leading-tight">Configurar Pré-Matrícula</h3>
@@ -2264,16 +2299,7 @@ export default function Students({ profile }: { profile: UserProfile }) {
                          ))}
                       </select>
                     </div>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium text-zinc-700 mb-1">Valor Mensal (R$)</label>
-                        <input type="number" required value={linkData.courseValue} onChange={e => setLinkData({...linkData, courseValue: Number(e.target.value)})} className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-orange-500/20" />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-zinc-700 mb-1">Dia de Pgto</label>
-                        <input type="number" required min="1" max="31" value={linkData.dueDate} onChange={e => setLinkData({...linkData, dueDate: Number(e.target.value)})} className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-orange-500/20" />
-                      </div>
-                    </div>
+
                     <div className="grid grid-cols-2 gap-4">
                       <div>
                          <label className="block text-sm font-medium text-zinc-700 mb-1">Aulas por semana</label>
@@ -2375,19 +2401,61 @@ export default function Students({ profile }: { profile: UserProfile }) {
                       </button>
                     </div>
 
-                    <div className="pt-4 flex flex-col gap-4">
-                      <div className="flex gap-4">
-                        <div className="flex-1">
-                          <label className="block text-sm font-medium text-zinc-700 mb-1">Desconto Mensal (R$)</label>
-                          <input type="number" min="0" value={linkData.discount} onChange={e => setLinkData({...linkData, discount: Number(e.target.value)})} className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-orange-500/20" />
+                    <div className="space-y-6 pt-6 mt-6 border-t border-zinc-100">
+                      <h4 className="text-xs font-semibold uppercase tracking-widest text-zinc-400">Financeiro</h4>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-orange-50/50 p-6 rounded-[24px] border border-orange-100/50">
+                        <div>
+                          <label className="block text-sm font-medium text-zinc-700 mb-2">Valor do Curso (R$)</label>
+                          <input 
+                            type="number" 
+                            min="0"
+                            step="0.01"
+                            value={linkData.courseValue || ''}
+                            onChange={e => setLinkData({...linkData, courseValue: Number(e.target.value)})}
+                            className="w-full bg-white border border-orange-100 rounded-2xl px-6 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 transition-all font-bold text-orange-600 placeholder:font-normal"
+                            placeholder="Ex: 150.00"
+                          />
+                          <p className="text-[10px] text-orange-600/70 mt-2 ml-1 font-medium">* O valor se auto-preenche com base na Modalidade</p>
                         </div>
-                        <div className="flex items-center pt-6">
-                           <label className="flex items-center gap-2 cursor-pointer text-sm font-medium text-zinc-700">
-                             <input type="checkbox" checked={linkData.isScholarship} onChange={e => setLinkData({...linkData, isScholarship: e.target.checked})} className="rounded text-orange-500 focus:ring-orange-500 w-5 h-5" />
-                             Bolsa Integral
-                           </label>
+                        <div>
+                          <label className="block text-sm font-medium text-zinc-700 mb-2">1º Vencimento (Início da Cobrança)</label>
+                          <input 
+                            type="date"
+                            value={linkData.billingStartDate || ''}
+                            onChange={e => setLinkData({...linkData, billingStartDate: e.target.value})}
+                            className="w-full bg-white border border-orange-100 rounded-2xl px-6 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 transition-all font-medium font-sans"
+                            required
+                          />
+                          <p className="text-[10px] text-orange-600/70 mt-2 ml-1 font-medium">* O dia selecionado se tornará o vencimento fixo dos próximos meses.</p>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-zinc-700 mb-2">Desconto Mensal (R$)</label>
+                          <input 
+                            type="number" 
+                            min="0"
+                            step="0.01"
+                            value={linkData.discount || ''}
+                            onChange={e => setLinkData({...linkData, discount: Number(e.target.value)})}
+                            className="w-full bg-white border border-zinc-200 rounded-2xl px-6 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 transition-all font-medium"
+                            placeholder="Ex: 50.00"
+                          />
+                        </div>
+                        <div className="flex items-center gap-3 pt-8">
+                          <div className="flex items-center h-5">
+                            <input 
+                              type="checkbox" 
+                              id="isScholarshipLink"
+                              checked={linkData.isScholarship}
+                              onChange={e => setLinkData({...linkData, isScholarship: e.target.checked})}
+                              className="w-5 h-5 rounded border-zinc-300 text-orange-500 focus:ring-orange-500 cursor-pointer"
+                            />
+                          </div>
+                          <label htmlFor="isScholarshipLink" className="text-sm font-medium text-zinc-700 cursor-pointer mb-0">Ativar Bolsa de Estudos Integral</label>
                         </div>
                       </div>
+                    </div>
+
+                    <div className="pt-4 flex flex-col gap-4">
                       <div>
                         <label className="block text-sm font-medium text-zinc-700 mb-1">Anotações Extras</label>
                         <textarea value={linkData.extraNotes} onChange={e => setLinkData({...linkData, extraNotes: e.target.value})} rows={2} placeholder="Observações para a secretaria..." className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-orange-500/20 resize-none"></textarea>
@@ -2459,7 +2527,6 @@ export default function Students({ profile }: { profile: UserProfile }) {
         }}
         onClose={() => {
            setPixModalData(null);
-           setFeedbackData({ title: "Pronto!", message: "Matrícula concluída sem envio de faturamento PIX." });
         }}
         confirmText="Sim, Enviar Agora"
         cancelText="Não enviar no momento"
