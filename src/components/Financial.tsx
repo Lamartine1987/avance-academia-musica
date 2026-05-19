@@ -1058,7 +1058,7 @@ export default function Financial({ profile }: { profile?: any }) {
 
         return (
           <div className="space-y-4">
-            <div className="bg-white p-6 rounded-[32px] ring-1 ring-zinc-950/5 shadow-sm grid grid-cols-1 md:grid-cols-5 gap-4">
+            <div className="bg-white p-6 rounded-[32px] ring-1 ring-zinc-950/5 shadow-sm grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4">
               <div className="relative">
                 <Search className="w-4 h-4 text-zinc-400 absolute left-4 top-1/2 -translate-y-1/2" />
                 <input
@@ -1079,7 +1079,7 @@ export default function Financial({ profile }: { profile?: any }) {
                 <option value="paid">Pagos</option>
                 <option value="overdue">Atrasados</option>
               </select>
-              <div className="flex items-center gap-2 bg-zinc-50 border border-zinc-100 rounded-2xl px-2 py-1 shadow-sm col-span-1 md:col-span-2 lg:col-span-1">
+              <div className="flex items-center gap-2 bg-zinc-50 border border-zinc-100 rounded-2xl px-2 py-1 shadow-sm lg:col-span-2">
                 <input
                   type="date"
                   value={filterStartDate}

@@ -507,22 +507,27 @@ export default function Students({ profile }: { profile: UserProfile }) {
 
         // Sync pending/overdue invoices with new course value and due date
         try {
-          if (newStudent.courseValue && newStudent.dueDate) {
+          if (newStudent.courseValue && newStudent.billingStartDate) {
             const paymentsRef = collection(db, 'payments');
             const qPending = query(paymentsRef, where('studentId', '==', editingStudentId), where('status', 'in', ['pending', 'overdue']));
             const pendingSnaps = await getDocs(qPending);
             
             if (!pendingSnaps.empty) {
               const syncBatch = writeBatch(db);
+              
+              // Extrair o novo DIA do billingStartDate (YYYY-MM-DD)
+              const [,, newDayStr] = newStudent.billingStartDate.split('-');
+              const newD = parseInt(newDayStr, 10);
+
               pendingSnaps.docs.forEach(p => {
                 const data = p.data();
                 if (data.dueDate) {
                   const [y, m] = data.dueDate.split('-');
-                  let newD = Number(newStudent.dueDate);
+                  let finalDay = newD;
                   const daysInMonth = new Date(Number(y), Number(m), 0).getDate();
-                  if (newD > daysInMonth) newD = daysInMonth;
+                  if (finalDay > daysInMonth) finalDay = daysInMonth;
                   
-                  const newDueDateStr = `${y}-${m}-${String(newD).padStart(2, '0')}`;
+                  const newDueDateStr = `${y}-${m}-${String(finalDay).padStart(2, '0')}`;
                   
                   syncBatch.update(p.ref, {
                     amount: Math.max(0, Number(newStudent.courseValue) - (Number(newStudent.discount) || 0)),
@@ -1461,17 +1466,17 @@ export default function Students({ profile }: { profile: UserProfile }) {
                     <td className="py-5 text-right">
                       {profile.role === 'admin' && (
                         <div className="flex items-center justify-end gap-3">
-                          {student.status === 'pending_approval' && (
+                          {approvingStudentId === student.id ? (
+                            <div className="flex items-center gap-2 bg-orange-100 text-orange-700 px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap">
+                              <svg className="animate-spin h-4 w-4 text-orange-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                              </svg>
+                              Aprovando...
+                            </div>
+                          ) : (
                             <>
-                              {approvingStudentId === student.id ? (
-                                <div className="flex items-center gap-2 bg-orange-100 text-orange-700 px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap">
-                                  <svg className="animate-spin h-4 w-4 text-orange-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                  </svg>
-                                  Aprovando...
-                                </div>
-                              ) : (
+                              {student.status === 'pending_approval' && (
                                 <>
                                   <button 
                                     onClick={() => handleApproveStudent(student)}
@@ -1493,27 +1498,27 @@ export default function Students({ profile }: { profile: UserProfile }) {
                                   </button>
                                 </>
                               )}
+                              <button 
+                                onClick={() => setViewingStudent(student)}
+                                className="text-zinc-400 hover:text-blue-500 transition-colors"
+                                title="Visualizar Detalhes"
+                              >
+                                <Eye className="w-5 h-5" />
+                              </button>
+                              <button 
+                                onClick={() => handleEditStudent(student)}
+                                className="text-zinc-400 hover:text-black transition-colors"
+                              >
+                                <Pencil className="w-5 h-5" />
+                              </button>
+                              <button 
+                                onClick={() => handleDeleteStudent(student.id)}
+                                className="text-red-400 hover:text-red-600 transition-colors"
+                              >
+                                <Trash2 className="w-5 h-5" />
+                              </button>
                             </>
                           )}
-                          <button 
-                            onClick={() => setViewingStudent(student)}
-                            className="text-zinc-400 hover:text-blue-500 transition-colors"
-                            title="Visualizar Detalhes"
-                          >
-                            <Eye className="w-5 h-5" />
-                          </button>
-                          <button 
-                            onClick={() => handleEditStudent(student)}
-                            className="text-zinc-400 hover:text-black transition-colors"
-                          >
-                            <Pencil className="w-5 h-5" />
-                          </button>
-                          <button 
-                            onClick={() => handleDeleteStudent(student.id)}
-                            className="text-red-400 hover:text-red-600 transition-colors"
-                          >
-                            <Trash2 className="w-5 h-5" />
-                          </button>
                         </div>
                       )}
                     </td>

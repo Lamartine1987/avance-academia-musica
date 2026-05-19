@@ -83,46 +83,48 @@ async function runFinancialRoutine() {
         // 1. GENERATE PAYMENTS FOR ACTIVE STUDENTS
         const studentsSnap = await db.collection('students').where('status', '==', 'active').get();
         const activeStudents = studentsSnap.docs.map(d => (Object.assign({ id: d.id }, d.data())));
+        const MONTHS_TO_GENERATE = 12;
         for (const student of activeStudents) {
             if (!student.courseValue || !student.dueDate)
                 continue;
-            if (student.billingStartDate) {
-                const parts = student.billingStartDate.split('-');
-                if (parts.length === 3) {
-                    const startYear = parseInt(parts[0], 10);
-                    const startMonth = parseInt(parts[1], 10);
-                    if (currentYear < startYear || (currentYear === startYear && currentMonth < startMonth)) {
-                        continue; // Skip generating payment, billing hasn't started yet
+            const existingPaymentsQuery = await db.collection('payments')
+                .where('studentId', '==', student.id)
+                .get();
+            const existingPayments = existingPaymentsQuery.docs.map(d => d.data());
+            for (let i = 0; i < MONTHS_TO_GENERATE; i++) {
+                const targetDate = new Date(currentYear, currentMonth - 1 + i, 1);
+                const targetMonth = targetDate.getMonth() + 1;
+                const targetYear = targetDate.getFullYear();
+                if (student.billingStartDate) {
+                    const parts = student.billingStartDate.split('-');
+                    if (parts.length === 3) {
+                        const startYear = parseInt(parts[0], 10);
+                        const startMonth = parseInt(parts[1], 10);
+                        if (targetYear < startYear || (targetYear === startYear && targetMonth < startMonth)) {
+                            continue; // Skip generating payment, billing hasn't started yet
+                        }
                     }
                 }
-            }
-            // Check if payment already exists for this month/year
-            const paymentQuery = await db.collection('payments')
-                .where('studentId', '==', student.id)
-                .where('month', '==', currentMonth)
-                .where('year', '==', currentYear)
-                .limit(1).get();
-            if (paymentQuery.empty) {
-                // Create payment
-                // Construct due date for this month
-                let dueDay = student.dueDate;
-                // Handle max days in month
-                const daysInMonth = new Date(currentYear, currentMonth, 0).getDate();
-                if (dueDay > daysInMonth)
-                    dueDay = daysInMonth;
-                const dueDateStr = `${currentYear}-${String(currentMonth).padStart(2, '0')}-${String(dueDay).padStart(2, '0')}`;
-                await db.collection('payments').add({
-                    studentId: student.id,
-                    studentName: student.name,
-                    amount: Math.max(0, (Number(student.courseValue) || 0) - (Number(student.discount) || 0)),
-                    dueDate: dueDateStr,
-                    month: currentMonth,
-                    year: currentYear,
-                    status: 'pending',
-                    whatsappSent: [],
-                    createdAt: admin.firestore.FieldValue.serverTimestamp()
-                });
-                console.log(`Generated payment for student ${student.name} (Due: ${dueDateStr})`);
+                const exists = existingPayments.some(p => p.month === targetMonth && p.year === targetYear);
+                if (!exists) {
+                    let dueDay = student.dueDate;
+                    const daysInMonth = new Date(targetYear, targetMonth, 0).getDate();
+                    if (dueDay > daysInMonth)
+                        dueDay = daysInMonth;
+                    const dueDateStr = `${targetYear}-${String(targetMonth).padStart(2, '0')}-${String(dueDay).padStart(2, '0')}`;
+                    await db.collection('payments').add({
+                        studentId: student.id,
+                        studentName: student.name,
+                        amount: Math.max(0, (Number(student.courseValue) || 0) - (Number(student.discount) || 0)),
+                        dueDate: dueDateStr,
+                        month: targetMonth,
+                        year: targetYear,
+                        status: 'pending',
+                        whatsappSent: [],
+                        createdAt: admin.firestore.FieldValue.serverTimestamp()
+                    });
+                    console.log(`Generated payment for student ${student.name} (Due: ${dueDateStr})`);
+                }
             }
         }
         // 2. SEND WHATSAPP NOTIFICATIONS
