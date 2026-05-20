@@ -1414,6 +1414,10 @@ export const checkStudentStatus = functions.https.onRequest(async (req, res) => 
         valor_atualizado: formatBRL(item.totalWithFees),
         valor_atualizado_num: item.totalWithFees
       }));
+
+      const resumo_taxas_atraso = overdueList.length > 0 
+        ? overdueList.map(item => `Fatura: ${item.str} (Atraso: ${item.daysLate} dias)\nValor: ${formatBRL(item.originalValue)} | Multa: ${formatBRL(item.penaltyAmount)} | Juros: ${formatBRL(item.interestAmount)}\nTotal Atualizado: ${formatBRL(item.totalWithFees)}`).join('\n\n')
+        : 'Nenhuma mensalidade atrasada.';
       
       return res.json({
         found: true,
@@ -1426,7 +1430,8 @@ export const checkStudentStatus = functions.https.onRequest(async (req, res) => 
         proximo_vencimento: nextDue ? nextDue.str : 'Nenhum',
         valor_vencimento: formatBRL(nextTotal),
         vencimentos_atrasados: vencimentos_atrasados,
-        detalhes_mensalidades_atrasadas: detalhes_atrasadas
+        detalhes_mensalidades_atrasadas: detalhes_atrasadas,
+        resumo_taxas_atraso: resumo_taxas_atraso
       });
     } catch(e: any) {
       console.error('Error in checkStudentStatus:', e);

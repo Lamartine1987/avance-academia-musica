@@ -1182,8 +1182,14 @@ exports.checkStudentStatus = functions.https.onRequest(async (req, res) => {
             const student = Object.assign({ id: studentsSnap.docs[0].id }, studentsSnap.docs[0].data());
             const paymentsSnap = await db.collection('payments').where('studentId', '==', student.id).get();
             const payments = paymentsSnap.docs.map(d => d.data());
+            // Fetch settings for penalty and interest
+            const settingsSnap = await db.collection('settings').doc('financial').get();
+            const settings = settingsSnap.exists ? settingsSnap.data() : {};
+            const defaultPenalty = Number(settings === null || settings === void 0 ? void 0 : settings.defaultPenaltyPercentage) || 0;
+            const defaultInterest = Number(settings === null || settings === void 0 ? void 0 : settings.defaultInterestPercentage) || 0;
             let overdueCount = 0;
             let overdueTotal = 0;
+            let overdueTotalWithFees = 0;
             let overdueList = [];
             let nextDue = null;
             let nextTotal = 0;
@@ -1193,15 +1199,31 @@ exports.checkStudentStatus = functions.https.onRequest(async (req, res) => {
                 if (p.status === 'overdue' || p.status === 'pending') {
                     const [y, m, d] = p.dueDate.split('-');
                     const pDate = new Date(Number(y), Number(m) - 1, Number(d));
+                    const amount = Number(p.amount) || 0;
                     if (pDate < todayZero) {
                         overdueCount++;
-                        overdueTotal += Number(p.amount) || 0;
-                        overdueList.push({ date: pDate, str: `${d}/${m}/${y}` });
+                        overdueTotal += amount;
+                        // Calculate fees
+                        const diffTime = Math.abs(todayZero.getTime() - pDate.getTime());
+                        const daysLate = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                        const penaltyAmount = (amount * defaultPenalty) / 100;
+                        const interestAmount = (amount * (defaultInterest / 30) / 100) * daysLate;
+                        const totalWithFees = amount + penaltyAmount + interestAmount;
+                        overdueTotalWithFees += totalWithFees;
+                        overdueList.push({
+                            date: pDate,
+                            str: `${d}/${m}/${y}`,
+                            originalValue: amount,
+                            daysLate,
+                            penaltyAmount,
+                            interestAmount,
+                            totalWithFees
+                        });
                     }
                     else {
                         if (!nextDue || pDate < nextDue.date) {
                             nextDue = { date: pDate, str: `${d}/${m}/${y}` };
-                            nextTotal = Number(p.amount) || 0;
+                            nextTotal = amount;
                         }
                     }
                 }
@@ -1209,16 +1231,34 @@ exports.checkStudentStatus = functions.https.onRequest(async (req, res) => {
             overdueList.sort((a, b) => a.date.getTime() - b.date.getTime());
             const vencimentos_atrasados = overdueList.length > 0 ? overdueList.map(item => item.str).join(', ') : 'Nenhum';
             const formatBRL = (v) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v);
+            const detalhes_atrasadas = overdueList.map(item => ({
+                data_vencimento: item.str,
+                valor_original: formatBRL(item.originalValue),
+                valor_original_num: item.originalValue,
+                dias_atraso: item.daysLate,
+                multa: formatBRL(item.penaltyAmount),
+                multa_num: item.penaltyAmount,
+                juros: formatBRL(item.interestAmount),
+                juros_num: item.interestAmount,
+                valor_atualizado: formatBRL(item.totalWithFees),
+                valor_atualizado_num: item.totalWithFees
+            }));
+            const resumo_taxas_atraso = overdueList.length > 0
+                ? overdueList.map(item => `Fatura: ${item.str} (Atraso: ${item.daysLate} dias)\nValor: ${formatBRL(item.originalValue)} | Multa: ${formatBRL(item.penaltyAmount)} | Juros: ${formatBRL(item.interestAmount)}\nTotal Atualizado: ${formatBRL(item.totalWithFees)}`).join('\n\n')
+                : 'Nenhuma mensalidade atrasada.';
             return res.json({
                 found: true,
                 nome_aluno: student.name,
                 status_matricula: student.status,
                 qtd_atrasadas: overdueCount,
                 valor_atrasado: formatBRL(overdueTotal),
+                valor_atrasado_com_taxas: formatBRL(overdueTotalWithFees),
                 tem_atraso: overdueCount > 0 ? 'SIM' : 'NAO',
                 proximo_vencimento: nextDue ? nextDue.str : 'Nenhum',
                 valor_vencimento: formatBRL(nextTotal),
-                vencimentos_atrasados: vencimentos_atrasados
+                vencimentos_atrasados: vencimentos_atrasados,
+                detalhes_mensalidades_atrasadas: detalhes_atrasadas,
+                resumo_taxas_atraso: resumo_taxas_atraso
             });
         }
         catch (e) {

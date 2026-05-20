@@ -408,6 +408,9 @@ export default function Financial({ profile }: { profile?: any }) {
       
       penalty = (payment.amount * financialSettings.defaultPenaltyPercentage) / 100;
       interest = (payment.amount * (financialSettings.defaultInterestPercentage / 30) / 100) * daysLate;
+
+      penalty = Number(penalty.toFixed(2));
+      interest = Number(interest.toFixed(2));
     }
 
     setReceivePaymentModal({
