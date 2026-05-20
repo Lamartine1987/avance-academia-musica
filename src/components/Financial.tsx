@@ -3,7 +3,7 @@ import { db } from '../firebase';
 import { collection, query, getDocs, doc, getDoc, setDoc, updateDoc, where, addDoc, deleteDoc } from 'firebase/firestore';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { Payment, IntegrationsSettings, Expense } from '../types';
-import { Loader2, DollarSign, Wallet, AlertCircle, Save, CheckCircle2, PlayCircle, Search, Filter, BarChart3, Users as UsersIcon, TrendingUp, Receipt, Plus, Trash2, Edit2, X } from 'lucide-react';
+import { Loader2, DollarSign, Wallet, AlertCircle, Save, CheckCircle2, PlayCircle, Search, Filter, BarChart3, Users as UsersIcon, TrendingUp, Receipt, Plus, Trash2, Edit2, X, Settings } from 'lucide-react';
 import { format, isThisMonth, isPast, subMonths, startOfMonth, endOfMonth } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, Legend, PieChart, Pie, Cell } from 'recharts';
@@ -11,13 +11,14 @@ import ConfirmModal from './ConfirmModal';
 import FeedbackModal from './FeedbackModal';
 
 export default function Financial({ profile }: { profile?: any }) {
-  const [activeTab, setActiveTab] = useState<'panel' | 'payments' | 'expenses' | 'reports'>(profile?.role === 'student' ? 'payments' : 'panel');
+  const [activeTab, setActiveTab] = useState<'panel' | 'payments' | 'expenses' | 'reports' | 'settings'>(profile?.role === 'student' ? 'payments' : 'panel');
   const [payments, setPayments] = useState<Payment[]>([]);
   const [studentsList, setStudentsList] = useState<any[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [reportStats, setReportStats] = useState({ totalActiveStudents: 0, totalMRR: 0, averageTicket: 0, instrumentData: [] as {name: string, value: number}[] });
   const [chartPeriod, setChartPeriod] = useState<6 | 12>(6);
   const [settings, setSettings] = useState<IntegrationsSettings>({ zapiInstance: '', zapiToken: '' });
+  const [financialSettings, setFinancialSettings] = useState({ defaultPenaltyPercentage: 2, defaultInterestPercentage: 1 });
   const [loading, setLoading] = useState(true);
   const [savingConfig, setSavingConfig] = useState(false);
   const [runningRoutine, setRunningRoutine] = useState(false);
@@ -49,6 +50,20 @@ export default function Financial({ profile }: { profile?: any }) {
     title: '',
     message: '',
     onConfirm: () => {}
+  });
+
+  const [receivePaymentModal, setReceivePaymentModal] = useState<{
+    isOpen: boolean;
+    payment: Payment | null;
+    penaltyAmount: number;
+    interestAmount: number;
+    daysLate: number;
+  }>({
+    isOpen: false,
+    payment: null,
+    penaltyAmount: 0,
+    interestAmount: 0,
+    daysLate: 0
   });
 
   const [feedbackModal, setFeedbackModal] = useState<{
@@ -150,8 +165,15 @@ export default function Financial({ profile }: { profile?: any }) {
         setExpenses(eList.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
 
         const settingsSnap = await getDoc(doc(db, 'settings', 'financial'));
-        if (settingsSnap.exists() && settingsSnap.data().expenseCategories) {
-          setCustomCategories(settingsSnap.data().expenseCategories);
+        if (settingsSnap.exists()) {
+          const data = settingsSnap.data();
+          if (data.expenseCategories) {
+            setCustomCategories(data.expenseCategories);
+          }
+          setFinancialSettings({
+            defaultPenaltyPercentage: data.defaultPenaltyPercentage !== undefined ? Number(data.defaultPenaltyPercentage) : 2,
+            defaultInterestPercentage: data.defaultInterestPercentage !== undefined ? Number(data.defaultInterestPercentage) : 1
+          });
         }
       }
     } catch (e) {
@@ -191,20 +213,25 @@ export default function Financial({ profile }: { profile?: any }) {
     }
   };
 
-  const executeMarkAsPaid = async (paymentId: string) => {
-    setConfirmModal(prev => ({ ...prev, isOpen: false }));
+  const executeReceivePayment = async () => {
+    if (!receivePaymentModal.payment) return;
+    setReceivePaymentModal(prev => ({ ...prev, isOpen: false }));
     try {
-      await updateDoc(doc(db, 'payments', paymentId), {
+      await updateDoc(doc(db, 'payments', receivePaymentModal.payment.id), {
         status: 'paid',
-        paidAt: new Date()
+        paidAt: new Date(),
+        penaltyPaid: receivePaymentModal.penaltyAmount,
+        interestPaid: receivePaymentModal.interestAmount,
+        amountPaid: receivePaymentModal.payment.amount + receivePaymentModal.penaltyAmount + receivePaymentModal.interestAmount
       });
       fetchData(); // reload
+      setFeedbackModal({ isOpen: true, type: 'success', title: 'Sucesso', message: 'Pagamento registrado com sucesso!' });
     } catch (error) {
       console.error(error);
       setFeedbackModal({
         isOpen: true,
         type: 'error',
-        title: 'Erro ao Marcar Pagamento',
+        title: 'Erro ao Registrar',
         message: 'Ocorreu um problema ao comunicar com o servidor. Tente novamente.'
       });
     }
@@ -365,12 +392,30 @@ export default function Financial({ profile }: { profile?: any }) {
     }
   };
 
-  const markAsPaid = (paymentId: string) => {
-    setConfirmModal({
+  const markAsPaid = (payment: Payment) => {
+    const todayZero = new Date();
+    todayZero.setHours(0,0,0,0);
+    const [y, m, d] = payment.dueDate.split('-');
+    const pDate = new Date(Number(y), Number(m) - 1, Number(d));
+    
+    let daysLate = 0;
+    let penalty = 0;
+    let interest = 0;
+
+    if (pDate < todayZero) {
+      const diffTime = Math.abs(todayZero.getTime() - pDate.getTime());
+      daysLate = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      
+      penalty = (payment.amount * financialSettings.defaultPenaltyPercentage) / 100;
+      interest = (payment.amount * (financialSettings.defaultInterestPercentage / 30) / 100) * daysLate;
+    }
+
+    setReceivePaymentModal({
       isOpen: true,
-      title: 'Confirmar Pagamento',
-      message: 'Tem certeza que deseja marcar esta fatura como paga?\n\nEsta ação mudará o status para PAGO e irá interromper imediatamente os alertas de cobrança desta fatura no WhatsApp.',
-      onConfirm: () => executeMarkAsPaid(paymentId)
+      payment,
+      penaltyAmount: penalty,
+      interestAmount: interest,
+      daysLate
     });
   };
 
@@ -446,6 +491,22 @@ export default function Financial({ profile }: { profile?: any }) {
       });
     } finally {
       setCleaningOrphans(false);
+    }
+  };
+
+  const handleSaveFinancialSettings = async () => {
+    setSavingConfig(true);
+    try {
+      await setDoc(doc(db, 'settings', 'financial'), {
+        defaultPenaltyPercentage: financialSettings.defaultPenaltyPercentage,
+        defaultInterestPercentage: financialSettings.defaultInterestPercentage
+      }, { merge: true });
+      setFeedbackModal({ isOpen: true, type: 'success', title: 'Sucesso', message: 'Configurações financeiras salvas com sucesso!' });
+    } catch (error) {
+      console.error(error);
+      setFeedbackModal({ isOpen: true, type: 'error', title: 'Erro', message: 'Erro ao salvar configurações.' });
+    } finally {
+      setSavingConfig(false);
     }
   };
 
@@ -542,6 +603,13 @@ export default function Financial({ profile }: { profile?: any }) {
           >
             <BarChart3 className="w-5 h-5" />
             Relatórios
+          </button>
+          <button 
+            onClick={() => setActiveTab('settings')}
+            className={`px-6 py-3 rounded-2xl text-sm font-bold transition-all flex items-center justify-center gap-2 ${activeTab === 'settings' ? 'bg-zinc-950 text-white shadow-xl shadow-black/10' : 'text-zinc-500 hover:text-black hover:bg-zinc-100'}`}
+          >
+            <Settings className="w-5 h-5" />
+            Configurações
           </button>
         </div>
       )}
@@ -1043,6 +1111,74 @@ export default function Financial({ profile }: { profile?: any }) {
         </div>
       )}
 
+      {activeTab === 'settings' && profile?.role !== 'student' && (
+        <div className="space-y-6">
+          <div className="bg-white rounded-[32px] p-6 sm:p-8 shadow-xl shadow-zinc-200/50 border border-zinc-100">
+            <h2 className="text-2xl font-black text-zinc-900 mb-2 display-font">Configurações Financeiras</h2>
+            <p className="text-zinc-500 mb-8 font-medium">Configure as taxas aplicadas automaticamente em mensalidades atrasadas.</p>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+              <div className="bg-zinc-50 rounded-2xl p-6 border border-zinc-100">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-10 h-10 rounded-xl bg-orange-100 text-orange-600 flex items-center justify-center">
+                    <AlertCircle className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-zinc-900">Multa Padrão</h3>
+                    <p className="text-xs text-zinc-500">Cobrada uma única vez por atraso</p>
+                  </div>
+                </div>
+                <div className="relative">
+                  <input
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    value={financialSettings.defaultPenaltyPercentage}
+                    onChange={e => setFinancialSettings(prev => ({ ...prev, defaultPenaltyPercentage: Number(e.target.value) || 0 }))}
+                    className="w-full pl-4 pr-12 py-3 bg-white border border-zinc-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500/20 font-bold text-zinc-900"
+                  />
+                  <span className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-400 font-bold">%</span>
+                </div>
+              </div>
+
+              <div className="bg-zinc-50 rounded-2xl p-6 border border-zinc-100">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-10 h-10 rounded-xl bg-red-100 text-red-600 flex items-center justify-center">
+                    <TrendingUp className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-zinc-900">Juros Padrão ao Mês</h3>
+                    <p className="text-xs text-zinc-500">Cobrado proporcionalmente por dia</p>
+                  </div>
+                </div>
+                <div className="relative">
+                  <input
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    value={financialSettings.defaultInterestPercentage}
+                    onChange={e => setFinancialSettings(prev => ({ ...prev, defaultInterestPercentage: Number(e.target.value) || 0 }))}
+                    className="w-full pl-4 pr-12 py-3 bg-white border border-zinc-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500/20 font-bold text-zinc-900"
+                  />
+                  <span className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-400 font-bold">%</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end">
+              <button
+                onClick={handleSaveFinancialSettings}
+                disabled={savingConfig}
+                className="flex items-center gap-2 bg-gradient-to-r from-orange-500 to-amber-500 text-white px-8 py-4 rounded-2xl font-bold hover:from-orange-600 hover:to-amber-600 transition-all shadow-lg shadow-orange-500/25 active:scale-[0.98] disabled:opacity-70"
+              >
+                {savingConfig ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
+                Salvar Configurações
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {activeTab === 'payments' && (() => {
         const filteredPayments = payments.filter(p => {
           if (filterName && !p.studentName.toLowerCase().includes(filterName.toLowerCase())) return false;
@@ -1195,7 +1331,7 @@ export default function Financial({ profile }: { profile?: any }) {
                         <div className="flex justify-end items-center gap-3">
                           {payment.status !== 'paid' && (
                             <button 
-                              onClick={() => markAsPaid(payment.id)}
+                              onClick={() => markAsPaid(payment)}
                               className="text-xs font-bold text-emerald-600 hover:text-emerald-700 bg-emerald-50 hover:bg-emerald-100 transition-colors px-3 py-1.5 rounded-lg"
                             >
                               Marcar Pago
@@ -1411,6 +1547,74 @@ export default function Financial({ profile }: { profile?: any }) {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {receivePaymentModal.isOpen && receivePaymentModal.payment && (
+        <div className="fixed inset-0 bg-zinc-950/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-[32px] w-full max-w-md p-6 sm:p-8 relative shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+            <button
+              onClick={() => setReceivePaymentModal(prev => ({ ...prev, isOpen: false }))}
+              className="absolute right-6 top-6 text-zinc-400 hover:text-zinc-600 bg-zinc-50 hover:bg-zinc-100 p-2 rounded-full transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+            <h3 className="text-2xl font-black text-zinc-900 mb-2">Registrar Pagamento</h3>
+            <p className="text-zinc-500 mb-6 font-medium">Confirme os valores recebidos para dar baixa.</p>
+            
+            <div className="space-y-4">
+              <div className="bg-zinc-50 p-4 rounded-2xl flex justify-between items-center">
+                <span className="font-bold text-zinc-600">Valor Original</span>
+                <span className="font-bold text-zinc-900">{formatCurrency(receivePaymentModal.payment.amount)}</span>
+              </div>
+              
+              {receivePaymentModal.daysLate > 0 && (
+                <>
+                  <div className="bg-red-50 p-4 rounded-2xl flex justify-between items-center">
+                    <span className="font-bold text-red-600">Dias em Atraso</span>
+                    <span className="font-black text-red-700">{receivePaymentModal.daysLate} dia(s)</span>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-bold text-zinc-700">Multa Cobrada (R$)</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={receivePaymentModal.penaltyAmount}
+                      onChange={e => setReceivePaymentModal(prev => ({ ...prev, penaltyAmount: Number(e.target.value) || 0 }))}
+                      className="w-full px-4 py-3 bg-white border border-zinc-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-bold text-zinc-700">Juros Cobrados (R$)</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={receivePaymentModal.interestAmount}
+                      onChange={e => setReceivePaymentModal(prev => ({ ...prev, interestAmount: Number(e.target.value) || 0 }))}
+                      className="w-full px-4 py-3 bg-white border border-zinc-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                    />
+                  </div>
+                </>
+              )}
+              
+              <div className="bg-emerald-50 p-5 rounded-2xl flex justify-between items-center border border-emerald-100">
+                <span className="font-black text-emerald-800 text-lg">Total a Receber</span>
+                <span className="font-black text-emerald-600 text-2xl">
+                  {formatCurrency(receivePaymentModal.payment.amount + receivePaymentModal.penaltyAmount + receivePaymentModal.interestAmount)}
+                </span>
+              </div>
+              
+              <button
+                onClick={executeReceivePayment}
+                className="w-full justify-center flex items-center gap-2 bg-emerald-500 text-white py-4 rounded-2xl font-bold hover:bg-emerald-600 transition-all shadow-lg shadow-emerald-500/25 active:scale-[0.98]"
+              >
+                <CheckCircle2 className="w-5 h-5" />
+                Confirmar Pagamento
+              </button>
+            </div>
           </div>
         </div>
       )}

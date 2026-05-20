@@ -1406,9 +1406,25 @@ export default function Communication() {
   "status_matricula": "active",
   "qtd_atrasadas": 1,
   "valor_atrasado": "R$ 150,00",
+  "valor_atrasado_com_taxas": "R$ 154,50",
   "tem_atraso": "SIM",
   "proximo_vencimento": "15/06/2026",
-  "valor_vencimento": "R$ 150,00"
+  "valor_vencimento": "R$ 150,00",
+  "vencimentos_atrasados": "15/04/2026",
+  "detalhes_mensalidades_atrasadas": [
+    {
+      "data_vencimento": "15/04/2026",
+      "valor_original": "R$ 150,00",
+      "valor_original_num": 150,
+      "dias_atraso": 30,
+      "multa": "R$ 3,00",
+      "multa_num": 3,
+      "juros": "R$ 1,50",
+      "juros_num": 1.5,
+      "valor_atualizado": "R$ 154,50",
+      "valor_atualizado_num": 154.5
+    }
+  ]
 }`}</pre>
                   </div>
                 </div>
