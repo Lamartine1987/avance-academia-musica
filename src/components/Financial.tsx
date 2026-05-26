@@ -3,7 +3,7 @@ import { db } from '../firebase';
 import { collection, query, getDocs, doc, getDoc, setDoc, updateDoc, where, addDoc, deleteDoc } from 'firebase/firestore';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { Payment, IntegrationsSettings, Expense } from '../types';
-import { Loader2, DollarSign, Wallet, AlertCircle, Save, CheckCircle2, PlayCircle, Search, Filter, BarChart3, Users as UsersIcon, TrendingUp, Receipt, Plus, Trash2, Edit2, X, Settings } from 'lucide-react';
+import { Loader2, DollarSign, Wallet, AlertCircle, Save, CheckCircle2, PlayCircle, Search, Filter, BarChart3, Users as UsersIcon, TrendingUp, Receipt, Plus, Trash2, Edit2, X, Settings, FileText, ArrowUpRight, ArrowDownRight, Calendar, XCircle, ChevronDown, Check, MoreVertical, FileEdit, Calculator, Eye, User, Phone, Download, Clock, Image as ImageIcon, Send, FileSignature, Link as LinkIcon, Lock, Unlock, Zap, Server, History } from 'lucide-react';
 import { format, isThisMonth, isPast, subMonths, startOfMonth, endOfMonth } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, Legend, PieChart, Pie, Cell } from 'recharts';
@@ -103,6 +103,11 @@ export default function Financial({ profile }: { profile?: any }) {
   const [filterEndDate, setFilterEndDate] = useState(format(endOfMonth(new Date()), 'yyyy-MM-dd'));
   const [filterNotification, setFilterNotification] = useState('all');
 
+  // Firebase Costs
+  const [firebaseCost, setFirebaseCost] = useState<number | null>(null);
+  const [fetchingFirebaseCost, setFetchingFirebaseCost] = useState(false);
+  const [firebaseCostHistoryModal, setFirebaseCostHistoryModal] = useState({ isOpen: false, history: [] as any[], loading: false });
+
   // Expense Filters
   const [expenseFilterCategory, setExpenseFilterCategory] = useState('all');
   const [expenseFilterMonth, setExpenseFilterMonth] = useState('');
@@ -174,6 +179,22 @@ export default function Financial({ profile }: { profile?: any }) {
             defaultPenaltyPercentage: data.defaultPenaltyPercentage !== undefined ? Number(data.defaultPenaltyPercentage) : 2,
             defaultInterestPercentage: data.defaultInterestPercentage !== undefined ? Number(data.defaultInterestPercentage) : 1
           });
+        }
+        
+        try {
+          setFetchingFirebaseCost(true);
+          const fn = getFunctions();
+          const getCosts = httpsCallable(fn, 'getInfrastructureCosts');
+          const result: any = await getCosts();
+          if (result.data?.status === 'success') {
+            setFirebaseCost(result.data.finalCost);
+          } else if (result.data?.status === 'pending') {
+            setFirebaseCost(0);
+          }
+        } catch (e) {
+          console.error('Failed to fetch infra costs:', e);
+        } finally {
+          setFetchingFirebaseCost(false);
         }
       }
     } catch (e) {
@@ -734,6 +755,45 @@ export default function Financial({ profile }: { profile?: any }) {
             >
               {showExpenseForm ? 'Cancelar' : <><Plus className="w-4 h-4" /> Nova Despesa</>}
             </button>
+          </div>
+
+          <div className="bg-[#fef9f0] border border-orange-100 border-l-[3px] border-l-orange-500 rounded-xl p-4 flex items-center justify-between shadow-sm relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-64 h-full bg-gradient-to-l from-orange-100/50 to-transparent pointer-events-none"></div>
+            <div className="flex items-center gap-4 relative z-10">
+              <div className="w-12 h-12 bg-white rounded-[14px] flex items-center justify-center text-orange-500 shadow-sm border border-orange-50">
+                <Server className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-[#3b5266] font-bold text-[13px]">
+                  Custos Operacionais de Servidor (Firebase)
+                  {fetchingFirebaseCost && <Loader2 className="w-3 h-3 animate-spin inline-block ml-2 text-orange-500" />}
+                </h3>
+                <p className="text-zinc-400 text-[11px] font-medium mt-0.5">Atualizado automaticamente via Google Cloud BigQuery</p>
+                <button 
+                  onClick={async () => {
+                    setFirebaseCostHistoryModal(prev => ({ ...prev, isOpen: true, loading: true }));
+                    try {
+                      const snap = await getDocs(query(collection(db, 'firebase_costs')));
+                      const hist = snap.docs.map(d => d.data());
+                      hist.sort((a, b) => b.period.localeCompare(a.period));
+                      setFirebaseCostHistoryModal({ isOpen: true, history: hist, loading: false });
+                    } catch (e) {
+                      console.error('Error fetching history:', e);
+                      setFirebaseCostHistoryModal({ isOpen: true, history: [], loading: false });
+                    }
+                  }}
+                  className="flex items-center gap-1 text-[11px] font-bold text-pink-500 hover:text-pink-600 mt-1.5 transition-colors"
+                >
+                  <History className="w-3 h-3" />
+                  Ver Histórico de Faturamento
+                </button>
+              </div>
+            </div>
+            <div className="text-right relative z-10 pr-2">
+              <span className="text-2xl font-black text-[#d97706] tracking-tight">
+                {firebaseCost !== null ? formatCurrency(firebaseCost) : 'R$ --,--'}
+              </span>
+            </div>
           </div>
 
           {showExpenseForm && (
@@ -1637,6 +1697,66 @@ export default function Financial({ profile }: { profile?: any }) {
         title={feedbackModal.title}
         message={feedbackModal.message}
       />
+      {firebaseCostHistoryModal.isOpen && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-[32px] w-full max-w-lg overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+            <div className="p-6 border-b border-zinc-100 flex justify-between items-center bg-zinc-50/50">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-orange-100 text-orange-600 flex items-center justify-center">
+                  <History className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-zinc-900 text-lg">Histórico de Custos</h3>
+                  <p className="text-sm text-zinc-500">Google Cloud Platform (Firebase)</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setFirebaseCostHistoryModal(prev => ({ ...prev, isOpen: false }))}
+                className="w-8 h-8 rounded-full hover:bg-zinc-100 flex items-center justify-center text-zinc-400 hover:text-zinc-600 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <div className="p-6 max-h-[60vh] overflow-y-auto">
+              {firebaseCostHistoryModal.loading ? (
+                <div className="flex justify-center p-8">
+                  <Loader2 className="w-8 h-8 animate-spin text-orange-500" />
+                </div>
+              ) : firebaseCostHistoryModal.history.length === 0 ? (
+                <div className="text-center text-zinc-500 py-8 text-sm">
+                  Nenhum histórico encontrado. O primeiro faturamento será registrado no próximo dia 1º.
+                </div>
+              ) : (
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="border-b border-zinc-100 text-xs font-bold text-zinc-400 uppercase tracking-wider">
+                      <th className="py-3 px-2">Período</th>
+                      <th className="py-3 px-2">Custo</th>
+                      <th className="py-3 px-2">Moeda</th>
+                      <th className="py-3 px-2">Data de Registro</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-zinc-50">
+                    {firebaseCostHistoryModal.history.map((hist, idx) => (
+                      <tr key={idx} className="hover:bg-zinc-50/50">
+                        <td className="py-3 px-2 font-bold text-sm text-zinc-900">{hist.period}</td>
+                        <td className="py-3 px-2 font-bold text-sm text-orange-600">
+                          R$ {(hist.finalCost || 0).toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+                        </td>
+                        <td className="py-3 px-2 text-sm text-zinc-500">{hist.currency || 'BRL'}</td>
+                        <td className="py-3 px-2 text-xs text-zinc-400 font-medium">
+                          {hist.timestamp?.toDate ? format(hist.timestamp.toDate(), "dd/MM/yyyy HH:mm", { locale: ptBR }) : '-'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
