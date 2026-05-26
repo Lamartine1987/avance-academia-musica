@@ -21,6 +21,8 @@ export default function AlphaTabPlayer({ url }: AlphaTabPlayerProps) {
   const [originalBpm, setOriginalBpm] = useState(100);
   const [currentBpm, setCurrentBpm] = useState(100);
 
+
+
   const togglePlay = () => {
     if (!apiRef.current) return;
     apiRef.current.playPause();
@@ -84,8 +86,11 @@ export default function AlphaTabPlayer({ url }: AlphaTabPlayerProps) {
     });
 
     api.playerStateChanged.on((args: any) => {
+      console.log("[AlphaTab] playerStateChanged:", args.state, "(0=Paused, 1=Playing, etc)");
       setIsPlaying(args.state === 1); 
     });
+
+
 
     // Manually fetch the file to bypass AlphaTab's URL extension detection issues with Firebase ?alt=media
     fetch(url)
@@ -231,9 +236,10 @@ export default function AlphaTabPlayer({ url }: AlphaTabPlayerProps) {
             onChange={handleBpm}
             disabled={!isReady}
             title="BPM da Partitura"
-            className="w-20 md:w-24 accent-emerald-500"
           />
         </div>
+
+
 
         {!isReady && (
           <div className="ml-auto text-xs font-bold text-emerald-600 flex items-center gap-2 bg-emerald-50 px-3 py-1.5 rounded-lg">
@@ -253,6 +259,7 @@ export default function AlphaTabPlayer({ url }: AlphaTabPlayerProps) {
             background: rgba(16, 185, 129, 0.6);
             width: 3px;
           }
+
         `}
       </style>
       <div 

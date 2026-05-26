@@ -179,12 +179,28 @@ export default function App() {
           
           let role: UserRole = 'student';
           let teacherId: string | undefined = undefined;
+          let studentId: string | undefined = undefined;
           
           if (firebaseUser.email === 'lamartinecezar3@gmail.com') {
             role = 'admin';
           } else if (!teacherSnap.empty) {
             role = 'teacher';
             teacherId = teacherSnap.docs[0].id;
+          } else {
+            // Find student ID
+            const studentsRef = collection(db, 'students');
+            const studentQuery = query(studentsRef, where('systemLogin', '==', firebaseUser.email));
+            const studentSnap = await getDocs(studentQuery);
+            if (!studentSnap.empty) {
+              studentId = studentSnap.docs[0].id;
+            } else {
+              // Fallback to email if systemLogin doesn't match
+              const studentEmailQuery = query(studentsRef, where('email', '==', firebaseUser.email));
+              const studentEmailSnap = await getDocs(studentEmailQuery);
+              if (!studentEmailSnap.empty) {
+                studentId = studentEmailSnap.docs[0].id;
+              }
+            }
           }
 
           const newProfile: UserProfile = {
@@ -197,6 +213,9 @@ export default function App() {
           
           if (teacherId) {
             newProfile.teacherId = teacherId;
+          }
+          if (studentId) {
+            newProfile.studentId = studentId;
           }
 
           await setDoc(profileRef, newProfile);
@@ -245,6 +264,27 @@ export default function App() {
                   sessions[mySessionIndex].lastActive = Date.now();
                   await setDoc(profileRef, { activeSessions: sessions }, { merge: true });
                 }
+              }
+            }
+
+            // Heal missing studentId
+            if (data.role === 'student' && !data.studentId && data.email) {
+              const studentsRef = collection(db, 'students');
+              let sId = undefined;
+              const studentQuery = query(studentsRef, where('systemLogin', '==', data.email));
+              const studentSnap = await getDocs(studentQuery);
+              if (!studentSnap.empty) {
+                sId = studentSnap.docs[0].id;
+              } else {
+                const studentEmailQuery = query(studentsRef, where('email', '==', data.email));
+                const studentEmailSnap = await getDocs(studentEmailQuery);
+                if (!studentEmailSnap.empty) {
+                  sId = studentEmailSnap.docs[0].id;
+                }
+              }
+              if (sId) {
+                data.studentId = sId;
+                await setDoc(profileRef, { studentId: sId }, { merge: true });
               }
             }
 

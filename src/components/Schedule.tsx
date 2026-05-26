@@ -80,7 +80,7 @@ export default function Schedule({ profile, onNavigateToDiary, onNavigateToEvalu
   const [feedback, setFeedback] = useState<{isOpen: boolean, type: 'success' | 'error' | 'warning', title: string, message: string}>({ isOpen: false, type: 'success', title: '', message: '' });
 
   useEffect(() => {
-    let q = query(collection(db, 'lessons'), orderBy('startTime', 'asc'));
+    let q = query(collection(db, 'lessons'));
     
     if (profile.role === 'teacher' && profile.teacherId) {
       q = query(q, where('teacherId', '==', profile.teacherId));
@@ -90,6 +90,14 @@ export default function Schedule({ profile, onNavigateToDiary, onNavigateToEvalu
 
     const unsubscribeLessons = onSnapshot(q, (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Lesson));
+      
+      // Sort on client side to avoid Firestore composite index requirement
+      data.sort((a, b) => {
+        const timeA = a.startTime?.toDate ? a.startTime.toDate().getTime() : 0;
+        const timeB = b.startTime?.toDate ? b.startTime.toDate().getTime() : 0;
+        return timeA - timeB;
+      });
+      
       setLessons(data);
     }, (error) => {
       handleFirestoreError(error, OperationType.LIST, 'lessons');
