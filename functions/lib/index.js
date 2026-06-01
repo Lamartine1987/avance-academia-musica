@@ -1,10 +1,11 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.checkStudentStatus = exports.manualHolidayReminderRoutine = exports.holidayReminderRoutineDaily = exports.notifyTrialLesson = exports.notifyNewMaterial = exports.onUserDeleted = exports.manualPedagogicalRoutine = exports.pedagogicalRoutineDaily = exports.notifyStudentEvaluation = exports.requestPasswordResetWhatsApp = exports.createStudentUser = exports.notifyMaterialUnlocked = exports.provideNewRescheduleSlots = exports.rejectRescheduleSlots = exports.confirmReschedule = exports.getRescheduleData = exports.registerTeacherAbsence = exports.manualFinancialRoutine = exports.financialRoutineDaily = void 0;
+exports.recordMonthlyFirebaseCost = exports.getInfrastructureCosts = exports.checkStudentStatus = exports.manualHolidayReminderRoutine = exports.holidayReminderRoutineDaily = exports.notifyTrialLesson = exports.notifyNewMaterial = exports.onUserDeleted = exports.manualPedagogicalRoutine = exports.pedagogicalRoutineDaily = exports.notifyStudentEvaluation = exports.requestPasswordResetWhatsApp = exports.createStudentUser = exports.notifyMaterialUnlocked = exports.provideNewRescheduleSlots = exports.rejectRescheduleSlots = exports.confirmReschedule = exports.getRescheduleData = exports.registerTeacherAbsence = exports.manualFinancialRoutine = exports.financialRoutineDaily = void 0;
 const functions = require("firebase-functions/v1");
 const admin = require("firebase-admin");
 const firestore_1 = require("firebase-admin/firestore");
 const crypto = require("crypto");
+const bigquery_1 = require("@google-cloud/bigquery");
 admin.initializeApp();
 const db = (0, firestore_1.getFirestore)(admin.app());
 async function sendSystemWhatsApp(settings, phone, message) {
@@ -1266,5 +1267,131 @@ exports.checkStudentStatus = functions.https.onRequest(async (req, res) => {
             return res.status(500).json({ found: false, message: 'Erro interno no servidor' });
         }
     });
+});
+const bigquery = new bigquery_1.BigQuery();
+exports.getInfrastructureCosts = functions.https.onCall(async (data, context) => {
+    var _a;
+    try {
+        if (!context.auth) {
+            throw new functions.https.HttpsError('unauthenticated', 'Token não fornecido.');
+        }
+        const uid = context.auth.uid;
+        const userDoc = await db.collection("users").doc(uid).get();
+        if (!userDoc.exists || ((_a = userDoc.data()) === null || _a === void 0 ? void 0 : _a.role) !== "admin") {
+            throw new functions.https.HttpsError('permission-denied', 'Apenas administradores podem ver custos da nuvem.');
+        }
+        const datasetId = 'faturamento_crm';
+        const dataset = bigquery.dataset(datasetId);
+        const [tables] = await dataset.getTables();
+        let billingTableId = null;
+        for (let table of tables) {
+            if (table.id && table.id.startsWith('gcp_billing_export_v1_')) {
+                billingTableId = table.id;
+                break;
+            }
+        }
+        if (!billingTableId) {
+            return { rawCost: 0, finalCost: 0, currency: 'BRL', status: 'pending' };
+        }
+        const projectId = process.env.GCP_PROJECT || process.env.GCLOUD_PROJECT || 'valentinacosmeticos-5f239';
+        const sqlQuery = `
+            SELECT
+                SUM(cost) as total_cost,
+                currency
+            FROM
+                \`${projectId}.${datasetId}.${billingTableId}\`
+            WHERE
+                EXTRACT(MONTH FROM usage_start_time) = EXTRACT(MONTH FROM CURRENT_TIMESTAMP())
+                AND EXTRACT(YEAR FROM usage_start_time) = EXTRACT(YEAR FROM CURRENT_TIMESTAMP())
+            GROUP BY
+                currency
+        `;
+        const options = {
+            query: sqlQuery,
+            location: 'US',
+        };
+        const [job] = await bigquery.createQueryJob(options);
+        const [rows] = await job.getQueryResults();
+        let rawCost = 0;
+        let currency = 'BRL';
+        if (rows && rows.length > 0) {
+            rawCost = rows[0].total_cost || 0;
+            currency = rows[0].currency || 'BRL';
+        }
+        const finalCost = rawCost * 1.30;
+        return {
+            rawCost: parseFloat(rawCost.toFixed(2)),
+            finalCost: parseFloat(finalCost.toFixed(2)),
+            currency: currency,
+            status: 'success'
+        };
+    }
+    catch (e) {
+        console.error("BigQuery Cost Error:", e);
+        return { rawCost: 0, finalCost: 0, currency: 'BRL', status: 'error', error: e.message };
+    }
+});
+exports.recordMonthlyFirebaseCost = functions.pubsub.schedule("15 0 1 * *").timeZone("America/Sao_Paulo").onRun(async (context) => {
+    try {
+        console.log("Iniciando rotina de fechamento de custos do Firebase (mês anterior)...");
+        const datasetId = 'faturamento_crm';
+        const dataset = bigquery.dataset(datasetId);
+        const [tables] = await dataset.getTables();
+        let billingTableId = null;
+        for (let table of tables) {
+            if (table.id && table.id.startsWith('gcp_billing_export_v1_')) {
+                billingTableId = table.id;
+                break;
+            }
+        }
+        if (!billingTableId) {
+            console.log("Nenhuma tabela de billing encontrada.");
+            return null;
+        }
+        const projectId = process.env.GCP_PROJECT || process.env.GCLOUD_PROJECT || 'valentinacosmeticos-5f239';
+        const sqlQuery = `
+            SELECT
+                SUM(cost) as total_cost,
+                currency
+            FROM
+                \`${projectId}.${datasetId}.${billingTableId}\`
+            WHERE
+                EXTRACT(MONTH FROM usage_start_time) = EXTRACT(MONTH FROM DATETIME_SUB(CURRENT_DATETIME(), INTERVAL 1 DAY))
+                AND EXTRACT(YEAR FROM usage_start_time) = EXTRACT(YEAR FROM DATETIME_SUB(CURRENT_DATETIME(), INTERVAL 1 DAY))
+            GROUP BY
+                currency
+        `;
+        const options = {
+            query: sqlQuery,
+            location: 'US',
+        };
+        const [job] = await bigquery.createQueryJob(options);
+        const [rows] = await job.getQueryResults();
+        let rawCost = 0;
+        let currency = 'BRL';
+        if (rows && rows.length > 0) {
+            rawCost = rows[0].total_cost || 0;
+            currency = rows[0].currency || 'BRL';
+        }
+        const finalCost = rawCost * 1.30;
+        const now = new Date();
+        now.setDate(0);
+        const month = String(now.getMonth() + 1).padStart(2, '0');
+        const year = now.getFullYear();
+        const periodStr = `${month}/${year}`;
+        await db.collection("firebase_costs").doc(periodStr.replace('/', '-')).set({
+            period: periodStr,
+            rawCost: parseFloat(rawCost.toFixed(2)),
+            finalCost: parseFloat(finalCost.toFixed(2)),
+            currency: currency,
+            timestamp: admin.firestore.FieldValue.serverTimestamp()
+        });
+        console.log(`Custo Firebase de ${periodStr} salvo: R$ ${finalCost.toFixed(2)}`);
+        return null;
+    }
+    catch (e) {
+        console.error("Erro na rotina de fechamento BigQuery:", e);
+        return null;
+    }
 });
 //# sourceMappingURL=index.js.map

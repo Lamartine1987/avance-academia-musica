@@ -45,7 +45,9 @@ export default function AlphaTabPlayer({ url }: AlphaTabPlayerProps) {
     };
 
     window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
   }, [isReady]);
 
   useEffect(() => {
@@ -89,8 +91,6 @@ export default function AlphaTabPlayer({ url }: AlphaTabPlayerProps) {
       console.log("[AlphaTab] playerStateChanged:", args.state, "(0=Paused, 1=Playing, etc)");
       setIsPlaying(args.state === 1); 
     });
-
-
 
     // Manually fetch the file to bypass AlphaTab's URL extension detection issues with Firebase ?alt=media
     fetch(url)
@@ -175,6 +175,7 @@ export default function AlphaTabPlayer({ url }: AlphaTabPlayerProps) {
           onClick={stop}
           disabled={!isReady}
           className="p-2 md:p-3 bg-white text-zinc-600 border border-zinc-200 rounded-xl hover:bg-zinc-50 hover:text-red-500 transition-colors disabled:opacity-50 flex items-center justify-center w-10 h-10 md:w-12 md:h-12 shrink-0"
+          title="Parar"
         >
           <Square className="w-4 h-4 md:w-5 md:h-5 fill-current" />
         </button>
@@ -259,7 +260,6 @@ export default function AlphaTabPlayer({ url }: AlphaTabPlayerProps) {
             background: rgba(16, 185, 129, 0.6);
             width: 3px;
           }
-
         `}
       </style>
       <div 

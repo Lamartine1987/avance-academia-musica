@@ -1461,7 +1461,7 @@ export const getInfrastructureCosts = functions.https.onCall(async (data, contex
         
         let billingTableId = null;
         for (let table of tables) {
-            if (table.id.startsWith('gcp_billing_export_v1_')) {
+            if (table.id && table.id.startsWith('gcp_billing_export_v1_')) {
                 billingTableId = table.id;
                 break;
             }
@@ -1527,7 +1527,7 @@ export const recordMonthlyFirebaseCost = functions.pubsub.schedule("15 0 1 * *")
         
         let billingTableId = null;
         for (let table of tables) {
-            if (table.id.startsWith('gcp_billing_export_v1_')) {
+            if (table.id && table.id.startsWith('gcp_billing_export_v1_')) {
                 billingTableId = table.id;
                 break;
             }
@@ -1575,7 +1575,7 @@ export const recordMonthlyFirebaseCost = functions.pubsub.schedule("15 0 1 * *")
         now.setDate(0); 
         const month = String(now.getMonth() + 1).padStart(2, '0');
         const year = now.getFullYear();
-        const periodStr = \`\${month}/\${year}\`;
+        const periodStr = `${month}/${year}`;
 
         await db.collection("firebase_costs").doc(periodStr.replace('/', '-')).set({
             period: periodStr,
@@ -1585,7 +1585,7 @@ export const recordMonthlyFirebaseCost = functions.pubsub.schedule("15 0 1 * *")
             timestamp: admin.firestore.FieldValue.serverTimestamp()
         });
 
-        console.log(\`Custo Firebase de \${periodStr} salvo: R$ \${finalCost.toFixed(2)}\`);
+        console.log(`Custo Firebase de ${periodStr} salvo: R$ ${finalCost.toFixed(2)}`);
         return null;
     } catch (e) {
         console.error("Erro na rotina de fechamento BigQuery:", e);

@@ -190,6 +190,9 @@ export default function Financial({ profile }: { profile?: any }) {
             setFirebaseCost(result.data.finalCost);
           } else if (result.data?.status === 'pending') {
             setFirebaseCost(0);
+          } else if (result.data?.status === 'error') {
+            console.error('BigQuery Error:', result.data.error);
+            setFirebaseCost(0);
           }
         } catch (e) {
           console.error('Failed to fetch infra costs:', e);
