@@ -53,17 +53,33 @@ export const generateSignedContractPDF = async (student: Student, schoolSettings
   text = text.replace(/\{\{valor\}\}/g, value);
   text = text.replace(/\{\{vencimento\}\}/g, dueDay + ' ' + dueMonth);
   text = text.replace(/&nbsp;/g, ' ');
+  
+  // Force inline page-break avoidance to prevent text from being cut
+  text = text.replace(/<p/gi, '<div class="unbreakable-block" style="page-break-inside: avoid !important; break-inside: avoid !important; margin-bottom: 12px;"><p');
+  text = text.replace(/<\/p>/gi, '</p></div>');
+  text = text.replace(/<h/gi, '<div class="unbreakable-block" style="page-break-inside: avoid !important; break-inside: avoid !important;"><h');
+  text = text.replace(/<\/h1>/gi, '</h1></div>');
+  text = text.replace(/<\/h2>/gi, '</h2></div>');
+  text = text.replace(/<\/h3>/gi, '</h3></div>');
+  text = text.replace(/<ul/gi, '<div class="unbreakable-block" style="page-break-inside: avoid !important; break-inside: avoid !important;"><ul');
+  text = text.replace(/<\/ul>/gi, '</ul></div>');
+  text = text.replace(/<ol/gi, '<div class="unbreakable-block" style="page-break-inside: avoid !important; break-inside: avoid !important;"><ol');
+  text = text.replace(/<\/ol>/gi, '</ol></div>');
 
   const minor = isMinor(student);
 
   // Html layout identical to ContractViewer
   const htmlContent = `
-    <div style="padding: 40px; font-family: serif; color: black; line-height: 1.6; font-size: 12px; background: white; max-width: 800px; margin: 0 auto;">
+    <style>
+      .unbreakable-block { page-break-inside: avoid !important; break-inside: avoid !important; margin-bottom: 12px; }
+      p, h1, h2, h3, ul, ol, li, tr { page-break-inside: avoid !important; break-inside: avoid !important; }
+    </style>
+    <div style="font-family: serif; color: black; line-height: 24px; font-size: 13px; background: white; box-sizing: border-box;">
       <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #ccc; padding-bottom: 20px; margin-bottom: 30px;">
          <div style="display: flex; align-items: center; gap: 16px;">
            ${schoolSettings?.logoUrl 
               ? `<img src="https://wsrv.nl/?url=${encodeURIComponent(schoolSettings.logoUrl)}" alt="Logo" style="height: 60px; object-fit: contain;" />`
-              : `<h1 style="font-size: 24px; font-weight: 900; margin: 0; line-height: 1;">AVANCE<br/><span style="font-size: 8px; font-weight: normal; letter-spacing: 2px;">Academia de Música</span></h1>`
+              : `<h1 style="font-size: 24px; font-weight: 900; margin: 0; line-height: 24px;">AVANCE<br/><span style="font-size: 8px; font-weight: normal; letter-spacing: 2px;">Academia de Música</span></h1>`
            }
          </div>
          <h2 style="font-size: 18px; color: #4b5563; font-style: italic; margin: 0;">${schoolSettings?.tradingName || 'Avance Academia de Música'}</h2>
@@ -95,7 +111,7 @@ export const generateSignedContractPDF = async (student: Student, schoolSettings
       <div style="text-align: center; margin-top: 60px;">
          <p style="font-weight: bold; margin-bottom: 60px;">Caruaru - PE, ${getFormattedDate(student.createdAt)}</p>
          
-         <table style="width: 100%; margin-top: 40px; table-layout: fixed;">
+         <table style="width: 100%; margin-top: 40px; table-layout: fixed; page-break-inside: avoid;">
            <tr>
              <td style="text-align: center; padding: 0 20px; vertical-align: bottom;">
                 <div style="margin-bottom: 8px; text-align: center;">
@@ -136,17 +152,23 @@ export const generateSignedContractPDF = async (student: Student, schoolSettings
   element.innerHTML = htmlContent;
   
   const opt = {
-    margin: [10, 10, 10, 10],
+    margin: [15, 15, 15, 15],
     filename: `contrato_${student.id}.pdf`,
     image: { type: 'jpeg', quality: 0.98 },
-    pagebreak: { mode: ['avoid-all', 'css', 'legacy'] },
+    pagebreak: { mode: ['css', 'avoid-all'], avoid: ['.unbreakable-block', 'tr', 'table'] },
     html2canvas: { 
-      scale: 2, 
       useCORS: true,
       ignoreElements: (node: Element) => {
         if (!node || !node.tagName) return false;
         const tag = node.tagName.toLowerCase();
-        return tag === 'style' || tag === 'link' || tag === 'meta';
+        // Ignore external styles to prevent Tailwind oklab/oklch crashes in html2canvas
+        if (tag === 'link' && node.getAttribute('rel') === 'stylesheet') return true;
+        if (tag === 'style') {
+          // Keep our custom page-break styles, ignore everything else
+          if (node.innerHTML.includes('unbreakable-block')) return false;
+          return true;
+        }
+        return false;
       }
     },
     jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
@@ -155,7 +177,14 @@ export const generateSignedContractPDF = async (student: Student, schoolSettings
   let blob: Blob;
 
   try {
+    console.log("[PDF GENERATOR] Iniciando geração do contrato.");
+    console.log("[PDF GENERATOR] Opções:", JSON.stringify(opt, null, 2));
+    console.log("[PDF GENERATOR] HTML a ser renderizado (preview):", htmlContent.substring(0, 500) + "...");
+    // Log full HTML safely
+    console.debug("[PDF GENERATOR] HTML Completo:", htmlContent);
+
     blob = await html2pdf().set(opt).from(element).output('blob');
+    console.log("[PDF GENERATOR] PDF gerado com sucesso, tamanho:", blob.size, "bytes");
   } catch (error) {
     console.error("PDF generation error: ", error);
     throw error;
@@ -185,9 +214,19 @@ export const generateDeclarationPDF = async (student: Student, request: Document
   text = text.replace(/\{\{curso\}\}/gi, course);
   text = text.replace(/\{\{dias\}\}/gi, dias || 'Não informado');
   text = text.replace(/\{\{horarios\}\}/gi, horarios || 'Não informado');
+  
+  // Force inline page-break avoidance to prevent text from being cut
+  text = text.replace(/<p/gi, '<p style="page-break-inside: avoid !important; break-inside: avoid !important; margin-bottom: 12px;"');
+  text = text.replace(/<h/gi, '<h style="page-break-inside: avoid !important; break-inside: avoid !important;"');
+  text = text.replace(/<ul/gi, '<ul style="page-break-inside: avoid !important; break-inside: avoid !important;"');
+  text = text.replace(/<ol/gi, '<ol style="page-break-inside: avoid !important; break-inside: avoid !important;"');
 
   const htmlContent = `
-    <div style="font-family: serif; color: black; max-width: 800px; margin: 0 auto; padding: 40px; text-align: left; line-height: 1.6; font-size: 15px;">
+    <style>
+      .unbreakable-block { page-break-inside: avoid !important; break-inside: avoid !important; margin-bottom: 12px; }
+      p, h1, h2, h3, ul, ol, li, tr { page-break-inside: avoid !important; break-inside: avoid !important; }
+    </style>
+    <div style="font-family: serif; color: black; line-height: 24px; font-size: 15px; background: white; box-sizing: border-box;">
       <div style="text-align: center; margin-bottom: 30px; border-bottom: 1px solid #e4e4e7; padding-bottom: 20px;">
         ${schoolSettings?.logoUrl ? 
           `<img src="https://wsrv.nl/?url=${encodeURIComponent(schoolSettings.logoUrl)}&w=400&output=jpg" style="height: 60px; object-fit: contain; margin-bottom: 15px;" />` : 
@@ -199,7 +238,7 @@ export const generateDeclarationPDF = async (student: Student, request: Document
 
       <h3 style="font-size: 22px; font-weight: 900; text-align: center; margin-bottom: 40px; text-transform: uppercase;">DECLARAÇÃO DE VÍNCULO</h3>
 
-      <div style="margin-top: 40px; margin-bottom: 60px; min-height: 250px; font-size: 15px; line-height: 2; word-spacing: normal;">
+      <div style="margin-top: 40px; margin-bottom: 60px; min-height: 250px; font-size: 15px; line-height: 24px; word-spacing: normal;">
         ${text}
       </div>
       
@@ -207,7 +246,7 @@ export const generateDeclarationPDF = async (student: Student, request: Document
         ${schoolSettings?.city || 'Caruaru'}, ${format(new Date(), "d 'de' MMMM 'de' yyyy", { locale: ptBR })}
       </div>
 
-      <div style="margin-top: 60px; text-align: center;">
+      <div style="margin-top: 60px; text-align: center; page-break-inside: avoid;">
          <div style="margin: 0 auto 10px auto; width: 250px; padding: 10px; border: 2px dashed #16a34a; border-radius: 8px; background-color: #f0fdf4; text-align: center;">
            <div style="font-size: 10px; color: #16a34a; font-weight: bold; text-transform: uppercase;">ASSINADO DIGITALMENTE</div>
            <div style="font-size: 9px; color: #15803d; margin-top: 5px;">Admin: ${profile.displayName.split(' ')[0]}</div>
@@ -230,17 +269,23 @@ export const generateDeclarationPDF = async (student: Student, request: Document
   element.innerHTML = htmlContent;
   
   const opt = {
-    margin: [10, 10, 10, 10],
+    margin: [15, 15, 15, 15],
     filename: `declaracao_${student.id}.pdf`,
     image: { type: 'jpeg', quality: 0.98 },
-    pagebreak: { mode: ['avoid-all', 'css', 'legacy'] },
+    pagebreak: { mode: ['css', 'avoid-all'], avoid: ['.unbreakable-block', 'tr', 'table'] },
     html2canvas: { 
-      scale: 2, 
       useCORS: true,
       ignoreElements: (node: Element) => {
         if (!node || !node.tagName) return false;
         const tag = node.tagName.toLowerCase();
-        return tag === 'style' || tag === 'link' || tag === 'meta';
+        // Ignore external styles to prevent Tailwind oklab/oklch crashes in html2canvas
+        if (tag === 'link' && node.getAttribute('rel') === 'stylesheet') return true;
+        if (tag === 'style') {
+          // Keep our custom page-break styles, ignore everything else
+          if (node.innerHTML.includes('unbreakable-block')) return false;
+          return true;
+        }
+        return false;
       }
     },
     jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
@@ -249,7 +294,14 @@ export const generateDeclarationPDF = async (student: Student, request: Document
   let blob: Blob;
 
   try {
+    console.log("[PDF GENERATOR] Iniciando geração do contrato.");
+    console.log("[PDF GENERATOR] Opções:", JSON.stringify(opt, null, 2));
+    console.log("[PDF GENERATOR] HTML a ser renderizado (preview):", htmlContent.substring(0, 500) + "...");
+    // Log full HTML safely
+    console.debug("[PDF GENERATOR] HTML Completo:", htmlContent);
+
     blob = await html2pdf().set(opt).from(element).output('blob');
+    console.log("[PDF GENERATOR] PDF gerado com sucesso, tamanho:", blob.size, "bytes");
   } catch (error) {
     console.error("PDF generation error: ", error);
     throw error;

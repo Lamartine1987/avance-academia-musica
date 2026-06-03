@@ -108,7 +108,7 @@ export default function TeacherPayments({ profile }: { profile?: any }) {
       const trList: Lesson[] = [];
       lSnap.forEach(d => {
         const lesson = { id: d.id, ...d.data() } as Lesson;
-        if (lesson.isTrial) {
+        if (lesson.isTrial && lesson.status !== 'cancelled') {
           trList.push(lesson);
         }
       });

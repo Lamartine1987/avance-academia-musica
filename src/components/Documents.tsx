@@ -62,6 +62,8 @@ export default function Documents({ profile }: DocumentsProps) {
   // Delete State
   const [docToDelete, setDocToDelete] = useState<StudentDocument | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [selectedDocs, setSelectedDocs] = useState<string[]>([]);
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
 
   // Preview State
   const [previewReq, setPreviewReq] = useState<DocumentRequest | null>(null);
@@ -379,6 +381,34 @@ export default function Documents({ profile }: DocumentsProps) {
 
   const pendingRequests = requests.filter(r => r.status === 'pending').length;
 
+  const handleBulkDelete = async () => {
+    if (selectedDocs.length === 0) return;
+    if (!window.confirm(`Tem certeza que deseja excluir ${selectedDocs.length} documentos selecionados?`)) return;
+    setIsBulkDeleting(true);
+    try {
+      await Promise.all(selectedDocs.map(id => deleteDoc(doc(db, 'documents', id))));
+      setDocuments(documents.filter(d => d.id && !selectedDocs.includes(d.id)));
+      setSelectedDocs([]);
+    } catch(err) {
+      console.error("Erro ao deletar documentos em massa:", err);
+      alert("Houve um erro ao deletar os documentos.");
+    } finally {
+      setIsBulkDeleting(false);
+    }
+  };
+
+  const toggleSelectDoc = (id: string) => {
+    setSelectedDocs(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  };
+  
+  const toggleSelectAllDocs = () => {
+    if (selectedDocs.length === filteredDocs.length) {
+      setSelectedDocs([]);
+    } else {
+      setSelectedDocs(filteredDocs.map(d => d.id as string));
+    }
+  };
+
   return (
     <div className="max-w-7xl mx-auto space-y-6">
       <div className="bg-white rounded-[32px] p-6 shadow-sm border border-zinc-200">
@@ -627,9 +657,32 @@ export default function Documents({ profile }: DocumentsProps) {
           </div>
         ) : (
           <div className="overflow-x-auto">
+            {profile?.role === 'admin' && selectedDocs.length > 0 && (
+              <div className="p-4 bg-red-50 border-b border-red-100 flex items-center justify-between">
+                <span className="text-sm text-red-700 font-bold">{selectedDocs.length} documento(s) selecionado(s)</span>
+                <button
+                  onClick={handleBulkDelete}
+                  disabled={isBulkDeleting}
+                  className="px-4 py-2 bg-red-500 text-white text-sm font-bold rounded-xl hover:bg-red-600 transition-colors flex items-center gap-2 shadow shadow-red-500/20 disabled:opacity-50"
+                >
+                  {isBulkDeleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                  Excluir Selecionados
+                </button>
+              </div>
+            )}
             <table className="w-full text-sm text-left">
               <thead className="text-xs text-zinc-500 bg-zinc-50/50 uppercase font-semibold">
                 <tr>
+                  {profile?.role === 'admin' && (
+                    <th className="px-6 py-4 w-12">
+                      <input 
+                        type="checkbox" 
+                        checked={filteredDocs.length > 0 && selectedDocs.length === filteredDocs.length}
+                        onChange={toggleSelectAllDocs}
+                        className="w-4 h-4 text-blue-600 rounded border-zinc-300 focus:ring-blue-500 cursor-pointer"
+                      />
+                    </th>
+                  )}
                   <th className="px-6 py-4">Documento</th>
                   {profile?.role === 'admin' && <th className="px-6 py-4">Aluno Associado</th>}
                   <th className="px-6 py-4">Tipo</th>
@@ -640,6 +693,16 @@ export default function Documents({ profile }: DocumentsProps) {
               <tbody className="divide-y divide-zinc-100">
                 {filteredDocs.map((docItem) => (
                   <tr key={docItem.id} className="hover:bg-blue-50/30 transition-colors group">
+                    {profile?.role === 'admin' && (
+                      <td className="px-6 py-4">
+                        <input 
+                          type="checkbox" 
+                          checked={docItem.id ? selectedDocs.includes(docItem.id) : false}
+                          onChange={() => docItem.id && toggleSelectDoc(docItem.id)}
+                          className="w-4 h-4 text-blue-600 rounded border-zinc-300 focus:ring-blue-500 cursor-pointer"
+                        />
+                      </td>
+                    )}
                     <td className="px-6 py-4 font-medium text-zinc-900 dark:text-white flex items-center gap-3">
                       <div className={`p-2 rounded-lg ${typeColors[docItem.type]}`}>
                         <File className="w-4 h-4" />

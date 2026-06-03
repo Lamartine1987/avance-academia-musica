@@ -1280,20 +1280,30 @@ exports.getInfrastructureCosts = functions.https.onCall(async (data, context) =>
         if (!userDoc.exists || ((_a = userDoc.data()) === null || _a === void 0 ? void 0 : _a.role) !== "admin") {
             throw new functions.https.HttpsError('permission-denied', 'Apenas administradores podem ver custos da nuvem.');
         }
-        const datasetId = 'faturamento_crm';
-        const dataset = bigquery.dataset(datasetId);
-        const [tables] = await dataset.getTables();
+        const [datasets] = await bigquery.getDatasets();
+        let datasetId = null;
         let billingTableId = null;
-        for (let table of tables) {
-            if (table.id && table.id.startsWith('gcp_billing_export_v1_')) {
-                billingTableId = table.id;
-                break;
+        for (const ds of datasets) {
+            try {
+                const [tables] = await ds.getTables();
+                for (const table of tables) {
+                    if (table.id && table.id.startsWith('gcp_billing_export_v1_')) {
+                        datasetId = ds.id;
+                        billingTableId = table.id;
+                        break;
+                    }
+                }
+                if (datasetId)
+                    break;
+            }
+            catch (e) {
+                // Ignore errors reading specific datasets
             }
         }
-        if (!billingTableId) {
+        if (!datasetId || !billingTableId) {
             return { rawCost: 0, finalCost: 0, currency: 'BRL', status: 'pending' };
         }
-        const projectId = process.env.GCP_PROJECT || process.env.GCLOUD_PROJECT || 'valentinacosmeticos-5f239';
+        const projectId = process.env.GCP_PROJECT || process.env.GCLOUD_PROJECT;
         const sqlQuery = `
             SELECT
                 SUM(cost) as total_cost,

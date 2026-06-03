@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, Play, Pause, Square, CheckCircle2, RotateCcw, AlertCircle, ExternalLink, Loader2, Plus, Minus, Pencil } from 'lucide-react';
+import { X, Play, Pause, Square, CheckCircle2, RotateCcw, AlertCircle, ExternalLink, Loader2, Plus, Minus, Pencil, PanelRight, PanelRightClose } from 'lucide-react';
 import { LibraryTopic, Lesson } from '../types';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
@@ -18,6 +18,8 @@ interface StudySessionProps {
 }
 
 export default function StudySession({ topic, task, isAlreadyCompleted, onClose, onComplete, onCompleteAutonomous }: StudySessionProps) {
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+
   // Timer State
   const defaultDuration = (task?.suggestedDuration || 30) * 60; // in seconds
   const [customDuration, setCustomDuration] = useState(defaultDuration);
@@ -273,6 +275,13 @@ export default function StudySession({ topic, task, isAlreadyCompleted, onClose,
                  <p className="text-xs text-zinc-500 uppercase tracking-wider font-bold">{topic.moduleName}</p>
                </div>
              </div>
+             <button
+               onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+               className="p-2 bg-white rounded-full border border-zinc-200 text-zinc-500 hover:text-black hover:bg-zinc-100 transition-colors"
+               title={isSidebarOpen ? "Ocultar Ferramentas" : "Mostrar Ferramentas"}
+             >
+               {isSidebarOpen ? <PanelRightClose className="w-5 h-5" /> : <PanelRight className="w-5 h-5" />}
+             </button>
            </div>
            
            <div className="flex-1 min-h-0 rounded-2xl shadow-sm border border-zinc-200 bg-white p-2">
@@ -281,6 +290,7 @@ export default function StudySession({ topic, task, isAlreadyCompleted, onClose,
         </div>
 
         {/* Sidebar Tools (Right) */}
+        {isSidebarOpen && (
         <div className="w-full md:w-80 bg-white border-t md:border-t-0 md:border-l border-zinc-200 p-6 flex flex-col shrink-0 md:overflow-y-auto shadow-[-10px_0_30px_rgba(0,0,0,0.02)]">
           <h3 className="text-sm font-bold text-zinc-400 uppercase tracking-wider mb-6 flex items-center gap-2">
              Ferramentas de Estudo
@@ -442,6 +452,7 @@ export default function StudySession({ topic, task, isAlreadyCompleted, onClose,
             </button>
           </div>
         </div>
+        )}
       </motion.div>
     </AnimatePresence>
   );

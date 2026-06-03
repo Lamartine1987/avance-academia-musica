@@ -37,7 +37,14 @@ export default function Dashboard({ profile }: { profile: UserProfile }) {
     }
 
     const lessonsUnsubscribe = onSnapshot(lessonsQuery, (snapshot) => {
-      setStats(prev => ({ ...prev, lessonsToday: snapshot.size }));
+      let count = 0;
+      snapshot.forEach(doc => {
+        const data = doc.data();
+        if (data.status !== 'cancelled' && data.status !== 'rescheduled' && !data.isStudyTask) {
+          count++;
+        }
+      });
+      setStats(prev => ({ ...prev, lessonsToday: count }));
     }, (error) => {
       handleFirestoreError(error, OperationType.LIST, 'lessons');
     });

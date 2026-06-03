@@ -572,6 +572,27 @@ export default function Students({ profile }: { profile: UserProfile }) {
         // Generate lessons for the next 12 months automatically
         if (newStudent.status === 'active') {
           await generateLessonsForYear(docRef.id, newStudent.enrollments);
+          
+          // Generate and upload PDF Contract
+          try {
+            const studentToUpload = { id: docRef.id, ...payload, systemLogin: generatedEmail, status: 'active' as const } as unknown as Student;
+            const pdfBlob = await generateSignedContractPDF(studentToUpload, schoolSettings, profile);
+            const fileName = `${docRef.id}_${Date.now()}.pdf`;
+            const storageRef = ref(storage, `documents/${fileName}`);
+            const uploadTask = await uploadBytesResumable(storageRef, pdfBlob);
+            const downloadURL = await getDownloadURL(uploadTask.ref);
+            
+            await addDoc(collection(db, 'documents'), {
+              studentId: docRef.id,
+              studentName: newStudent.name,
+              title: `Contrato de Matrícula - ${new Date().getFullYear()}`,
+              type: 'contract',
+              url: downloadURL,
+              createdAt: serverTimestamp()
+            });
+          } catch (pdfErr) {
+            console.error("Erro ao gerar/salvar contrato PDF: ", pdfErr);
+          }
         }
 
         // Generate initial payments for 12 months automatically
