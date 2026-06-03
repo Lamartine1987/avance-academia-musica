@@ -82,6 +82,7 @@ export default function Students({ profile }: { profile: UserProfile }) {
      courseValue: 0,
      dueDate: 10,
      billingStartDate: new Date().toISOString().split('T')[0],
+     enrollmentDate: new Date().toISOString().split('T')[0],
      classType: 'group' as 'individual' | 'group',
      classesPerWeek: 1,
      classDuration: 60,
@@ -1653,6 +1654,15 @@ export default function Students({ profile }: { profile: UserProfile }) {
                     />
                   </div>
                   <div>
+                    <label className="block text-sm font-medium text-zinc-700 mb-2">RG Civil</label>
+                    <input 
+                      type="text" 
+                      value={newStudent.rg}
+                      onChange={e => setNewStudent({...newStudent, rg: e.target.value})}
+                      className="w-full bg-zinc-50 border border-zinc-100 rounded-2xl px-6 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 transition-all font-medium"
+                    />
+                  </div>
+                  <div>
                     <label className="block text-sm font-medium text-zinc-700 mb-2">Nome da Mãe</label>
                     <input 
                       type="text" 
@@ -2453,6 +2463,17 @@ export default function Students({ profile }: { profile: UserProfile }) {
                             required
                           />
                           <p className="text-[10px] text-orange-600/70 mt-2 ml-1 font-medium">* O dia selecionado se tornará o vencimento fixo dos próximos meses.</p>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-zinc-700 mb-2">Data da Matrícula (Retroativa)</label>
+                          <input 
+                            type="date"
+                            value={linkData.enrollmentDate || ''}
+                            onChange={e => setLinkData({...linkData, enrollmentDate: e.target.value})}
+                            className="w-full bg-white border border-zinc-200 rounded-2xl px-6 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 transition-all font-medium"
+                            required
+                          />
+                          <p className="text-[10px] text-zinc-500 mt-2 ml-1 font-medium">Data em que o aluno iniciou na escola.</p>
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-zinc-700 mb-2">Desconto Mensal (R$)</label>

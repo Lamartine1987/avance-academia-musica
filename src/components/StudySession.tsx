@@ -261,30 +261,30 @@ export default function StudySession({ topic, task, isAlreadyCompleted, onClose,
         className="fixed inset-0 z-50 bg-white flex flex-col md:flex-row overflow-y-auto md:overflow-hidden"
       >
         {/* Main Content Area (Left) */}
-        <div className="min-h-[65vh] shrink-0 md:min-h-0 md:h-auto md:flex-1 p-4 md:p-6 bg-zinc-50 flex flex-col">
-           <div className="flex items-center justify-between mb-4">
-             <div className="flex items-center gap-3">
+        <div className="min-w-0 min-h-[65vh] shrink-0 md:min-h-0 md:h-auto md:flex-1 p-4 md:p-6 bg-zinc-50 flex flex-col">
+           <div className="flex items-center justify-between mb-4 shrink-0">
+             <div className="flex items-center gap-3 min-w-0">
                <button 
                  onClick={onClose}
-                 className="p-2 bg-white rounded-full border border-zinc-200 text-zinc-500 hover:text-black hover:bg-zinc-100 transition-colors"
+                 className="shrink-0 p-2 bg-white rounded-full border border-zinc-200 text-zinc-500 hover:text-black hover:bg-zinc-100 transition-colors"
                >
                  <X className="w-5 h-5" />
                </button>
-               <div>
-                 <h2 className="text-xl font-bold text-zinc-900 display-font leading-tight">{topic.title}</h2>
-                 <p className="text-xs text-zinc-500 uppercase tracking-wider font-bold">{topic.moduleName}</p>
+               <div className="min-w-0">
+                 <h2 className="text-xl font-bold text-zinc-900 display-font leading-tight truncate">{topic.title}</h2>
+                 <p className="text-xs text-zinc-500 uppercase tracking-wider font-bold truncate">{topic.moduleName}</p>
                </div>
              </div>
              <button
                onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-               className="p-2 bg-white rounded-full border border-zinc-200 text-zinc-500 hover:text-black hover:bg-zinc-100 transition-colors"
+               className="shrink-0 ml-4 p-2 bg-white rounded-full border border-zinc-200 text-zinc-500 hover:text-black hover:bg-zinc-100 transition-colors"
                title={isSidebarOpen ? "Ocultar Ferramentas" : "Mostrar Ferramentas"}
              >
                {isSidebarOpen ? <PanelRightClose className="w-5 h-5" /> : <PanelRight className="w-5 h-5" />}
              </button>
            </div>
            
-           <div className="flex-1 min-h-0 rounded-2xl shadow-sm border border-zinc-200 bg-white p-2">
+           <div className="flex-1 min-h-0 min-w-0 rounded-2xl shadow-sm border border-zinc-200 bg-white p-2 overflow-y-auto overflow-x-hidden">
              {renderMaterial()}
            </div>
         </div>

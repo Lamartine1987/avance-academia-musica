@@ -116,8 +116,8 @@ export default function EnrollmentPortal({ token }: { token: string }) {
   };
 
   const proceedToContract = () => {
-    if (!formData.name || !formData.cpf || !formData.cep || !formData.addressNumber) {
-      alert("Por favor, preencha todos os campos obrigatórios (Nome, CPF, CEP, Número residencial).");
+    if (!formData.name || !formData.cpf || !formData.cep || !formData.addressNumber || !formData.birthDate) {
+      alert("Por favor, preencha todos os campos obrigatórios (Nome, CPF, Data de Nascimento, CEP, Número residencial).");
       return;
     }
     setStep(2);
@@ -143,7 +143,7 @@ export default function EnrollmentPortal({ token }: { token: string }) {
         city: formData.city,
         state: formData.state,
         status: 'pending_approval',
-        enrollmentDate: new Date().toISOString().split('T')[0],
+        enrollmentDate: enrollmentData.enrollmentDate || new Date().toISOString().split('T')[0],
         enrollments: enrollmentData.enrollments || [],
         courseValue: enrollmentData.courseValue || 0,
         dueDate: enrollmentData.billingStartDate ? parseInt(enrollmentData.billingStartDate.split('-')[2] || '10', 10) : (enrollmentData.dueDate || 10),
@@ -441,7 +441,7 @@ export default function EnrollmentPortal({ token }: { token: string }) {
                   <input type="text" value={formData.rg} onChange={e => handleInputChange('rg', e.target.value)} className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl px-4 py-3 outline-none focus:ring-2 focus:ring-orange-500/20" />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-zinc-700 mb-1">Data de Nascimento (Opcional)</label>
+                  <label className="block text-sm font-medium text-zinc-700 mb-1">Data de Nascimento *</label>
                   <input type="date" value={formData.birthDate} onChange={e => handleInputChange('birthDate', e.target.value)} className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl px-4 py-3 outline-none focus:ring-2 focus:ring-orange-500/20" />
                 </div>
                 <div>

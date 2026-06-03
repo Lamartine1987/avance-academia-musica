@@ -288,6 +288,21 @@ export default function App() {
               }
             }
 
+            // Verify student status
+            if (data.role === 'student') {
+               if (!data.studentId) {
+                  setSessionKickedMessage("Sua conta não foi encontrada. Contate a secretaria.");
+                  await signOut(auth);
+                  return;
+               }
+               const studentSnap = await getDoc(doc(db, 'students', data.studentId));
+               if (!studentSnap.exists() || studentSnap.data().status !== 'active') {
+                  setSessionKickedMessage("Sua conta foi desativada ou excluída. Contate a secretaria.");
+                  await signOut(auth);
+                  return;
+               }
+            }
+
             // Normal profile update
             if (!data.displayName && firebaseUser.displayName) {
               const updatedProfile = { ...data, displayName: firebaseUser.displayName };
@@ -397,7 +412,7 @@ export default function App() {
     setAuthLoading(true);
 
     try {
-      await signInWithEmailAndPassword(auth, email, password);
+      await signInWithEmailAndPassword(auth, email.trim(), password);
     } catch (error: any) {
       console.error('Auth error:', error);
       let message = 'Ocorreu um erro na autenticação.';
