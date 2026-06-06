@@ -3,7 +3,8 @@ import { User, updateProfile, updatePassword } from 'firebase/auth';
 import { doc, updateDoc } from 'firebase/firestore';
 import { UserProfile } from '../types';
 import { db } from '../firebase';
-import { UserCircle, Save, Loader2, Key, Mail } from 'lucide-react';
+import { UserCircle, Save, Loader2, Key, Mail, QrCode } from 'lucide-react';
+import { QRCodeSVG } from 'qrcode.react';
 
 interface ProfileProps {
   user: User;
@@ -74,6 +75,26 @@ export default function Profile({ user, profile }: ProfileProps) {
             </div>
           </div>
         </div>
+
+        {profile.role === 'student' && profile.studentId && (
+          <div className="mb-10 bg-orange-50 p-6 rounded-[24px] border border-orange-100 flex flex-col md:flex-row items-center gap-6 shadow-sm">
+            <div className="bg-white p-4 rounded-2xl shadow-sm border border-orange-100 shrink-0">
+              <QRCodeSVG value={profile.studentId} size={120} level="M" />
+            </div>
+            <div>
+              <h3 className="text-lg font-bold text-orange-900 flex items-center gap-2 mb-2">
+                <QrCode className="w-5 h-5 text-orange-600" />
+                Seu QR Code de Acesso
+              </h3>
+              <p className="text-sm text-orange-700/80 mb-4">
+                Apresente este QR Code no Totem da recepção da escola para registrar a sua presença rapidamente nas aulas de hoje.
+              </p>
+              <div className="bg-white px-4 py-2 rounded-xl text-xs font-mono font-bold text-orange-800 inline-block border border-orange-200">
+                Matrícula: {profile.studentId.substring(0, 8).toUpperCase()}
+              </div>
+            </div>
+          </div>
+        )}
 
         <form onSubmit={handleUpdateProfile} className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

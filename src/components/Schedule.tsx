@@ -3,7 +3,7 @@ import { collection, onSnapshot, addDoc, Timestamp, query, orderBy, getDocs, whe
 import { db } from '../firebase';
 import { UserProfile, Lesson, Student, Teacher, BlockedTime, IntegrationsSettings, Instrument } from '../types';
 import { handleFirestoreError, OperationType } from '../lib/error-handler';
-import { Plus, X, Clock, User, Music, RefreshCw, CheckCircle2, LayoutGrid, List as ListIcon, ChevronLeft, ChevronRight, Settings, AlertCircle, Trash2, CalendarDays, FileText, Star, Edit3, BookOpen } from 'lucide-react';
+import { Plus, X, Clock, User, Music, RefreshCw, CheckCircle2, LayoutGrid, List as ListIcon, ChevronLeft, ChevronRight, Settings, AlertCircle, Trash2, CalendarDays, FileText, Star, Edit3, BookOpen, QrCode } from 'lucide-react';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, getDay, setHours, setMinutes, isAfter, isSameDay, startOfWeek, addDays, subWeeks, addWeeks, addYears } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { getFunctions, httpsCallable } from 'firebase/functions';
@@ -756,6 +756,24 @@ export default function Schedule({ profile, onNavigateToDiary, onNavigateToEvalu
         type={feedback.type}
       />
     <div className="space-y-6">
+      {profile.role === 'student' && profile.studentId && (
+        <div className="bg-gradient-to-r from-orange-500 to-amber-500 rounded-2xl p-6 text-white shadow-lg shadow-orange-500/20 flex flex-col md:flex-row items-center justify-between gap-4 animate-in slide-in-from-top-4">
+          <div>
+            <h2 className="text-xl font-bold flex items-center gap-2">
+              <QrCode className="w-6 h-6" />
+              Seu Check-in na Recepção
+            </h2>
+            <p className="text-orange-100 mt-1">
+              Apresente seu QR Code ou digite sua matrícula no Totem ao chegar na escola.
+            </p>
+          </div>
+          <div className="bg-white/10 backdrop-blur-md border border-white/20 rounded-xl px-6 py-4 text-center shrink-0 w-full md:w-auto">
+            <p className="text-xs font-bold text-orange-100 uppercase tracking-widest mb-1">Sua Matrícula</p>
+            <p className="text-2xl font-mono font-black tracking-wider">{profile.studentId.substring(0, 8).toUpperCase()}</p>
+          </div>
+        </div>
+      )}
+
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div className="flex flex-wrap items-center gap-4">
           <div className="bg-white p-1 rounded-2xl border border-zinc-100 flex shadow-sm">
@@ -1000,7 +1018,12 @@ export default function Schedule({ profile, onNavigateToDiary, onNavigateToEvalu
                       <span className="text-xl font-bold text-black">{safeFormat(toDate(lesson.startTime), 'dd')}</span>
                     </div>
                     
-                    <div className="md:hidden">
+                    <div className="md:hidden flex flex-col items-end gap-2">
+                      {lesson.checkInTime && (
+                         <span className="bg-emerald-500 text-white px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest shadow-md shadow-emerald-500/20 whitespace-nowrap animate-in zoom-in duration-300">
+                           ✅ Presente
+                         </span>
+                      )}
                       <span className={cn(
                         "px-3 py-1 rounded-full text-[10px] font-medium text-center",
                         lesson.status === 'scheduled' ? "bg-white/50 text-orange-600 border border-orange-100" :
@@ -1050,7 +1073,12 @@ export default function Schedule({ profile, onNavigateToDiary, onNavigateToEvalu
                     </div>
                   </div>
 
-                  <div className="hidden md:block">
+                  <div className="hidden md:flex flex-col items-end gap-2">
+                    {lesson.checkInTime && (
+                       <span className="bg-emerald-500 text-white px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest shadow-md shadow-emerald-500/20 whitespace-nowrap animate-in zoom-in duration-300">
+                         ✅ Presente
+                       </span>
+                    )}
                     <span className={cn(
                       "px-4 py-2 rounded-full text-xs font-medium",
                       lesson.status === 'scheduled' ? "bg-white/50 text-orange-600 border border-orange-100" :
@@ -1206,7 +1234,8 @@ export default function Schedule({ profile, onNavigateToDiary, onNavigateToEvalu
                                   </p>
                                   <div className="flex items-center gap-1">
                                     {lesson.notes && <FileText className="w-2.5 h-2.5 shrink-0 text-orange-500" title="Possui anotações" />}
-                                    {lesson.status === 'completed' && <CheckCircle2 className="w-2.5 h-2.5 shrink-0" />}
+                                    {lesson.checkInTime && <span className="text-[9px] bg-emerald-500 text-white px-1 py-0.5 rounded uppercase font-bold tracking-tight shadow-sm" title="Presente na Recepção">Pres.</span>}
+                                    {lesson.status === 'completed' && <CheckCircle2 className="w-2.5 h-2.5 shrink-0 text-emerald-600" />}
                                   </div>
                                 </div>
                                 <div className="flex flex-col gap-0.5 mt-1 opacity-70">
@@ -1366,7 +1395,8 @@ export default function Schedule({ profile, onNavigateToDiary, onNavigateToEvalu
                                       </p>
                                       <div className="flex items-center gap-1">
                                         {lesson.notes && <FileText className="w-2.5 h-2.5 shrink-0 text-orange-500" title="Possui anotações" />}
-                                        {lesson.status === 'completed' && <CheckCircle2 className="w-2.5 h-2.5 shrink-0" />}
+                                        {lesson.checkInTime && <span className="text-[9px] bg-emerald-500 text-white px-1 py-0.5 rounded uppercase font-bold tracking-tight shadow-sm" title="Presente na Recepção">Pres.</span>}
+                                        {lesson.status === 'completed' && <CheckCircle2 className="w-2.5 h-2.5 shrink-0 text-emerald-600" />}
                                       </div>
                                     </div>
                                     <div className="flex flex-col gap-0.5 mt-1 opacity-70">

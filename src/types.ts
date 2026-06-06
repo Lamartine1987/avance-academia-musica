@@ -70,6 +70,9 @@ export interface Student {
   responsibleRg?: string;
   responsiblePhone?: string;
   responsibleKinship?: string;
+  isUnderage?: boolean;
+  guardianName?: string;
+  guardianPhone?: string;
   isScholarship?: boolean;
   discount?: number;
   extraNotes?: string;
@@ -118,6 +121,7 @@ export interface Lesson {
   endTime: any;
   status: 'scheduled' | 'completed' | 'cancelled' | 'needs_reschedule' | 'rescheduled';
   notes?: string;
+  checkInTime?: any;
   photoUrls?: string[];
   isMakeup?: boolean;
   isTrial?: boolean;

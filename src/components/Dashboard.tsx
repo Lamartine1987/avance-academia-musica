@@ -194,7 +194,12 @@ export default function Dashboard({ profile }: { profile: UserProfile }) {
                     </div>
                   </div>
 
-                  <div className="flex justify-end shrink-0">
+                  <div className="flex justify-end shrink-0 flex-col items-end gap-2">
+                    {lesson.checkInTime && (
+                       <span className="bg-emerald-500 text-white px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest shadow-md shadow-emerald-500/20 whitespace-nowrap animate-in zoom-in duration-300">
+                         ✅ Presente
+                       </span>
+                    )}
                     {lesson.status === 'completed' ? (
                       <span className="bg-emerald-50 text-emerald-600 px-3 py-1 rounded-lg text-xs font-bold ring-1 ring-emerald-500/20 whitespace-nowrap">
                         Concluída

@@ -66,6 +66,7 @@ import Materials from './components/Materials';
 import Evaluations from './components/Evaluations';
 import ClassDiary from './components/ClassDiary';
 import EnrollmentPortal from './components/EnrollmentPortal';
+import Totem from './components/Totem';
 import PixPaymentPortal from './components/PixPaymentPortal';
 import Documents from './components/Documents';
 import LandingPage from './components/LandingPage';
@@ -84,7 +85,13 @@ export default function App() {
     return <ReschedulePortal token={token} />;
   }
 
-  if (pathname.startsWith('/matricula/')) {
+  const isTotemPath = window.location.pathname === '/totem';
+  if (isTotemPath) {
+    return <Totem />;
+  }
+
+  const isEnrollmentPath = pathname.startsWith('/matricula/');
+  if (isEnrollmentPath) {
     const token = pathname.replace('/matricula/', '');
     return <EnrollmentPortal token={token} />;
   }
@@ -347,12 +354,12 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!profile) return;
+    if (isTotemPath || isEnrollmentPath || !profile) return;
     
     let unsubStudent: (() => void) | undefined;
     let unsubTeacher: (() => void) | undefined;
 
-    if (profile.role === 'student' && profile.studentId) {
+    if (profile && profile.role === 'student' && profile.studentId) {
       unsubStudent = onSnapshot(doc(db, 'students', profile.studentId), async (docSnap) => {
         if (!docSnap.exists() || docSnap.data().status !== 'active') {
           setSessionKickedMessage("Sua conta foi desativada ou excluída. Contate a secretaria.");

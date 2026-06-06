@@ -1359,40 +1359,42 @@ export default function Financial({ profile }: { profile?: any }) {
 
         return (
           <div className="space-y-4">
-            <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4 flex gap-3 items-start">
-              <div className="p-2 bg-blue-100 rounded-xl text-blue-600 shrink-0">
-                <Info className="w-5 h-5" />
-              </div>
-              <div className="text-sm text-blue-900 leading-relaxed w-full">
-                <strong className="font-bold block mb-1">Envios Automáticos</strong>
-                O sistema já envia automaticamente as faturas e cobranças para os alunos de acordo com o que você definir nas configurações de <strong>Lembretes Automáticos</strong> (na aba Comunicação). Os botões de envio listados nesta tela servem apenas para quando você precisar realizar um <strong>reenvio manual</strong> ou uma segunda via!
-                
-                <div className="mt-4 flex flex-wrap gap-x-6 gap-y-2 items-center bg-blue-100/50 p-3 rounded-xl border border-blue-100">
-                  <span className="font-bold text-blue-800 text-xs mr-1">Legenda de Envios:</span>
-                  <div className="flex items-center gap-2">
-                    <span className="inline-flex items-center gap-1 bg-white text-blue-600 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase shadow-sm border border-blue-100">
-                      <CheckCircle2 className="w-3 h-3" />
-                      PRE-DUE
-                    </span>
-                    <span className="text-xs text-blue-800">Aviso Prévio (antes de vencer)</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="inline-flex items-center gap-1 bg-white text-blue-600 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase shadow-sm border border-blue-100">
-                      <CheckCircle2 className="w-3 h-3" />
-                      DUE
-                    </span>
-                    <span className="text-xs text-blue-800">No dia do Vencimento</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="inline-flex items-center gap-1 bg-white text-blue-600 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase shadow-sm border border-blue-100">
-                      <CheckCircle2 className="w-3 h-3" />
-                      OVERDUE
-                    </span>
-                    <span className="text-xs text-blue-800">Cobrança de Atraso</span>
+            {profile?.role !== 'student' && (
+              <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4 flex gap-3 items-start">
+                <div className="p-2 bg-blue-100 rounded-xl text-blue-600 shrink-0">
+                  <Info className="w-5 h-5" />
+                </div>
+                <div className="text-sm text-blue-900 leading-relaxed w-full">
+                  <strong className="font-bold block mb-1">Envios Automáticos</strong>
+                  O sistema já envia automaticamente as faturas e cobranças para os alunos de acordo com o que você definir nas configurações de <strong>Lembretes Automáticos</strong> (na aba Comunicação). Os botões de envio listados nesta tela servem apenas para quando você precisar realizar um <strong>reenvio manual</strong> ou uma segunda via!
+                  
+                  <div className="mt-4 flex flex-wrap gap-x-6 gap-y-2 items-center bg-blue-100/50 p-3 rounded-xl border border-blue-100">
+                    <span className="font-bold text-blue-800 text-xs mr-1">Legenda de Envios:</span>
+                    <div className="flex items-center gap-2">
+                      <span className="inline-flex items-center gap-1 bg-white text-blue-600 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase shadow-sm border border-blue-100">
+                        <CheckCircle2 className="w-3 h-3" />
+                        PRE-DUE
+                      </span>
+                      <span className="text-xs text-blue-800">Aviso Prévio (antes de vencer)</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="inline-flex items-center gap-1 bg-white text-blue-600 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase shadow-sm border border-blue-100">
+                        <CheckCircle2 className="w-3 h-3" />
+                        DUE
+                      </span>
+                      <span className="text-xs text-blue-800">No dia do Vencimento</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="inline-flex items-center gap-1 bg-white text-blue-600 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase shadow-sm border border-blue-100">
+                        <CheckCircle2 className="w-3 h-3" />
+                        OVERDUE
+                      </span>
+                      <span className="text-xs text-blue-800">Cobrança de Atraso</span>
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
+            )}
 
             <div className="bg-white p-6 rounded-[32px] ring-1 ring-zinc-950/5 shadow-sm grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4">
               <div className="relative">
@@ -1455,13 +1457,15 @@ export default function Financial({ profile }: { profile?: any }) {
                 <option value="due">No Vencimento</option>
                 <option value="overdue">Cobrança Atraso</option>
               </select>
-              <button
-                onClick={() => setShowNewInvoiceModal(true)}
-                className="w-full bg-black text-white px-4 py-3 rounded-2xl text-sm font-bold flex items-center justify-center gap-2 hover:bg-zinc-800 transition-colors shadow-lg shadow-black/20"
-              >
-                <Plus className="w-4 h-4" />
-                Nova Fatura
-              </button>
+              {profile?.role !== 'student' && (
+                <button
+                  onClick={() => setShowNewInvoiceModal(true)}
+                  className="w-full bg-black text-white px-4 py-3 rounded-2xl text-sm font-bold flex items-center justify-center gap-2 hover:bg-zinc-800 transition-colors shadow-lg shadow-black/20"
+                >
+                  <Plus className="w-4 h-4" />
+                  Nova Fatura
+                </button>
+              )}
             </div>
 
             <div className="bg-white rounded-[32px] ring-1 ring-zinc-950/5 shadow-xl overflow-hidden">

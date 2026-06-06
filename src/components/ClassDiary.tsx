@@ -5,7 +5,7 @@ import { getFunctions, httpsCallable } from 'firebase/functions';
 import { db, storage } from '../firebase';
 import { UserProfile, Lesson, Student, LibraryTopic, LibraryModule, Teacher, Instrument } from '../types';
 import { handleFirestoreError, OperationType } from '../lib/error-handler';
-import { Clock, User, FileText, CheckCircle2, AlertCircle, Camera, X, ImageIcon, Loader2, Link, Trash, Headphones, BookOpen, CalendarDays, Search } from 'lucide-react';
+import { Clock, User, FileText, CheckCircle2, AlertCircle, Camera, X, ImageIcon, Loader2, Link, Trash, Headphones, BookOpen, CalendarDays, Search, UserCheck } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { cn } from '../lib/utils';
@@ -22,10 +22,11 @@ export default function ClassDiary({ profile, initialStudentId, initialLessonId 
   const [lessons, setLessons] = useState<Lesson[]>([]);
   const [teacherData, setTeacherData] = useState<Teacher | null>(null);
   const [instruments, setInstruments] = useState<Instrument[]>([]);
+  const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [selectedStudentLessons, setSelectedStudentLessons] = useState<Lesson[]>([]);
   const [selectedStudentId, setSelectedStudentId] = useState<string>(initialStudentId || '');
   const [selectedLessonId, setSelectedLessonId] = useState<string>(initialLessonId || '');
-  const [activeTab, setActiveTab] = useState<'diary' | 'studies'>('diary');
+  const [activeTab, setActiveTab] = useState<'diary' | 'studies' | 'attendance'>('diary');
   const [topics, setTopics] = useState<LibraryTopic[]>([]);
   const [libraryModules, setLibraryModules] = useState<LibraryModule[]>([]);
   
@@ -99,6 +100,11 @@ export default function ClassDiary({ profile, initialStudentId, initialLessonId 
       setLibraryModules(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as LibraryModule)));
     });
 
+    // Fetch all teachers
+    const unsubscribeAllTeachers = onSnapshot(collection(db, 'teachers'), (snapshot) => {
+      setTeachers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Teacher)));
+    });
+
     // Fetch instruments for fallback filtering
     const unsubscribeInstruments = onSnapshot(collection(db, 'instruments'), (snapshot) => {
       setInstruments(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Instrument)));
@@ -110,9 +116,15 @@ export default function ClassDiary({ profile, initialStudentId, initialLessonId 
       unsubscribeLessons();
       unsubscribeTopics();
       unsubscribeModules();
+      unsubscribeAllTeachers();
       unsubscribeInstruments();
     };
   }, [profile]);
+
+  const getTeacherName = (id: string) => {
+    const t = teachers.find(t => t.id === id);
+    return t ? t.name : 'Professor Desconhecido';
+  };
 
   useEffect(() => {
     if (initialStudentId) {
@@ -629,6 +641,16 @@ export default function ClassDiary({ profile, initialStudentId, initialLessonId 
                   <Headphones className="w-4 h-4" />
                   Estudos Práticos
                 </button>
+                <button
+                  onClick={() => setActiveTab('attendance')}
+                  className={cn(
+                    "flex-1 py-3 px-4 rounded-xl font-bold text-sm transition-all flex items-center justify-center gap-2",
+                    activeTab === 'attendance' ? "bg-white text-blue-600 shadow-sm" : "text-zinc-500 hover:text-zinc-700"
+                  )}
+                >
+                  <UserCheck className="w-4 h-4" />
+                  Frequência
+                </button>
               </div>
 
               {activeTab === 'diary' ? (
@@ -955,12 +977,19 @@ export default function ClassDiary({ profile, initialStudentId, initialLessonId 
                                      <span className="font-bold text-black">{safeFormat(lessonDate, "dd 'de' MMM, yyyy", { locale: ptBR })}</span>
                                      <span className="text-xs text-zinc-500 font-medium">às {safeFormat(lessonDate, 'HH:mm')}</span>
                                   </div>
-                                  <span className={cn(
-                                    "px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider",
-                                    isCompleted ? "bg-emerald-100 text-emerald-700" : "bg-zinc-100 text-zinc-500"
-                                  )}>
-                                    {isCompleted ? 'Concluída' : 'Pendente'}
-                                  </span>
+                                  <div className="flex items-center gap-2">
+                                    {lesson.checkInTime && (
+                                      <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-lg flex items-center gap-1" title="Presente na Recepção">
+                                        <CheckCircle2 className="w-3 h-3" /> Check-in às {safeFormat(toDate(lesson.checkInTime), 'HH:mm')}
+                                      </span>
+                                    )}
+                                    <span className={cn(
+                                      "px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider",
+                                      isCompleted ? "bg-emerald-100 text-emerald-700" : "bg-zinc-100 text-zinc-500"
+                                    )}>
+                                      {isCompleted ? 'Concluída' : 'Pendente'}
+                                    </span>
+                                  </div>
                                 </div>
                                 
                                 {lesson.notes ? (
@@ -994,7 +1023,7 @@ export default function ClassDiary({ profile, initialStudentId, initialLessonId 
                 </div>
               </div>
               </>
-              ) : (
+              ) : activeTab === 'studies' ? (
                 <div className="w-full">
                   <div className="bg-white rounded-3xl p-6 md:p-8 border border-zinc-100 shadow-sm">
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
@@ -1114,6 +1143,80 @@ export default function ClassDiary({ profile, initialStudentId, initialLessonId 
                             </div>
                           );
                         })}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="w-full">
+                  <div className="bg-white rounded-3xl p-6 md:p-8 border border-zinc-100 shadow-sm">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+                      <div>
+                        <h3 className="text-lg font-bold display-font flex items-center gap-2">
+                          <UserCheck className="w-5 h-5 text-blue-500" />
+                          Histórico de Frequência
+                        </h3>
+                        <p className="text-xs text-zinc-500 mt-1">Lista completa de presença e horários de check-in em todas as aulas.</p>
+                      </div>
+                    </div>
+
+                    {filteredStudentLessons.length === 0 ? (
+                      <div className="py-20 text-center text-zinc-400">
+                        Nenhuma aula registrada para este aluno.
+                      </div>
+                    ) : (
+                      <div className="overflow-x-auto rounded-xl border border-zinc-200">
+                        <table className="w-full text-left text-sm">
+                          <thead className="bg-zinc-50 border-b border-zinc-200">
+                            <tr>
+                              <th className="px-6 py-4 font-bold text-zinc-900">Data</th>
+                              <th className="px-6 py-4 font-bold text-zinc-900">Horário</th>
+                              <th className="px-6 py-4 font-bold text-zinc-900">Professor</th>
+                              <th className="px-6 py-4 font-bold text-zinc-900">Status</th>
+                              <th className="px-6 py-4 font-bold text-zinc-900">Check-in na Recepção</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-zinc-100">
+                            {filteredStudentLessons.map((lesson) => {
+                              const lessonDate = toDate(lesson.startTime);
+                              const isCompleted = lesson.status === 'completed' || !!lesson.notes;
+                              return (
+                                <tr key={lesson.id} className="hover:bg-zinc-50/50 transition-colors">
+                                  <td className="px-6 py-4 font-medium text-black">
+                                    {safeFormat(lessonDate, "dd/MM/yyyy")}
+                                  </td>
+                                  <td className="px-6 py-4 text-zinc-600">
+                                    {safeFormat(lessonDate, "HH:mm")}
+                                  </td>
+                                  <td className="px-6 py-4 text-zinc-600">
+                                    {getTeacherName(lesson.teacherId)}
+                                  </td>
+                                  <td className="px-6 py-4">
+                                    <span className={cn(
+                                      "px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider",
+                                      isCompleted ? "bg-emerald-100 text-emerald-700" :
+                                      lesson.status === 'cancelled' ? "bg-red-100 text-red-700" :
+                                      lesson.status === 'rescheduled' ? "bg-zinc-100 text-zinc-500" :
+                                      "bg-orange-100 text-orange-700"
+                                    )}>
+                                      {isCompleted ? 'Concluída' : lesson.status === 'cancelled' ? 'Cancelada' : lesson.status === 'rescheduled' ? 'Reagendada' : 'Pendente'}
+                                    </span>
+                                  </td>
+                                  <td className="px-6 py-4">
+                                    {lesson.checkInTime ? (
+                                      <div className="flex items-center gap-1.5 text-emerald-600 font-bold text-xs bg-emerald-50 w-max px-3 py-1.5 rounded-lg border border-emerald-100">
+                                        <CheckCircle2 className="w-3.5 h-3.5" />
+                                        {safeFormat(toDate(lesson.checkInTime), "HH:mm")}
+                                      </div>
+                                    ) : (
+                                      <span className="text-zinc-400 text-xs italic">Sem registro</span>
+                                    )}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
                       </div>
                     )}
                   </div>

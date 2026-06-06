@@ -120,7 +120,7 @@ service cloud.firestore {
     }
 
     function isValidStudent(data) {
-      return hasOnlyAllowedFields(['name', 'email', 'systemLogin', 'phone', 'cpf', 'rg', 'birthDate', 'enrollmentDate', 'fatherName', 'motherName', 'level', 'enrollments', 'status', 'courseValue', 'dueDate', 'billingStartDate', 'createdAt', 'authUid', 'lastEvaluationDate', 'responsibleName', 'responsibleCpf', 'responsibleRg', 'responsiblePhone', 'responsibleKinship', 'isScholarship', 'discount', 'extraNotes', 'classType', 'nationality', 'maritalStatus', 'profession', 'cep', 'address', 'addressNumber', 'neighborhood', 'city', 'state', 'contractUrl', 'signatureIp', 'imageRightsGranted', 'gracePeriodDeadline']) &&
+      return hasOnlyAllowedFields(['name', 'email', 'systemLogin', 'phone', 'cpf', 'rg', 'birthDate', 'enrollmentDate', 'fatherName', 'motherName', 'level', 'enrollments', 'status', 'courseValue', 'dueDate', 'billingStartDate', 'createdAt', 'authUid', 'lastEvaluationDate', 'responsibleName', 'responsibleCpf', 'responsibleRg', 'responsiblePhone', 'responsibleKinship', 'isScholarship', 'discount', 'extraNotes', 'classType', 'nationality', 'maritalStatus', 'profession', 'cep', 'address', 'addressNumber', 'neighborhood', 'city', 'state', 'contractUrl', 'signatureIp', 'imageRightsGranted', 'gracePeriodDeadline', 'isUnderage']) &&
              data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
              data.enrollments is list && data.enrollments.size() > 0 &&
              (!('level' in data) || data.level in ['beginner', 'intermediate', 'advanced']) &&
@@ -161,7 +161,8 @@ service cloud.firestore {
              (!('gracePeriodDeadline' in data) || data.gracePeriodDeadline == null || data.gracePeriodDeadline is string) &&
              (!('contractUrl' in data) || data.contractUrl is string) &&
              (!('signatureIp' in data) || data.signatureIp is string) &&
-             (!('imageRightsGranted' in data) || data.imageRightsGranted is bool);
+             (!('imageRightsGranted' in data) || data.imageRightsGranted is bool) &&
+             (!('isUnderage' in data) || data.isUnderage is bool);
     }
 
     function isValidTeacher(data) {
@@ -179,7 +180,7 @@ service cloud.firestore {
     }
 
     function isValidLesson(data) {
-      return hasOnlyAllowedFields(['studentId', 'teacherId', 'instrument', 'startTime', 'endTime', 'status', 'notes', 'photoUrls', 'createdAt', 'isMakeup', 'absenceId', 'isTrial', 'studentName', 'studentPhone', 'isStudyTask', 'topicId', 'topicTitle', 'topicUrl', 'suggestedDuration']) &&
+      return hasOnlyAllowedFields(['studentId', 'teacherId', 'instrument', 'startTime', 'endTime', 'status', 'notes', 'photoUrls', 'createdAt', 'isMakeup', 'absenceId', 'isTrial', 'studentName', 'studentPhone', 'isStudyTask', 'topicId', 'topicTitle', 'topicUrl', 'suggestedDuration', 'checkInTime']) &&
              data.studentId is string && data.teacherId is string && data.instrument is string &&
              data.startTime is timestamp && data.endTime is timestamp &&
              (!('status' in data) || data.status in ['scheduled', 'completed', 'cancelled', 'needs_reschedule', 'rescheduled']) &&
@@ -195,7 +196,8 @@ service cloud.firestore {
              (!('topicTitle' in data) || data.topicTitle is string) &&
              (!('topicUrl' in data) || data.topicUrl is string) &&
              (!('suggestedDuration' in data) || data.suggestedDuration is number) &&
-             (!('createdAt' in data) || data.createdAt is timestamp);
+             (!('createdAt' in data) || data.createdAt is timestamp) &&
+             (!('checkInTime' in data) || data.checkInTime is timestamp);
     }
 
     function isValidInstrument(data) {

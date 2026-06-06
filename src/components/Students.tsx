@@ -727,7 +727,7 @@ export default function Students({ profile }: { profile: UserProfile }) {
         fatherName: '',
         motherName: '',
         level: 'beginner',
-        status: 'active',
+        isUnderage: false,
         enrollments: [],
         courseValue: 0,
         dueDate: 10,
@@ -856,6 +856,7 @@ export default function Students({ profile }: { profile: UserProfile }) {
       motherName: student.motherName || '',
       level: student.level || 'beginner',
       status: student.status,
+      isUnderage: student.isUnderage || false,
       enrollments: student.enrollments || [],
       courseValue: student.courseValue || 0,
       dueDate: student.dueDate || 10,
@@ -1921,12 +1922,29 @@ export default function Students({ profile }: { profile: UserProfile }) {
               </div>
 
               <div className="space-y-6">
-                <h4 className="text-xs font-semibold uppercase tracking-widest text-zinc-400">Dados do Responsável (Opcional)</h4>
+                <h4 className="text-xs font-semibold uppercase tracking-widest text-zinc-400">Dados do Responsável (Obrigatório se Menor de Idade)</h4>
+                
+                <div className="flex items-center gap-3 bg-zinc-50 p-4 rounded-2xl border border-zinc-100">
+                  <div className="flex items-center h-5">
+                    <input 
+                      type="checkbox" 
+                      id="isUnderage"
+                      checked={newStudent.isUnderage}
+                      onChange={e => setNewStudent({...newStudent, isUnderage: e.target.checked})}
+                      className="w-5 h-5 rounded border-zinc-300 text-orange-500 focus:ring-orange-500 cursor-pointer"
+                    />
+                  </div>
+                  <label htmlFor="isUnderage" className="text-sm font-medium text-zinc-700 cursor-pointer mb-0">Aluno Menor de Idade</label>
+                </div>
+
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div>
-                    <label className="block text-sm font-medium text-zinc-700 mb-2">Nome do Responsável</label>
+                    <label className="block text-sm font-medium text-zinc-700 mb-2">
+                      Nome do Responsável {newStudent.isUnderage && <span className="text-red-500">*</span>}
+                    </label>
                     <input 
                       type="text" 
+                      required={newStudent.isUnderage}
                       value={newStudent.responsibleName}
                       onChange={e => setNewStudent({...newStudent, responsibleName: e.target.value})}
                       className="w-full bg-zinc-50 border border-zinc-100 rounded-2xl px-6 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 transition-all font-medium"
@@ -1943,17 +1961,23 @@ export default function Students({ profile }: { profile: UserProfile }) {
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-zinc-700 mb-2">Telefone do Responsável</label>
+                    <label className="block text-sm font-medium text-zinc-700 mb-2">
+                      Telefone do Responsável (WhatsApp) {newStudent.isUnderage && <span className="text-red-500">*</span>}
+                    </label>
                     <input 
                       type="tel" 
+                      required={newStudent.isUnderage}
                       value={newStudent.responsiblePhone}
                       onChange={e => setNewStudent({...newStudent, responsiblePhone: e.target.value})}
                       className="w-full bg-zinc-50 border border-zinc-100 rounded-2xl px-6 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 transition-all font-medium"
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-zinc-700 mb-2">Grau de Parentesco</label>
+                    <label className="block text-sm font-medium text-zinc-700 mb-2">
+                      Grau de Parentesco {newStudent.isUnderage && <span className="text-red-500">*</span>}
+                    </label>
                     <select 
+                      required={newStudent.isUnderage}
                       value={newStudent.responsibleKinship}
                       onChange={e => setNewStudent({...newStudent, responsibleKinship: e.target.value})}
                       className="w-full bg-zinc-50 border border-zinc-100 rounded-2xl px-6 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 transition-all"
