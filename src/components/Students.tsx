@@ -5,7 +5,7 @@ import { db, storage } from '../firebase';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { UserProfile, Student, Teacher, Instrument, CourseEnrollment } from '../types';
 import { handleFirestoreError, OperationType } from '../lib/error-handler';
-import { Plus, Trash2, X, Calendar, Clock, User, Pencil, Eye, EyeOff, Loader2, ChevronLeft, Music2 } from 'lucide-react';
+import { Plus, Trash2, X, Calendar, Clock, User, Pencil, Eye, EyeOff, Loader2, ChevronLeft, Music2, MessageCircle } from 'lucide-react';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, getDay, setHours, setMinutes, isAfter, addYears, addMonths, parseISO } from 'date-fns';
 import { cn } from '../lib/utils';
 import ConfirmModal from './ConfirmModal';
@@ -75,7 +75,8 @@ export default function Students({ profile }: { profile: UserProfile }) {
   const [studentToReject, setStudentToReject] = useState<Student | null>(null);
   const [viewingContract, setViewingContract] = useState<Student | null>(null);
   const [pixModalData, setPixModalData] = useState<{ student: Student, paymentId: string } | null>(null);
-  const [feedbackData, setFeedbackData] = useState<{ title: string, message: string } | null>(null);
+  const [feedbackData, setFeedbackData] = useState<{ title: string, message: string, status?: 'success' | 'error' | 'warning' | 'info' } | null>(null);
+  const [welcomeStudentToResend, setWelcomeStudentToResend] = useState<Student | null>(null);
   const [generatedLink, setGeneratedLink] = useState<string | null>(null);
   const [linkData, setLinkData] = useState({
      courseNames: '',
@@ -596,6 +597,8 @@ export default function Students({ profile }: { profile: UserProfile }) {
           }
         }
 
+        let firstPaymentId = '';
+
         // Generate initial payments for 12 months automatically
         if (newStudent.status === 'active' && newStudent.courseValue && newStudent.billingStartDate) {
           try {
@@ -615,7 +618,7 @@ export default function Students({ profile }: { profile: UserProfile }) {
                
                const dueDateStr = `${targetYear}-${String(targetMonth).padStart(2, '0')}-${String(dueD).padStart(2, '0')}`;
                
-               await addDoc(collection(db, 'payments'), {
+               const pDocRef = await addDoc(collection(db, 'payments'), {
                  studentId: docRef.id,
                  studentName: newStudent.name,
                  amount: Math.max(0, Number(newStudent.courseValue) - (Number(newStudent.discount) || 0)),
@@ -626,6 +629,7 @@ export default function Students({ profile }: { profile: UserProfile }) {
                  whatsappSent: i === 0 ? ['pre-due', 'due', 'overdue'] : [], // Evita que o robô envie mensagens automáticas para a 1ª mensalidade
                  createdAt: serverTimestamp()
                });
+               if (i === 0) firstPaymentId = pDocRef.id;
             }
           } catch(err) {
             console.error("Error generating initial payment:", err);
@@ -640,33 +644,62 @@ export default function Students({ profile }: { profile: UserProfile }) {
                const template = tSnap.docs[0].data();
                const sSnap = await getDoc(doc(db, 'settings', 'integrations'));
                if (sSnap.exists()) {
-                  const { zapiInstance, zapiToken, zapiSecurityToken } = sSnap.data() as any;
-                  if (zapiInstance && zapiToken) {
+                  const settings = sSnap.data() as any;
+                  const isApiz = settings.whatsappEngine === 'apiz';
+                  
+                  const canSendApiz = isApiz && settings.apizUrl && settings.apizToken;
+                  const canSendZapi = !isApiz && settings.zapiInstance && settings.zapiToken;
+
+                  if (canSendApiz || canSendZapi) {
                      const cleanPhone = newStudent.phone.replace(/\D/g, '');
                      if (cleanPhone.length >= 10) {
-                       const number = cleanPhone.length <= 11 ? `55${cleanPhone}` : cleanPhone;
+                       let number = cleanPhone.length <= 11 ? `55${cleanPhone}` : cleanPhone;
                        let msg = template.content.replace(/{nome}/g, newStudent.name.split(' ')[0]);
+                       
+                       if (msg.includes('{login}') || msg.includes('{senha}')) {
+                           msg = msg.replace(/{login}/g, generatedEmail).replace(/{senha}/g, generatedPassword);
+                       } else {
+                           msg += `\n\n📱 *Seu Portal do Aluno*\nAcesse sua agenda e histórico de mensalidades através da nossa plataforma:\n🔗 Link: https://avance-1334e.web.app\n👤 Usuário: ${generatedEmail}\n🔑 Senha provisória: ${generatedPassword}`;
+                       }
+
                        msg = `🔔 *Aviso do Sistema Avance*\n\n${msg}`;
                        
-                       msg += `\n\n📱 *Seu Portal do Aluno*\nAcesse sua agenda e histórico de mensalidades através da nossa plataforma:\n🔗 Link: https://avance-1334e.web.app\n👤 Usuário: ${generatedEmail}\n🔑 Senha provisória: ${generatedPassword}`;
-                       
-                       const headers: any = { 'Content-Type': 'application/json' };
-                       if (zapiSecurityToken) {
-                         headers['Client-Token'] = zapiSecurityToken;
+                       if (isApiz) {
+                         const baseUrl = settings.apizUrl?.replace(/\/send-text\/?$/, '').replace(/\/$/, '') || '';
+                         const endpoint = `${baseUrl}/send-text`;
+                         const payload = {
+                              instanceName: settings.apizInstanceName || 'teste-crm',
+                              number: number,
+                              text: msg
+                         };
+                         
+                         fetch(endpoint, {
+                           method: 'POST',
+                           headers: {
+                              'Content-Type': 'application/json',
+                              'x-api-key': settings.apizToken || ''
+                           },
+                           body: JSON.stringify(payload)
+                         }).catch(err => console.error("Welcome Error (APIZ):", err));
+                       } else {
+                         const headers: any = { 'Content-Type': 'application/json' };
+                         if (settings.zapiSecurityToken) {
+                           headers['Client-Token'] = settings.zapiSecurityToken;
+                         }
+                         
+                         const url = settings.zapiToken?.startsWith('http') ? settings.zapiToken : `https://api.z-api.io/instances/${settings.zapiInstance}/token/${settings.zapiToken}/send-text`;
+                         const payload = {
+                           instanceName: settings.zapiInstance,
+                           phone: number,
+                           message: msg
+                         };
+                         
+                         fetch(url, {
+                           method: 'POST',
+                           headers: headers,
+                           body: JSON.stringify(payload)
+                         }).catch(err => console.error("Welcome Error (ZAPI):", err));
                        }
-                       
-                       const url = zapiToken?.startsWith('http') ? zapiToken : `https://api.z-api.io/instances/${zapiInstance}/token/${zapiToken}/send-text`;
-                       const payload = {
-                         instanceName: zapiInstance,
-                         phone: number,
-                         message: msg
-                       };
-                       
-                       fetch(url, {
-                         method: 'POST',
-                         headers: headers,
-                         body: JSON.stringify(payload)
-                       }).catch(err => console.error("Welcome Error:", err));
                      }
                   }
                }
@@ -674,6 +707,11 @@ export default function Students({ profile }: { profile: UserProfile }) {
           } catch(e) {
             console.error("Welcome message flow error:", e);
           }
+        }
+
+        // Show PIX modal if applicable
+        if (newStudent.status === 'active' && newStudent.courseValue && firstPaymentId) {
+           setPixModalData({ student: { id: docRef.id, ...payload, systemLogin: generatedEmail, status: 'active' } as any, paymentId: firstPaymentId });
         }
       }
 
@@ -704,6 +742,102 @@ export default function Students({ profile }: { profile: UserProfile }) {
       });
     } catch (error) {
       handleFirestoreError(error, editingStudentId ? OperationType.UPDATE : OperationType.CREATE, 'students');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleSendWelcomeWhatsAppClick = (student: Student) => {
+    if (!student.phone) {
+      setFeedbackData({ title: 'Telefone Ausente', message: 'Este aluno não possui número de WhatsApp cadastrado.', status: 'warning' });
+      return;
+    }
+    setWelcomeStudentToResend(student);
+  };
+
+  const handleSendWelcomeWhatsAppConfirmed = async () => {
+    const student = welcomeStudentToResend;
+    if (!student) return;
+    setWelcomeStudentToResend(null);
+    setIsSubmitting(true);
+
+    try {
+      const sSnap = await getDoc(doc(db, 'settings', 'integrations'));
+      if (!sSnap.exists()) {
+        throw new Error("Configurações de integração não encontradas.");
+      }
+      
+      const settings = sSnap.data() as IntegrationsSettings;
+      const isApiz = settings.whatsappEngine === 'apiz';
+      const canSendApiz = isApiz && settings.apizUrl && settings.apizToken;
+      const canSendZapi = !isApiz && settings.zapiInstance && settings.zapiToken;
+
+      if (!canSendApiz && !canSendZapi) {
+        throw new Error("Nenhum motor de WhatsApp configurado ou ativo.");
+      }
+
+      const tSnap = await getDocs(query(collection(db, 'templates'), where('type', '==', 'welcome')));
+      if (tSnap.empty) {
+        throw new Error("Template 'Boas-Vindas' não encontrado nas configurações!");
+      }
+      const template = tSnap.docs[0].data();
+
+      const cleanPhone = student.phone.replace(/\D/g, '');
+      if (cleanPhone.length < 10) {
+        throw new Error("Número de WhatsApp inválido.");
+      }
+      
+      let number = cleanPhone.length <= 11 ? `55${cleanPhone}` : cleanPhone;
+      const generatedEmail = student.systemLogin || '';
+      const generatedPassword = '123456';
+
+      let msg = template.content.replace(/{nome}/g, student.name.split(' ')[0]);
+      
+      if (msg.includes('{login}') || msg.includes('{senha}')) {
+          msg = msg.replace(/{login}/g, generatedEmail).replace(/{senha}/g, generatedPassword);
+      } else {
+          msg += `\n\n📱 *Seu Portal do Aluno*\nAcesse sua agenda e histórico de mensalidades através da nossa plataforma:\n🔗 Link: https://avance-1334e.web.app\n👤 Usuário: ${generatedEmail}\n🔑 Senha provisória: ${generatedPassword}`;
+      }
+
+      msg = `🔔 *Aviso do Sistema Avance*\n\n${msg}`;
+
+      if (isApiz) {
+        const baseUrl = settings.apizUrl?.replace(/\/send-text\/?$/, '').replace(/\/$/, '') || '';
+        const endpoint = `${baseUrl}/send-text`;
+        const payload = {
+             instanceName: settings.apizInstanceName || 'teste-crm',
+             number: number,
+             text: msg
+        };
+        await fetch(endpoint, {
+          method: 'POST',
+          headers: {
+             'Content-Type': 'application/json',
+             'x-api-key': settings.apizToken || ''
+          },
+          body: JSON.stringify(payload)
+        });
+      } else {
+        const headers: any = { 'Content-Type': 'application/json' };
+        if (settings.zapiSecurityToken) {
+          headers['Client-Token'] = settings.zapiSecurityToken;
+        }
+        const url = settings.zapiToken?.startsWith('http') ? settings.zapiToken : `https://api.z-api.io/instances/${settings.zapiInstance}/token/${settings.zapiToken}/send-text`;
+        const payload = {
+          instanceName: settings.zapiInstance,
+          phone: number,
+          message: msg
+        };
+        await fetch(url, {
+          method: 'POST',
+          headers: headers,
+          body: JSON.stringify(payload)
+        });
+      }
+      setFeedbackData({ title: 'Sucesso', message: 'Mensagem de Boas-Vindas enviada com sucesso!', status: 'success' });
+    } catch(err: any) {
+      console.error(err);
+      setFeedbackData({ title: 'Erro de Envio', message: "Não foi possível enviar a mensagem: " + err.message, status: 'error' });
     } finally {
       setIsSubmitting(false);
     }
@@ -1521,6 +1655,13 @@ export default function Students({ profile }: { profile: UserProfile }) {
                                 </>
                               )}
                               <button 
+                                onClick={() => handleSendWelcomeWhatsAppClick(student)}
+                                className="text-zinc-400 hover:text-green-500 transition-colors"
+                                title="Enviar Boas-Vindas por WhatsApp"
+                              >
+                                <MessageCircle className="w-5 h-5" />
+                              </button>
+                              <button 
                                 onClick={() => setViewingStudent(student)}
                                 className="text-zinc-400 hover:text-blue-500 transition-colors"
                                 title="Visualizar Detalhes"
@@ -1903,7 +2044,14 @@ export default function Students({ profile }: { profile: UserProfile }) {
                                 <option value="">Selecione um professor</option>
                                 {teachers
                                   .filter(t => t.isTeacher !== false)
-                                  .filter(t => !enrollment.instrument || (t.instruments && t.instruments.includes(enrollment.instrument)))
+                                  .filter(t => {
+                                    if (!enrollment.instrument) return true;
+                                    if (!t.instruments || t.instruments.length === 0) return false;
+                                    // Normalize strings to ignore emojis, special chars, and case differences
+                                    const normalize = (str: string) => str.replace(/[^a-zA-ZÀ-ÿ\s]/g, '').trim().toLowerCase();
+                                    const normalizedSelected = normalize(enrollment.instrument);
+                                    return t.instruments.some((inst: string) => normalize(inst) === normalizedSelected);
+                                  })
                                   .map(t => (
                                   <option key={t.id} value={t.id}>{t.name} {(t.instruments && t.instruments.length > 0) ? `(${t.instruments.join(', ')})` : ''}</option>
                                 ))}
@@ -2585,7 +2733,18 @@ export default function Students({ profile }: { profile: UserProfile }) {
         onClose={() => setFeedbackData(null)}
         title={feedbackData?.title || ''}
         message={feedbackData?.message || ''}
-        status="success"
+        status={feedbackData?.status || 'success'}
+      />
+
+      <ConfirmModal
+        isOpen={!!welcomeStudentToResend}
+        title="Enviar Boas-Vindas?"
+        message={`Deseja enviar a Mensagem de Boas-Vindas e acesso ao Portal para ${welcomeStudentToResend?.name?.split(' ')[0]}?`}
+        onConfirm={handleSendWelcomeWhatsAppConfirmed}
+        onClose={() => setWelcomeStudentToResend(null)}
+        confirmText="Sim, Enviar Agora"
+        cancelText="Cancelar"
+        variant="success"
       />
     </>
   );

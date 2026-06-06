@@ -1,0 +1,19 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "lessons",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "teacherId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "startTime",
+          "order": "DESCENDING"
+        }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

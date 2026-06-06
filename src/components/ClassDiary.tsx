@@ -3,9 +3,9 @@ import { collection, onSnapshot, query, where, orderBy, doc, setDoc, writeBatch,
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { db, storage } from '../firebase';
-import { UserProfile, Lesson, Student, LibraryTopic, LibraryModule } from '../types';
+import { UserProfile, Lesson, Student, LibraryTopic, LibraryModule, Teacher, Instrument } from '../types';
 import { handleFirestoreError, OperationType } from '../lib/error-handler';
-import { Clock, User, FileText, CheckCircle2, AlertCircle, Camera, X, ImageIcon, Loader2, Link, Trash, Headphones, BookOpen, CalendarDays } from 'lucide-react';
+import { Clock, User, FileText, CheckCircle2, AlertCircle, Camera, X, ImageIcon, Loader2, Link, Trash, Headphones, BookOpen, CalendarDays, Search } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { cn } from '../lib/utils';
@@ -20,6 +20,9 @@ interface ClassDiaryProps {
 export default function ClassDiary({ profile, initialStudentId, initialLessonId }: ClassDiaryProps) {
   const [students, setStudents] = useState<Student[]>([]);
   const [lessons, setLessons] = useState<Lesson[]>([]);
+  const [teacherData, setTeacherData] = useState<Teacher | null>(null);
+  const [instruments, setInstruments] = useState<Instrument[]>([]);
+  const [selectedStudentLessons, setSelectedStudentLessons] = useState<Lesson[]>([]);
   const [selectedStudentId, setSelectedStudentId] = useState<string>(initialStudentId || '');
   const [selectedLessonId, setSelectedLessonId] = useState<string>(initialLessonId || '');
   const [activeTab, setActiveTab] = useState<'diary' | 'studies'>('diary');
@@ -28,12 +31,28 @@ export default function ClassDiary({ profile, initialStudentId, initialLessonId 
   
   const [notes, setNotes] = useState('');
   const [selectedPhotos, setSelectedPhotos] = useState<File[]>([]);
+  const [photoPreviews, setPhotoPreviews] = useState<string[]>([]);
+  const [selectedMonth, setSelectedMonth] = useState(format(new Date(), 'yyyy-MM'));
   const [selectedModuleToUnlock, setSelectedModuleToUnlock] = useState<string>('');
+  const [selectedTopicsToUnlock, setSelectedTopicsToUnlock] = useState<string[]>([]);
   const [studyDates, setStudyDates] = useState<string[]>([]);
   const [tempStudyDate, setTempStudyDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [studyDuration, setStudyDuration] = useState('30');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [feedback, setFeedback] = useState<{isOpen: boolean, type: 'success' | 'error' | 'warning', title: string, message: string}>({ isOpen: false, type: 'success', title: '', message: '' });
+  const [taskToEdit, setTaskToEdit] = useState<Lesson | null>(null);
+  const [editTaskDate, setEditTaskDate] = useState('');
+  const [editTaskDuration, setEditTaskDuration] = useState('');
+  const [confirmDialog, setConfirmDialog] = useState<{isOpen: boolean, title: string, message: string, onConfirm: () => void}>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {}
+  });
+  
+  const [studentSearchTerm, setStudentSearchTerm] = useState('');
+  const [isStudentDropdownOpen, setIsStudentDropdownOpen] = useState(false);
+  const studentDropdownRef = useRef<HTMLDivElement>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -41,6 +60,15 @@ export default function ClassDiary({ profile, initialStudentId, initialLessonId 
     // Determine which teacher logic to apply based on role
     const isTeacher = profile.role === 'teacher';
     const teacherId = profile.teacherId;
+
+    let unsubscribeTeacher = () => {};
+    if (isTeacher && teacherId) {
+      unsubscribeTeacher = onSnapshot(doc(db, 'teachers', teacherId), (docSnap) => {
+        if (docSnap.exists()) {
+          setTeacherData({ id: docSnap.id, ...docSnap.data() } as Teacher);
+        }
+      });
+    }
 
     // Fetch students
     const unsubscribeStudents = onSnapshot(collection(db, 'students'), (snapshot) => {
@@ -71,11 +99,18 @@ export default function ClassDiary({ profile, initialStudentId, initialLessonId 
       setLibraryModules(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as LibraryModule)));
     });
 
+    // Fetch instruments for fallback filtering
+    const unsubscribeInstruments = onSnapshot(collection(db, 'instruments'), (snapshot) => {
+      setInstruments(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Instrument)));
+    });
+
     return () => {
+      unsubscribeTeacher();
       unsubscribeStudents();
       unsubscribeLessons();
       unsubscribeTopics();
       unsubscribeModules();
+      unsubscribeInstruments();
     };
   }, [profile]);
 
@@ -94,6 +129,41 @@ export default function ClassDiary({ profile, initialStudentId, initialLessonId 
       }
     }
   }, [initialLessonId, lessons]);
+
+  useEffect(() => {
+    if (selectedStudentId) {
+      const student = students.find(s => s.id === selectedStudentId);
+      if (student) {
+        setStudentSearchTerm(student.name);
+      }
+    } else {
+      setSelectedLessonId('');
+    }
+  }, [selectedStudentId, students]);
+
+  useEffect(() => {
+    if (!selectedStudentId) {
+      setSelectedStudentLessons([]);
+      return;
+    }
+    const q = query(collection(db, 'lessons'), where('studentId', '==', selectedStudentId));
+    const unsub = onSnapshot(q, (snapshot: any) => {
+      setSelectedStudentLessons(snapshot.docs.map((d: any) => ({ id: d.id, ...d.data() } as Lesson)));
+    }, (error: any) => {
+      console.error("Error fetching student lessons:", error);
+    });
+    return () => unsub();
+  }, [selectedStudentId]);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (studentDropdownRef.current && !studentDropdownRef.current.contains(event.target as Node)) {
+        setIsStudentDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const toDate = (timestamp: any) => {
     if (timestamp && typeof timestamp.toDate === 'function') {
@@ -118,7 +188,7 @@ export default function ClassDiary({ profile, initialStudentId, initialLessonId 
 
   // Lessons for the selected student
   const allStudentRecords = selectedStudentId 
-    ? lessons.filter(l => l.studentId === selectedStudentId && l.status !== 'cancelled')
+    ? selectedStudentLessons.filter(l => l.status !== 'cancelled')
              .sort((a, b) => {
                 const dateA = toDate(a.startTime)?.getTime() || 0;
                 const dateB = toDate(b.startTime)?.getTime() || 0;
@@ -129,8 +199,14 @@ export default function ClassDiary({ profile, initialStudentId, initialLessonId 
   const studentLessons = allStudentRecords.filter(l => !l.isStudyTask);
   const studentStudyTasks = allStudentRecords.filter(l => l.isStudyTask);
 
-  const completedLessons = studentLessons.filter(l => l.status === 'completed' || !!l.notes);
-  const pendingLessons = studentLessons.filter(l => l.status !== 'completed' && !l.notes);
+  const filteredStudentLessons = studentLessons.filter(l => {
+    const lessonDate = toDate(l.startTime);
+    if (!lessonDate) return false;
+    return format(lessonDate, 'yyyy-MM') === selectedMonth;
+  });
+
+  const completedLessons = filteredStudentLessons.filter(l => l.status === 'completed' || !!l.notes);
+  const pendingLessons = filteredStudentLessons.filter(l => l.status !== 'completed' && !l.notes);
 
   const selectedLesson = studentLessons.find(l => l.id === selectedLessonId) || null;
 
@@ -148,6 +224,16 @@ export default function ClassDiary({ profile, initialStudentId, initialLessonId 
     return lessonDate.getTime() <= endOfToday.getTime();
   });
 
+  const visibleStudents = students.filter(s => {
+    if (profile.role === 'admin') return true;
+    if (profile.role === 'teacher' && profile.teacherId) {
+      const isEnrolledWithTeacher = s.enrollments?.some(e => e.teacherId === profile.teacherId);
+      const hasLessonsWithTeacher = lessons.some(l => l.studentId === s.id);
+      return isEnrolledWithTeacher || hasLessonsWithTeacher;
+    }
+    return false;
+  }).filter(s => s.name.toLowerCase().includes(studentSearchTerm.toLowerCase()));
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       const filesArray = Array.from(e.target.files);
@@ -163,6 +249,20 @@ export default function ClassDiary({ profile, initialStudentId, initialLessonId 
     setSelectedPhotos(prev => prev.filter((_, i) => i !== index));
   };
 
+  const handleRemoveSavedPhoto = async (photoUrlToRemove: string) => {
+    if (!selectedLesson) return;
+    try {
+      const newPhotoUrls = (selectedLesson.photoUrls || []).filter(url => url !== photoUrlToRemove);
+      await setDoc(doc(db, 'lessons', selectedLesson.id), {
+        photoUrls: newPhotoUrls
+      }, { merge: true });
+      // We don't need to manually update selectedLesson because the onSnapshot will re-render with the new data
+      setFeedback({ isOpen: true, type: 'success', title: 'Sucesso', message: 'Foto removida.' });
+    } catch (err: any) {
+      setFeedback({ isOpen: true, type: 'error', title: 'Erro', message: 'Erro ao remover foto: ' + err.message });
+    }
+  };
+
   const handleAddStudyDate = () => {
     if (tempStudyDate && !studyDates.includes(tempStudyDate)) {
       setStudyDates(prev => [...prev, tempStudyDate].sort());
@@ -172,6 +272,38 @@ export default function ClassDiary({ profile, initialStudentId, initialLessonId 
   const handleRemoveStudyDate = (dateToRemove: string) => {
     setStudyDates(prev => prev.filter(d => d !== dateToRemove));
   };
+
+  const visibleModules = libraryModules.filter(m => {
+    if (profile.role === 'admin') return true;
+    if (teacherData?.canManageLibrary) return true;
+    
+    const teacherInsts = teacherData?.instruments || [];
+
+    const isExplicitlyVisibleToTeacher = topics.some(t => 
+      t.moduleName === m.name && 
+      t.visibleToTeachers?.includes(profile.teacherId as string)
+    );
+    if (isExplicitlyVisibleToTeacher) return true;
+
+    if (m.instrument) {
+      return teacherInsts.includes(m.instrument);
+    }
+    
+    // Fallback: If the module doesn't have an explicit instrument set (e.g. older modules),
+    // we check if its name contains any known instrument.
+    const moduleNameLower = m.name.toLowerCase();
+    const hasAnyInstrumentInName = instruments.some(inst => 
+      moduleNameLower.includes(inst.name.toLowerCase())
+    );
+
+    if (hasAnyInstrumentInName) {
+      // It mentions an instrument in the name. Let's see if the teacher teaches THIS instrument.
+      return teacherInsts.some(inst => moduleNameLower.includes(inst.toLowerCase()));
+    }
+
+    // Generic modules visible to all
+    return true;
+  });
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -203,7 +335,11 @@ export default function ClassDiary({ profile, initialStudentId, initialLessonId 
 
       // Handle Module Unlock if selected
       if (selectedModuleToUnlock) {
-        const moduleTopics = topics.filter(t => t.moduleName === selectedModuleToUnlock);
+        let moduleTopics = topics.filter(t => t.moduleName === selectedModuleToUnlock);
+        if (selectedTopicsToUnlock.length > 0) {
+          moduleTopics = moduleTopics.filter(t => selectedTopicsToUnlock.includes(t.id));
+        }
+
         if (moduleTopics.length > 0) {
           const batch = writeBatch(db);
           for (const topic of moduleTopics) {
@@ -221,7 +357,7 @@ export default function ClassDiary({ profile, initialStudentId, initialLessonId 
           }
 
           if (finalDates.length > 0) {
-            const teacherId = profile.role === 'teacher' ? profile.teacherId : profile.uid;
+            const assignedTeacherId = profile.role === 'teacher' ? profile.teacherId : selectedLesson.teacherId;
             for (const topic of moduleTopics) {
               for (const dateStr of finalDates) {
                  const startDateTime = new Date(`${dateStr}T00:00:00`);
@@ -229,7 +365,7 @@ export default function ClassDiary({ profile, initialStudentId, initialLessonId 
                  const taskRef = doc(collection(db, 'lessons'));
                  batch.set(taskRef, {
                     studentId: selectedStudentId,
-                    teacherId: teacherId || '',
+                    teacherId: assignedTeacherId || '',
                     instrument: 'Estudo',
                     startTime: Timestamp.fromDate(startDateTime),
                     endTime: Timestamp.fromDate(endDateTime),
@@ -268,9 +404,11 @@ export default function ClassDiary({ profile, initialStudentId, initialLessonId 
 
       setFeedback({ isOpen: true, type: 'success', title: 'Sucesso!', message: 'Diário de aula salvo com sucesso.' });
       
-      setSelectedPhotos([]);
+      setSelectedMonth(format(new Date(), 'yyyy-MM'));
       setSelectedModuleToUnlock('');
+      setSelectedTopicsToUnlock([]);
       setStudyDates([]);
+      setSelectedPhotos([]);
       if (fileInputRef.current) {
         fileInputRef.current.value = '';
       }
@@ -284,21 +422,67 @@ export default function ClassDiary({ profile, initialStudentId, initialLessonId 
 
   const handleClearDiary = async () => {
     if (!selectedLesson) return;
-    if (!window.confirm('Tem certeza que deseja zerar este diário? As fotos e o texto serão permanentemente apagados.')) return;
+    
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Zerar Diário',
+      message: 'Tem certeza que deseja zerar este diário? As fotos e o texto serão permanentemente apagados.',
+      onConfirm: async () => {
+        try {
+          await setDoc(doc(db, 'lessons', selectedLesson.id), {
+            status: 'scheduled',
+            notes: '',
+            photoUrls: []
+          }, { merge: true });
 
+          setNotes('');
+          setSelectedPhotos([]);
+          setFeedback({ isOpen: true, type: 'success', title: 'Sucesso!', message: 'O diário de aula foi resetado.' });
+        } catch (err: any) {
+          console.error(err);
+          setFeedback({ isOpen: true, type: 'error', title: 'Erro', message: 'Erro ao zerar: ' + err.message });
+        } finally {
+          setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+        }
+      }
+    });
+  };
+
+  const handleDeleteTask = async (taskId: string) => {
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Excluir Agendamento',
+      message: 'Tem certeza que deseja excluir este agendamento de estudo?',
+      onConfirm: async () => {
+        try {
+          await import('firebase/firestore').then(({ deleteDoc }) => deleteDoc(doc(db, 'lessons', taskId)));
+          setFeedback({ isOpen: true, type: 'success', title: 'Sucesso!', message: 'Tarefa excluída.' });
+        } catch (err: any) {
+          console.error(err);
+          setFeedback({ isOpen: true, type: 'error', title: 'Erro', message: 'Erro ao excluir: ' + err.message });
+        } finally {
+          setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+        }
+      }
+    });
+  };
+
+  const handleEditTaskSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!taskToEdit || !editTaskDate) return;
     try {
-      await setDoc(doc(db, 'lessons', selectedLesson.id), {
-        status: 'scheduled',
-        notes: '',
-        photoUrls: []
+      const startDateTime = new Date(`${editTaskDate}T00:00:00`);
+      const endDateTime = new Date(`${editTaskDate}T23:59:59`);
+      await setDoc(doc(db, 'lessons', taskToEdit.id), {
+        startTime: Timestamp.fromDate(startDateTime),
+        endTime: Timestamp.fromDate(endDateTime),
+        suggestedDuration: Number(editTaskDuration) || 30
       }, { merge: true });
-
-      setNotes('');
-      setSelectedPhotos([]);
-      setFeedback({ isOpen: true, type: 'success', title: 'Sucesso!', message: 'O diário de aula foi resetado.' });
+      setFeedback({ isOpen: true, type: 'success', title: 'Sucesso!', message: 'Tarefa atualizada.' });
+      setTaskToEdit(null);
     } catch (err: any) {
       console.error(err);
-      setFeedback({ isOpen: true, type: 'error', title: 'Erro', message: 'Erro ao zerar: ' + err.message });
+      setFeedback({ isOpen: true, type: 'error', title: 'Erro', message: 'Erro ao editar: ' + err.message });
     }
   };
 
@@ -311,6 +495,31 @@ export default function ClassDiary({ profile, initialStudentId, initialLessonId 
         message={feedback.message}
         type={feedback.type}
       />
+      {confirmDialog.isOpen && (
+        <div className="fixed inset-0 bg-zinc-950/40 backdrop-blur-md flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-3xl p-6 md:p-8 max-w-sm w-full shadow-2xl shadow-black/10 ring-1 ring-zinc-950/5 text-center">
+            <div className="w-16 h-16 bg-red-50 rounded-full flex items-center justify-center mx-auto mb-6">
+              <AlertCircle className="w-8 h-8 text-red-500" />
+            </div>
+            <h3 className="text-xl font-bold text-zinc-900 mb-2">{confirmDialog.title}</h3>
+            <p className="text-sm text-zinc-500 mb-8">{confirmDialog.message}</p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setConfirmDialog(prev => ({ ...prev, isOpen: false }))}
+                className="flex-1 bg-zinc-100 text-zinc-700 font-bold py-3 px-4 rounded-2xl hover:bg-zinc-200 transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={confirmDialog.onConfirm}
+                className="flex-1 bg-red-500 text-white font-bold py-3 px-4 rounded-2xl hover:bg-red-600 transition-colors shadow-lg shadow-red-500/25"
+              >
+                Confirmar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       <div className="space-y-6 max-w-7xl mx-auto">
         <div className="bg-white p-6 md:p-8 rounded-[32px] ring-1 ring-zinc-950/5 shadow-xl shadow-black/[0.03]">
           
@@ -323,31 +532,69 @@ export default function ClassDiary({ profile, initialStudentId, initialLessonId 
               <p className="text-sm text-zinc-500 mt-1">Selecione um aluno para preencher o diário ou visualizar o histórico.</p>
             </div>
             
-            <div className="w-full md:w-80">
+            <div className="w-full md:w-80 relative" ref={studentDropdownRef}>
               <label className="block text-xs font-bold uppercase text-zinc-500 mb-2">Filtrar por Aluno</label>
-              <select
-                value={selectedStudentId}
-                onChange={(e) => {
-                  setSelectedStudentId(e.target.value);
-                  setSelectedLessonId('');
-                  setNotes('');
-                  setSelectedPhotos([]);
-                }}
-                className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 font-medium text-black"
+              
+              <div 
+                className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl px-4 py-3 text-sm focus-within:ring-2 focus-within:ring-orange-500/20 font-medium text-black flex items-center gap-2 cursor-text"
+                onClick={() => setIsStudentDropdownOpen(true)}
               >
-                <option value="">Selecione um aluno...</option>
-                {students.filter(s => {
-                  if (profile.role === 'admin') return true;
-                  if (profile.role === 'teacher' && profile.teacherId) {
-                    const isEnrolledWithTeacher = s.enrollments?.some(e => e.teacherId === profile.teacherId);
-                    const hasLessonsWithTeacher = lessons.some(l => l.studentId === s.id);
-                    return isEnrolledWithTeacher || hasLessonsWithTeacher;
-                  }
-                  return false;
-                }).map(s => (
-                  <option key={s.id} value={s.id}>{s.name} {s.status !== 'active' ? '(Inativo)' : ''}</option>
-                ))}
-              </select>
+                <Search className="w-4 h-4 text-zinc-400 shrink-0" />
+                <input 
+                  type="text"
+                  placeholder="Buscar aluno..."
+                  value={studentSearchTerm}
+                  onChange={(e) => {
+                    setStudentSearchTerm(e.target.value);
+                    setIsStudentDropdownOpen(true);
+                  }}
+                  onFocus={() => setIsStudentDropdownOpen(true)}
+                  className="bg-transparent border-none outline-none w-full"
+                />
+                {selectedStudentId && (
+                  <button 
+                    onClick={(e) => {
+                       e.stopPropagation();
+                       setSelectedStudentId('');
+                       setStudentSearchTerm('');
+                       setSelectedLessonId('');
+                       setNotes('');
+                       setSelectedPhotos([]);
+                    }}
+                    className="text-zinc-400 hover:text-zinc-600 shrink-0"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+
+              {isStudentDropdownOpen && (
+                <div className="absolute top-full mt-2 w-full bg-white rounded-2xl shadow-xl border border-zinc-100 overflow-hidden z-50 max-h-60 overflow-y-auto">
+                  {visibleStudents.length === 0 ? (
+                    <div className="p-4 text-center text-zinc-500 text-sm">Nenhum aluno encontrado</div>
+                  ) : (
+                    visibleStudents.map(s => (
+                      <div 
+                        key={s.id}
+                        onClick={() => {
+                          setSelectedStudentId(s.id);
+                          setStudentSearchTerm(s.name);
+                          setIsStudentDropdownOpen(false);
+                          setSelectedLessonId('');
+                          setNotes('');
+                          setSelectedPhotos([]);
+                        }}
+                        className={cn(
+                          "px-4 py-3 cursor-pointer hover:bg-orange-50 transition-colors border-b border-zinc-50 last:border-0",
+                          selectedStudentId === s.id ? "bg-orange-50 text-orange-700 font-bold" : "text-zinc-700"
+                        )}
+                      >
+                        {s.name} {s.status !== 'active' && <span className="text-xs text-red-500 ml-2">(Inativo)</span>}
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
             </div>
           </div>
 
@@ -391,17 +638,28 @@ export default function ClassDiary({ profile, initialStudentId, initialLessonId 
                 <div className="bg-zinc-50 rounded-3xl p-6 border border-zinc-100">
                   <h3 className="text-lg font-bold display-font mb-4">Preencher Relatório</h3>
                   
-                  <label className="block text-sm font-medium text-zinc-700 mb-2">Aula Selecionada</label>
-                  <select
-                    value={selectedLessonId}
-                    onChange={(e) => {
-                      setSelectedLessonId(e.target.value);
-                      const lesson = lessons.find(l => l.id === e.target.value);
-                      setNotes(lesson?.notes || '');
-                      setSelectedPhotos([]);
-                    }}
-                    className="w-full bg-white border border-zinc-200 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 font-medium text-black mb-6"
-                  >
+                  <div className="grid grid-cols-1 md:grid-cols-[200px_1fr] gap-4 mb-6">
+                    <div>
+                      <label className="block text-sm font-medium text-zinc-700 mb-2">Mês Vigente</label>
+                      <input
+                        type="month"
+                        value={selectedMonth}
+                        onChange={(e) => setSelectedMonth(e.target.value)}
+                        className="w-full bg-white border border-zinc-200 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 font-medium text-black"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-zinc-700 mb-2">Aula Selecionada</label>
+                      <select
+                        value={selectedLessonId}
+                        onChange={(e) => {
+                          setSelectedLessonId(e.target.value);
+                          const lesson = lessons.find(l => l.id === e.target.value);
+                          setNotes(lesson?.notes || '');
+                          setSelectedPhotos([]);
+                        }}
+                        className="w-full bg-white border border-zinc-200 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 font-medium text-black"
+                      >
                     <option value="">Selecione uma aula...</option>
                     {pendingLessons.length > 0 && <optgroup label="Aulas Pendentes de Relatório">
                       {pendingLessons.map(l => (
@@ -418,6 +676,8 @@ export default function ClassDiary({ profile, initialStudentId, initialLessonId 
                       ))}
                     </optgroup>}
                   </select>
+                  </div>
+                </div>
 
                   {selectedLesson ? (
                     <form onSubmit={handleSubmit} className="space-y-4">
@@ -462,12 +722,25 @@ export default function ClassDiary({ profile, initialStudentId, initialLessonId 
                             <p className="text-[10px] uppercase font-bold text-zinc-400 mb-2 tracking-wider">Fotos já salvas nesta aula</p>
                             <div className="flex flex-wrap gap-2">
                               {selectedLesson.photoUrls.map((url, idx) => (
-                                <a key={idx} href={url} target="_blank" rel="noopener noreferrer" className="relative group rounded-xl overflow-hidden shadow-sm border border-zinc-100 w-16 h-16 flex-shrink-0 bg-zinc-100 block cursor-pointer">
-                                  <img src={url} alt={`Anexo ${idx + 1}`} className="w-full h-full object-cover group-hover:opacity-75 transition-opacity" />
-                                  <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
-                                     <Link className="w-4 h-4 text-white" />
-                                  </div>
-                                </a>
+                                <div key={idx} className="relative group rounded-xl overflow-hidden shadow-sm border border-zinc-100 w-16 h-16 flex-shrink-0 bg-zinc-100 block">
+                                  <a href={url} target="_blank" rel="noopener noreferrer" className="block w-full h-full cursor-pointer">
+                                    <img src={url} alt={`Anexo ${idx + 1}`} className="w-full h-full object-cover group-hover:opacity-75 transition-opacity" />
+                                    <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                                       <Link className="w-4 h-4 text-white" />
+                                    </div>
+                                  </a>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.preventDefault();
+                                      handleRemoveSavedPhoto(url);
+                                    }}
+                                    className="absolute top-1 right-1 bg-red-500 text-white p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity z-10"
+                                    title="Remover foto"
+                                  >
+                                    <X className="w-3 h-3" />
+                                  </button>
+                                </div>
                               ))}
                             </div>
                           </div>
@@ -502,14 +775,23 @@ export default function ClassDiary({ profile, initialStudentId, initialLessonId 
                            <BookOpen className="w-4 h-4" />
                            Liberar Material de Estudo (Opcional)
                         </label>
-                        <p className="text-xs text-orange-700 mb-3">Selecione um módulo da biblioteca. Ao salvar, todos os tópicos deste módulo serão liberados para o aluno e ele será notificado no WhatsApp.</p>
+                        <p className="text-xs text-orange-700 mb-3">Selecione um módulo e os tópicos específicos. Ao salvar, eles serão liberados para o aluno e ele será notificado no WhatsApp.</p>
                         <select
                           value={selectedModuleToUnlock}
-                          onChange={(e) => setSelectedModuleToUnlock(e.target.value)}
+                          onChange={(e) => {
+                            const moduleName = e.target.value;
+                            setSelectedModuleToUnlock(moduleName);
+                            if (moduleName) {
+                              const moduleTopics = topics.filter(t => t.moduleName === moduleName);
+                              setSelectedTopicsToUnlock(moduleTopics.map(t => t.id));
+                            } else {
+                              setSelectedTopicsToUnlock([]);
+                            }
+                          }}
                           className="w-full bg-white border border-orange-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 font-medium text-black"
                         >
                           <option value="">Nenhum material adicional</option>
-                          {libraryModules.map(m => (
+                          {visibleModules.map(m => (
                             <option key={m.id} value={m.name}>{m.name}</option>
                           ))}
                         </select>
@@ -517,6 +799,30 @@ export default function ClassDiary({ profile, initialStudentId, initialLessonId 
                         {selectedModuleToUnlock && (
                           <div className="mt-4 pt-4 border-t border-orange-200/50">
                              <label className="block text-sm font-bold text-orange-900 mb-3 flex items-center gap-2">
+                               <BookOpen className="w-4 h-4" />
+                               Tópicos para Liberar
+                             </label>
+                             <div className="space-y-2 mb-6">
+                               {topics.filter(t => t.moduleName === selectedModuleToUnlock).map(topic => (
+                                 <label key={topic.id} className="flex items-center gap-3 cursor-pointer p-2 hover:bg-orange-100/50 rounded-lg transition-colors">
+                                   <input 
+                                     type="checkbox" 
+                                     checked={selectedTopicsToUnlock.includes(topic.id)}
+                                     onChange={(e) => {
+                                       if (e.target.checked) {
+                                         setSelectedTopicsToUnlock([...selectedTopicsToUnlock, topic.id]);
+                                       } else {
+                                         setSelectedTopicsToUnlock(selectedTopicsToUnlock.filter(id => id !== topic.id));
+                                       }
+                                     }}
+                                     className="w-4 h-4 text-orange-600 rounded border-orange-300 focus:ring-orange-500"
+                                   />
+                                   <span className="text-sm font-medium text-zinc-700">{topic.title}</span>
+                                 </label>
+                               ))}
+                             </div>
+
+                             <label className="block text-sm font-bold text-orange-900 mb-3 flex items-center gap-2 pt-4 border-t border-orange-200/50">
                                <CalendarDays className="w-4 h-4" />
                                Agendar Estudo na Sala de Prática
                              </label>
@@ -762,9 +1068,31 @@ export default function ClassDiary({ profile, initialStudentId, initialLessonId 
                                     <div className="flex items-center gap-2">
                                        <span className="font-bold text-black">{safeFormat(lessonDate, "dd 'de' MMM, yyyy", { locale: ptBR })}</span>
                                     </div>
-                                    <span className={cn("px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider", isCompleted ? "bg-emerald-100 text-emerald-700" : "bg-orange-100 text-orange-700")}>
-                                      {isCompleted ? 'Concluído' : 'Pendente'}
-                                    </span>
+                                    <div className="flex items-center gap-2">
+                                      {(!isCompleted && (profile.role === 'admin' || task.teacherId === profile.teacherId)) && (
+                                        <>
+                                          <button
+                                            onClick={() => {
+                                              setTaskToEdit(task);
+                                              setEditTaskDate(lessonDate ? format(lessonDate, 'yyyy-MM-dd') : format(new Date(), 'yyyy-MM-dd'));
+                                              setEditTaskDuration(task.suggestedDuration?.toString() || '30');
+                                            }}
+                                            className="text-xs text-blue-600 hover:text-blue-800 font-bold bg-blue-50 px-2 py-1 rounded"
+                                          >
+                                            Editar
+                                          </button>
+                                          <button
+                                            onClick={() => handleDeleteTask(task.id)}
+                                            className="text-xs text-red-600 hover:text-red-800 font-bold bg-red-50 px-2 py-1 rounded"
+                                          >
+                                            Excluir
+                                          </button>
+                                        </>
+                                      )}
+                                      <span className={cn("px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider", isCompleted ? "bg-emerald-100 text-emerald-700" : "bg-orange-100 text-orange-700")}>
+                                        {isCompleted ? 'Concluído' : 'Pendente'}
+                                      </span>
+                                    </div>
                                   </div>
                                   
                                   <div className={cn("p-4 rounded-xl border", isCompleted ? "bg-emerald-50 border-emerald-100" : "bg-orange-50 border-orange-100")}>
@@ -773,6 +1101,9 @@ export default function ClassDiary({ profile, initialStudentId, initialLessonId 
                                      </p>
                                      {topic?.moduleName && (
                                         <p className={cn("text-[10px] uppercase font-bold tracking-wider mb-2", isCompleted ? "text-emerald-600" : "text-orange-600")}>{topic.moduleName}</p>
+                                     )}
+                                     {topic?.description && (
+                                        <p className="text-xs text-zinc-600 mb-3 line-clamp-2">{topic.description}</p>
                                      )}
                                      <p className={cn("text-xs font-medium flex items-center gap-1.5", isCompleted ? "text-emerald-700" : "text-orange-700")}>
                                         <Clock className="w-3.5 h-3.5" /> {isCompleted ? 'Praticou por' : 'Sugerido:'} {task.suggestedDuration || 30} min
@@ -792,6 +1123,46 @@ export default function ClassDiary({ profile, initialStudentId, initialLessonId 
           )}
         </div>
       </div>
+
+      {taskToEdit && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm overflow-y-auto">
+          <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl relative my-8">
+            <button onClick={() => setTaskToEdit(null)} className="absolute top-6 right-6 p-2 text-zinc-400 hover:text-black hover:bg-zinc-100 rounded-full transition-colors">
+              <X className="w-5 h-5" />
+            </button>
+            <h3 className="text-xl font-bold display-font text-zinc-900 mb-6">Editar Tarefa</h3>
+            <form onSubmit={handleEditTaskSubmit} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-zinc-700 mb-1 ml-1">Nova Data</label>
+                <input 
+                  type="date"
+                  required
+                  value={editTaskDate}
+                  onChange={(e) => setEditTaskDate(e.target.value)}
+                  className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-zinc-700 mb-1 ml-1">Duração Sugerida (min)</label>
+                <input 
+                  type="number"
+                  min="1"
+                  required
+                  value={editTaskDuration}
+                  onChange={(e) => setEditTaskDuration(e.target.value)}
+                  className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                />
+              </div>
+              <button 
+                type="submit"
+                className="w-full bg-emerald-500 text-white font-bold py-3 rounded-xl hover:bg-emerald-600 transition-colors mt-2"
+              >
+                Salvar Alterações
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
     </>
   );
 }

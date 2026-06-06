@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.recordMonthlyFirebaseCost = exports.getInfrastructureCosts = exports.checkStudentStatus = exports.manualHolidayReminderRoutine = exports.holidayReminderRoutineDaily = exports.notifyTrialLesson = exports.notifyNewMaterial = exports.onUserDeleted = exports.manualPedagogicalRoutine = exports.pedagogicalRoutineDaily = exports.notifyStudentEvaluation = exports.requestPasswordResetWhatsApp = exports.createStudentUser = exports.notifyMaterialUnlocked = exports.provideNewRescheduleSlots = exports.rejectRescheduleSlots = exports.confirmReschedule = exports.getRescheduleData = exports.registerTeacherAbsence = exports.manualFinancialRoutine = exports.financialRoutineDaily = void 0;
+exports.getDebugLogsHttp = exports.cleanEmojis = exports.recordMonthlyFirebaseCost = exports.getInfrastructureCosts = exports.checkStudentStatus = exports.manualHolidayReminderRoutine = exports.holidayReminderRoutineDaily = exports.notifyTrialLesson = exports.notifyNewMaterial = exports.onUserDeleted = exports.manualPedagogicalRoutine = exports.pedagogicalRoutineDaily = exports.notifyStudentEvaluation = exports.requestPasswordResetWhatsApp = exports.createStudentUser = exports.notifyMaterialUnlocked = exports.provideNewRescheduleSlots = exports.rejectRescheduleSlots = exports.confirmReschedule = exports.getRescheduleData = exports.registerTeacherAbsence = exports.manualFinancialRoutine = exports.financialRoutineDaily = void 0;
 const functions = require("firebase-functions/v1");
 const admin = require("firebase-admin");
 const firestore_1 = require("firebase-admin/firestore");
@@ -1005,23 +1005,35 @@ exports.notifyNewMaterial = functions.https.onCall(async (data, context) => {
     return { success: true };
 });
 exports.notifyTrialLesson = functions.https.onCall(async (data, context) => {
-    var _a;
     if (!context.auth)
         throw new functions.https.HttpsError('unauthenticated', 'Acesso negado');
     const { lessonId } = data;
     if (!lessonId)
         throw new functions.https.HttpsError('invalid-argument', 'lessonId é obrigatório');
+    await db.collection('debug_logs').add({ event: 'notifyTrialLesson_entered', lessonId, timestamp: admin.firestore.FieldValue.serverTimestamp() });
     const lessonDoc = await db.collection('lessons').doc(lessonId).get();
     if (!lessonDoc.exists)
         throw new functions.https.HttpsError('not-found', 'Aula não encontrada');
     const lessonData = lessonDoc.data();
-    if (!lessonData.isTrial)
+    if (!lessonData.isTrial) {
+        await db.collection('debug_logs').add({ event: 'notifyTrialLesson_not_trial', lessonId, timestamp: admin.firestore.FieldValue.serverTimestamp() });
         return { success: false, reason: 'Não é aula teste' };
+    }
     // Settings
     const settingsSnap = await db.collection('settings').doc('integrations').get();
     const settings = settingsSnap.exists ? settingsSnap.data() : null;
-    if (!(settings === null || settings === void 0 ? void 0 : settings.zapiInstance) || !(settings === null || settings === void 0 ? void 0 : settings.zapiToken)) {
-        return { success: false, reason: 'Z-API não configurada' };
+    const isApiz = (settings === null || settings === void 0 ? void 0 : settings.whatsappEngine) === 'apiz';
+    if (isApiz) {
+        if (!(settings === null || settings === void 0 ? void 0 : settings.apizUrl) || !(settings === null || settings === void 0 ? void 0 : settings.apizToken)) {
+            await db.collection('debug_logs').add({ event: 'notifyTrialLesson_no_apiz', lessonId, timestamp: admin.firestore.FieldValue.serverTimestamp() });
+            return { success: false, reason: 'ApiZ não configurada' };
+        }
+    }
+    else {
+        if (!(settings === null || settings === void 0 ? void 0 : settings.zapiInstance) || !(settings === null || settings === void 0 ? void 0 : settings.zapiToken)) {
+            await db.collection('debug_logs').add({ event: 'notifyTrialLesson_no_zapi', lessonId, timestamp: admin.firestore.FieldValue.serverTimestamp() });
+            return { success: false, reason: 'Z-API não configurada' };
+        }
     }
     const teacherDoc = await db.collection('teachers').doc(lessonData.teacherId).get();
     if (!teacherDoc.exists)
@@ -1037,24 +1049,64 @@ exports.notifyTrialLesson = functions.https.onCall(async (data, context) => {
     const dateStr = lessonDate.toLocaleDateString('pt-BR');
     const timeStr = lessonDate.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
     const notificationPromises = [];
-    const url = ((_a = settings.zapiToken) === null || _a === void 0 ? void 0 : _a.startsWith('http')) ? settings.zapiToken : `https://api.z-api.io/instances/${settings.zapiInstance}/token/${settings.zapiToken}/send-text`;
-    const headers = { 'Content-Type': 'application/json' };
-    if (settings.zapiSecurityToken)
-        headers['Client-Token'] = settings.zapiSecurityToken;
     // Notify Teacher
+    await db.collection('debug_logs').add({ event: 'notifyTrialLesson_start', teacherId: lessonData.teacherId, teacherPhone: teacherPhone || null, timestamp: admin.firestore.FieldValue.serverTimestamp() });
     if (teacherPhone) {
-        const tPhone = teacherPhone.replace(/\D/g, '');
-        const tNum = tPhone.length <= 11 ? `55${tPhone}` : tPhone;
-        const msgTeacher = `🔔 *Aviso do Sistema Avance*\n\nOlá, *${teacherName.split(' ')[0]}*! Uma nova *Aula Teste* de ${instrument} foi agendada para você com o(a) aluno(a) prospecto *${studentName}* no dia *${dateStr} às ${timeStr}*.`;
-        const promise = fetch(url, { method: 'POST', headers, body: JSON.stringify({ phone: tNum, message: msgTeacher }) }).catch(e => console.error(e));
-        notificationPromises.push(promise);
+        const templateSnap = await db.collection('templates').where('type', '==', 'trial_lesson_teacher').get();
+        let customTemplate = null;
+        let isAutomatic = true;
+        if (!templateSnap.empty) {
+            const templates = templateSnap.docs.map(d => d.data());
+            templates.sort((a, b) => {
+                var _a, _b, _c, _d;
+                const tA = ((_a = a.updatedAt) === null || _a === void 0 ? void 0 : _a.toDate()) || ((_b = a.createdAt) === null || _b === void 0 ? void 0 : _b.toDate()) || new Date(0);
+                const tB = ((_c = b.updatedAt) === null || _c === void 0 ? void 0 : _c.toDate()) || ((_d = b.createdAt) === null || _d === void 0 ? void 0 : _d.toDate()) || new Date(0);
+                return tB.getTime() - tA.getTime();
+            });
+            const templateData = templates[0];
+            if (templateData.isAutomatic === false) {
+                isAutomatic = false;
+            }
+            customTemplate = templateData.content;
+            await db.collection('debug_logs').add({ event: 'notifyTrialLesson_template_check', isAutomatic, hasCustomTemplate: !!customTemplate, timestamp: admin.firestore.FieldValue.serverTimestamp() });
+        }
+        else {
+            await db.collection('debug_logs').add({ event: 'notifyTrialLesson_no_template_found', timestamp: admin.firestore.FieldValue.serverTimestamp() });
+        }
+        if (isAutomatic) {
+            let msgTeacher = '';
+            if (customTemplate) {
+                msgTeacher = customTemplate
+                    .replace(/{professor}/g, teacherName.split(' ')[0])
+                    .replace(/{aluno}/g, studentName.split(' ')[0])
+                    .replace(/{instrumento}/g, instrument)
+                    .replace(/{data}/g, dateStr)
+                    .replace(/{hora}/g, timeStr);
+                msgTeacher = `🔔 *Aviso do Sistema Avance*\n\n${msgTeacher}`;
+            }
+            else {
+                msgTeacher = `🔔 *Aviso do Sistema Avance*\n\nOlá, *${teacherName.split(' ')[0]}*! Uma nova *Aula Teste* de ${instrument} foi agendada para você com o(a) aluno(a) prospecto *${studentName}* no dia *${dateStr} às ${timeStr}*.`;
+            }
+            await db.collection('debug_logs').add({ event: 'notifyTrialLesson_sending_teacher', phone: teacherPhone, timestamp: admin.firestore.FieldValue.serverTimestamp() });
+            const promise = sendSystemWhatsApp(settings, teacherPhone, msgTeacher).then(async (success) => {
+                await db.collection('debug_logs').add({ event: 'notifyTrialLesson_teacher_result', success, timestamp: admin.firestore.FieldValue.serverTimestamp() });
+            });
+            notificationPromises.push(promise);
+        }
+        else {
+            await db.collection('debug_logs').add({ event: 'notifyTrialLesson_skipped_automatic_false', timestamp: admin.firestore.FieldValue.serverTimestamp() });
+        }
+    }
+    else {
+        await db.collection('debug_logs').add({ event: 'notifyTrialLesson_no_teacher_phone', timestamp: admin.firestore.FieldValue.serverTimestamp() });
     }
     // Notify Student
     if (studentPhone) {
-        const sPhone = studentPhone.replace(/\D/g, '');
-        const sNum = sPhone.length <= 11 ? `55${sPhone}` : sPhone;
         const msgStudent = `🔔 *Aviso do Sistema Avance*\n\nOlá, ${studentName.split(' ')[0]}! Sua aula experimental de *${instrument}* foi confirmada para o dia *${dateStr} às ${timeStr}* com o professor *${teacherName}*.\n\nQualquer dúvida, estamos à disposição!`;
-        const promise = fetch(url, { method: 'POST', headers, body: JSON.stringify({ instanceName: settings.zapiInstance, phone: sNum, message: msgStudent }) }).catch(e => console.error(e));
+        await db.collection('debug_logs').add({ event: 'notifyTrialLesson_sending_student', phone: studentPhone, timestamp: admin.firestore.FieldValue.serverTimestamp() });
+        const promise = sendSystemWhatsApp(settings, studentPhone, msgStudent).then(async (success) => {
+            await db.collection('debug_logs').add({ event: 'notifyTrialLesson_student_result', success, timestamp: admin.firestore.FieldValue.serverTimestamp() });
+        });
         notificationPromises.push(promise);
     }
     await Promise.all(notificationPromises);
@@ -1402,6 +1454,74 @@ exports.recordMonthlyFirebaseCost = functions.pubsub.schedule("15 0 1 * *").time
     catch (e) {
         console.error("Erro na rotina de fechamento BigQuery:", e);
         return null;
+    }
+});
+exports.cleanEmojis = functions.https.onRequest(async (req, res) => {
+    const batch = db.batch();
+    let count = 0;
+    // Clean instruments
+    const instSnap = await db.collection('instruments').get();
+    instSnap.forEach(doc => {
+        const name = doc.data().name;
+        if (name) {
+            const cleanName = name.replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '').trim();
+            if (cleanName !== name) {
+                batch.update(doc.ref, { name: cleanName });
+                count++;
+            }
+        }
+    });
+    // Clean teachers
+    const teachSnap = await db.collection('teachers').get();
+    teachSnap.forEach(doc => {
+        const insts = doc.data().instruments;
+        if (insts && Array.isArray(insts)) {
+            let changed = false;
+            const newInsts = insts.map((i) => {
+                const c = i.replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '').trim();
+                if (c !== i)
+                    changed = true;
+                return c;
+            });
+            if (changed) {
+                batch.update(doc.ref, { instruments: newInsts });
+                count++;
+            }
+        }
+    });
+    // Clean students
+    const stuSnap = await db.collection('students').get();
+    stuSnap.forEach(doc => {
+        const enrs = doc.data().enrollments;
+        if (enrs && Array.isArray(enrs)) {
+            let changed = false;
+            const newEnrs = enrs.map((e) => {
+                if (e.instrument) {
+                    const c = e.instrument.replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '').trim();
+                    if (c !== e.instrument) {
+                        changed = true;
+                        return Object.assign(Object.assign({}, e), { instrument: c });
+                    }
+                }
+                return e;
+            });
+            if (changed) {
+                batch.update(doc.ref, { enrollments: newEnrs });
+                count++;
+            }
+        }
+    });
+    await batch.commit();
+    res.send(`Cleaned ${count} documents from emojis`);
+});
+exports.getDebugLogsHttp = functions.https.onRequest(async (req, res) => {
+    try {
+        const snap = await db.collection('debug_logs').get();
+        const logs = snap.docs.map(d => d.data());
+        res.json(logs);
+    }
+    catch (e) {
+        res.status(500).send(String(e));
     }
 });
 //# sourceMappingURL=index.js.map

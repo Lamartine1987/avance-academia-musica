@@ -476,6 +476,7 @@ export default function Communication() {
       case 'evaluation': return 'Aviso de Nova Avaliação';
       case 'material_added': return 'Novo Material Didático';
       case 'pedagogic_reminder': return 'Lembrete Pedagógico (Professores)';
+      case 'trial_lesson_teacher': return 'Aula Teste (Professor)';
       case 'enrollment_approved': return 'Matrícula Aprovada';
       case 'enrollment_rejected': return 'Matrícula Reprovada';
       case 'pix_payment': return 'PIX / Faturamento (Baixa Automática)';
@@ -1500,6 +1501,7 @@ export default function Communication() {
                       <option value="evaluation">Aviso de Nova Avaliação</option>
                       <option value="material_added">Novo Material Didático</option>
                       <option value="pedagogic_reminder">Lembrete Pedagógico (Professores)</option>
+                      <option value="trial_lesson_teacher">Aula Teste (Professor)</option>
                       <option value="enrollment_approved">Matrícula Aprovada</option>
                       <option value="enrollment_rejected">Matrícula Reprovada</option>
                       <option value="pix_payment">PIX / Faturamento (Baixa Automática)</option>
@@ -1511,7 +1513,7 @@ export default function Communication() {
                   </div>
                   
                   
-                  {['welcome', 'material_added', 'enrollment_approved', 'enrollment_rejected', 'declaration_issued', 'holiday_reminder', 'grace_period_expiry', 'pix_payment'].includes(currentTemplate.type || '') && (
+                  {['welcome', 'material_added', 'enrollment_approved', 'enrollment_rejected', 'declaration_issued', 'holiday_reminder', 'grace_period_expiry', 'pix_payment', 'trial_lesson_teacher'].includes(currentTemplate.type || '') && (
                     <div className="flex flex-col justify-center">
                       <label className="block text-sm font-bold text-zinc-700 mb-2">Disparo Automático</label>
                       <label className="flex items-center cursor-pointer">
@@ -1535,6 +1537,7 @@ export default function Communication() {
                          ['enrollment_approved', 'enrollment_rejected'].includes(currentTemplate.type || '') ? 'O botão Aprovar/Reprovar irá acionar este envio automaticamente.' :
                          currentTemplate.type === 'holiday_reminder' ? 'Se ativo, enviará este alerta no dia anterior ao feriado, apenas para alunos afetados.' :
                          currentTemplate.type === 'pix_payment' ? 'Envia o PIX via WhatsApp sempre que uma nova fatura for gerada.' :
+                         currentTemplate.type === 'trial_lesson_teacher' ? 'Envia essa mensagem ao professor sempre que uma aula teste for agendada para ele.' :
                          'Envia essa mensagem automaticamente quando um novo material for anexado.'}
                       </p>
                     </div>
@@ -1549,9 +1552,14 @@ export default function Communication() {
                     <strong>Dica de Preenchimento:</strong> Você pode usar variáveis que o painel enviará pro WhatsApp do cliente no lugar desse texto. Basta digitar com as chaves, exatamente como mostrado abaixo:<br/>
                     <ul className="list-disc pl-4 mt-2 mb-1 space-y-1">
                       <li><strong>{'{nome}'}</strong> - Primeiro nome do aluno/cliente;</li>
-                      {['enrollment_approved', 'enrollment_rejected', 'pix_payment', 'declaration_issued'].includes(currentTemplate.type || '') && (
+                      {['enrollment_approved', 'enrollment_rejected', 'pix_payment', 'declaration_issued', 'welcome'].includes(currentTemplate.type || '') && (
                         <>
-                          {currentTemplate.type === 'enrollment_approved' && <li><strong>{'{login}'}</strong> - Email/Login de acesso;</li>}
+                          {['enrollment_approved', 'welcome'].includes(currentTemplate.type || '') && (
+                            <>
+                              <li><strong>{'{login}'}</strong> - Email/Login de acesso provisório ao portal;</li>
+                              <li><strong>{'{senha}'}</strong> - Senha provisória gerada automaticamente;</li>
+                            </>
+                          )}
                           {currentTemplate.type === 'enrollment_rejected' && <li><strong>{'{admin_reason}'}</strong> - Motivo da Reprovação anotado pela coordenação;</li>}
                           {currentTemplate.type === 'pix_payment' && <li><strong>{'{link_pix}'}</strong> - Link mágico da fatura com QR Code nativo;</li>}
                           {currentTemplate.type === 'declaration_issued' && <li><strong>{'{link_documento}'}</strong> - Link para baixar o PDF da Declaração;</li>}
@@ -1589,6 +1597,15 @@ export default function Communication() {
                           <li><strong>{'{aluno}'}</strong> - O primeiro nome do aluno que fará a avaliação;</li>
                           <li><strong>{'{professor}'}</strong> - O primeiro nome do professor que ministrará a aula;</li>
                           <li><strong>{'{dias}'}</strong> - Quantidade de dias da última avaliação até a data atual.</li>
+                        </>
+                      )}
+                      {currentTemplate.type === 'trial_lesson_teacher' && (
+                        <>
+                          <li><strong>{'{professor}'}</strong> - O primeiro nome do professor da aula teste;</li>
+                          <li><strong>{'{aluno}'}</strong> - O primeiro nome do aluno prospecto;</li>
+                          <li><strong>{'{instrumento}'}</strong> - O instrumento ou disciplina da aula;</li>
+                          <li><strong>{'{data}'}</strong> - A data da aula no formato dd/mm/aaaa;</li>
+                          <li><strong>{'{hora}'}</strong> - A hora de início da aula.</li>
                         </>
                       )}
                       {currentTemplate.type === 'holiday_reminder' && (

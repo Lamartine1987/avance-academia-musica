@@ -19,6 +19,7 @@ interface LibraryProps {
 export default function Library({ profile }: LibraryProps) {
   const [topics, setTopics] = useState<LibraryTopic[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
+  const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [teacherData, setTeacherData] = useState<Teacher | null>(null);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -51,9 +52,11 @@ const [newModuleName, setNewModuleName] = useState('');
   const [showScheduleModal, setShowScheduleModal] = useState(false);
   const [moduleToUnlock, setModuleToUnlock] = useState<string | null>(null);
   const [showModuleUnlockModal, setShowModuleUnlockModal] = useState(false);
+  const [showTeacherUnlockModal, setShowTeacherUnlockModal] = useState(false);
   const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>([]);
   const [selectedStudentsForSchedule, setSelectedStudentsForSchedule] = useState<string[]>([]);
   const [selectedStudentsForModule, setSelectedStudentsForModule] = useState<string[]>([]);
+  const [selectedTeachersForModule, setSelectedTeachersForModule] = useState<string[]>([]);
   const [expandedModules, setExpandedModules] = useState<string[]>([]);
   const [studyDates, setStudyDates] = useState<string[]>([]);
   const [tempStudyDate, setTempStudyDate] = useState(format(new Date(), 'yyyy-MM-dd'));
@@ -63,6 +66,7 @@ const [newModuleName, setNewModuleName] = useState('');
   const [studyTasks, setStudyTasks] = useState<Lesson[]>([]);
   const [activeSessionTopic, setActiveSessionTopic] = useState<LibraryTopic | null>(null);
   const [activeSessionTask, setActiveSessionTask] = useState<Lesson | null>(null);
+  const [searchTerm, setSearchTerm] = useState('');
 
   const isAdmin = profile.role === 'admin';
   const isTeacher = profile.role === 'teacher';
@@ -167,8 +171,15 @@ const [newModuleName, setNewModuleName] = useState('');
       setInstruments(snap.docs.map(d => ({ id: d.id, ...d.data() } as Instrument)));
     });
 
-    return () => { unsub(); unsubModules(); unsubTasks(); unsubInstruments(); };
-  }, [isStudent, profile.studentId]);
+    let unsubTeachers = () => {};
+    if (isAdmin) {
+      unsubTeachers = onSnapshot(collection(db, 'teachers'), (snap) => {
+        setTeachers(snap.docs.map(d => ({ id: d.id, ...d.data() } as Teacher)));
+      });
+    }
+
+    return () => { unsub(); unsubModules(); unsubTasks(); unsubInstruments(); unsubTeachers(); };
+  }, [isStudent, profile.studentId, isAdmin]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -407,11 +418,11 @@ const [newModuleName, setNewModuleName] = useState('');
   };
 
   const handleStudentToggleForModule = (studentId: string) => {
-    if (selectedStudentsForModule.includes(studentId)) {
-      setSelectedStudentsForModule(prev => prev.filter(id => id !== studentId));
-    } else {
-      setSelectedStudentsForModule(prev => [...prev, studentId]);
-    }
+    setSelectedStudentsForModule(prev => prev.includes(studentId) ? prev.filter(id => id !== studentId) : [...prev, studentId]);
+  };
+
+  const handleTeacherToggleForModule = (teacherId: string) => {
+    setSelectedTeachersForModule(prev => prev.includes(teacherId) ? prev.filter(id => id !== teacherId) : [...prev, teacherId]);
   };
 
   const handleModuleUnlockSubmit = async (e: React.FormEvent) => {
@@ -446,6 +457,35 @@ const [newModuleName, setNewModuleName] = useState('');
     } catch (err) {
       console.error(err);
       showError('Erro ao liberar módulo para alunos.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleUnlockModuleForTeachers = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!moduleToUnlock || selectedTeachersForModule.length === 0) return;
+    setIsSubmitting(true);
+    try {
+      const moduleTopics = topics.filter(t => t.moduleName === moduleToUnlock);
+      const batch = writeBatch(db);
+
+      for (const topic of moduleTopics) {
+        const currentIds = topic.visibleToTeachers || [];
+        const newIdsSet = new Set([...currentIds, ...selectedTeachersForModule]);
+        batch.update(doc(db, 'library', topic.id), {
+          visibleToTeachers: Array.from(newIdsSet)
+        });
+      }
+
+      await batch.commit();
+      setFeedback({ isOpen: true, type: 'success', title: 'Sucesso', message: 'Módulo liberado para os professores com sucesso!' });
+      setShowTeacherUnlockModal(false);
+      setModuleToUnlock('');
+      setSelectedTeachersForModule([]);
+    } catch (error) {
+      console.error('Library.tsx - handleUnlockModuleForTeachers', error);
+      showError('Erro ao liberar módulo para professores.');
     } finally {
       setIsSubmitting(false);
     }
@@ -622,6 +662,43 @@ setNewModuleName('');
     setActiveSessionTopic(topic);
     setActiveSessionTask(nextTask || null);
   };
+      const isModuleVisible = (moduleName: string) => {
+    if (profile.role === 'admin') return true;
+    if (isStudent) return true; // Students already have topics filtered by visibleToStudents
+    if (teacherData?.canManageLibrary) return true;
+
+    const teacherInsts = teacherData?.instruments || [];
+    
+    const moduleDef = libraryModules.find(m => m.name === moduleName);
+    const isExplicitlyVisibleToTeacher = topics.some(t => 
+      t.moduleName === moduleName && 
+      t.visibleToTeachers?.includes(profile.teacherId as string)
+    );
+    if (isExplicitlyVisibleToTeacher) return true;
+    
+    if (moduleDef?.instrument) {
+      return teacherInsts.includes(moduleDef.instrument);
+    }
+    
+    const moduleNameLower = moduleName.toLowerCase();
+    const hasAnyInstrumentInName = instruments.some(inst => 
+      moduleNameLower.includes(inst.name.toLowerCase())
+    );
+
+    if (hasAnyInstrumentInName) {
+      return teacherInsts.some(inst => moduleNameLower.includes(inst.toLowerCase()));
+    }
+
+    return true; // Generic modules visible to all
+  };
+
+  // Filter topics
+  const finalTopics = topics.filter(t => 
+    (t.title.toLowerCase().includes(searchTerm.toLowerCase()) || 
+    (t.description || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+    t.moduleName.toLowerCase().includes(searchTerm.toLowerCase())) &&
+    isModuleVisible(t.moduleName)
+  );
 
   if (loading) {
     return (
@@ -632,14 +709,14 @@ setNewModuleName('');
   }
 
   // Group topics by module
-  const groupedTopics = topics.reduce((acc, topic) => {
+  const groupedTopics = finalTopics.reduce((acc, topic) => {
     if (!acc[topic.moduleName]) acc[topic.moduleName] = [];
     acc[topic.moduleName].push(topic);
     return acc;
   }, {} as Record<string, LibraryTopic[]>);
 
   // Get unique module names for autocomplete
-  const existingModules = Array.from(new Set(topics.map(t => t.moduleName)));
+  const existingModules = Array.from(new Set(finalTopics.map(t => t.moduleName)));
 
   return (
     <div className="w-full max-w-7xl mx-auto space-y-6">
@@ -1095,6 +1172,78 @@ setNewModuleName('');
         )}
       </AnimatePresence>
 
+      {/* Modal de Liberação de Módulo para Professores */}
+      <AnimatePresence>
+        {showTeacherUnlockModal && moduleToUnlock && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm overflow-y-auto">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-[32px] p-8 max-w-lg w-full shadow-2xl relative my-8 border-t-8 border-orange-500"
+            >
+              <button
+                onClick={() => setShowTeacherUnlockModal(false)}
+                className="absolute top-6 right-6 p-2 text-zinc-400 hover:text-black hover:bg-zinc-100 rounded-full transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+
+              <div className="mb-6">
+                <div className="w-12 h-12 bg-orange-100 text-orange-600 rounded-2xl flex items-center justify-center mb-4">
+                  <LockOpen className="w-6 h-6" />
+                </div>
+                <h3 className="text-2xl font-bold display-font text-zinc-900">Liberar Módulo para Professores</h3>
+                <p className="text-zinc-500 text-sm mt-1">Conceda acesso ao módulo <strong>{moduleToUnlock}</strong> para professores específicos.</p>
+              </div>
+
+              <form onSubmit={handleUnlockModuleForTeachers} className="space-y-6">
+                <div className="bg-zinc-50 p-4 rounded-[24px] border border-zinc-200">
+                  <h4 className="text-sm font-bold text-zinc-900 mb-3 ml-1">Selecione os Professores</h4>
+                  <div className="max-h-60 overflow-y-auto space-y-2 pr-2">
+                    {teachers.map(teacher => {
+                      const isSelected = selectedTeachersForModule.includes(teacher.id);
+                      return (
+                        <label key={teacher.id} className={`flex items-center gap-3 p-3 rounded-xl cursor-pointer transition-colors border border-transparent hover:bg-white hover:border-zinc-200`}>
+                          <input 
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => handleTeacherToggleForModule(teacher.id)}
+                            className="w-4 h-4 text-orange-500 border-zinc-300 rounded focus:ring-orange-500"
+                          />
+                          <div className="flex flex-col">
+                            <span className="text-sm font-bold text-zinc-700">{teacher.name}</span>
+                            <span className="text-xs text-zinc-500">{teacher.instruments.join(', ')}</span>
+                          </div>
+                        </label>
+                      );
+                    })}
+                    {teachers.length === 0 && <p className="text-sm text-zinc-500 italic p-2">Nenhum professor ativo encontrado.</p>}
+                  </div>
+                </div>
+
+                <div className="flex justify-end gap-3">
+                  <button
+                     type="button"
+                     onClick={() => setShowTeacherUnlockModal(false)}
+                     className="px-6 py-3 rounded-2xl text-sm font-bold text-zinc-600 hover:bg-zinc-100 transition-all"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSubmitting}
+                    className="bg-orange-500 text-white px-8 py-3 rounded-2xl font-bold hover:bg-orange-600 transition-all shadow-lg hover:shadow-orange-500/25 active:scale-95 disabled:opacity-50 flex items-center gap-2"
+                  >
+                    {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Confirmar Liberação'}
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       {/* Modal de Gerenciamento de Módulos (Admin) */}
       <AnimatePresence>
         {showModulesModal && (
@@ -1288,6 +1437,21 @@ setNewModuleName('');
                     </div>
                   </div>
                   <div className="flex items-center gap-4">
+                    {isAdmin && (
+                      <button
+                        onClick={(e) => { 
+                          e.stopPropagation(); 
+                          setModuleToUnlock(moduleName);
+                          setSelectedTeachersForModule([]);
+                          setShowTeacherUnlockModal(true);
+                        }}
+                        className="hidden md:flex items-center gap-1.5 py-2 px-3 bg-orange-50 text-orange-700 rounded-xl text-xs font-bold hover:bg-orange-100 transition-all border border-orange-100"
+                        title="Liberar Módulo para Professores"
+                      >
+                        <LockOpen className="w-4 h-4" />
+                        Para Professores
+                      </button>
+                    )}
                     {(isAdmin || isTeacher) && (
                       <button
                         onClick={(e) => { e.stopPropagation(); openModuleUnlockModal(moduleName); }}

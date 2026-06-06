@@ -244,13 +244,16 @@ service cloud.firestore {
     }
 
     function isValidPayment(data) {
-      return hasOnlyAllowedFields(['studentId', 'studentName', 'amount', 'dueDate', 'month', 'year', 'status', 'whatsappSent', 'createdAt', 'paidAt']) &&
+      return hasOnlyAllowedFields(['studentId', 'studentName', 'amount', 'dueDate', 'month', 'year', 'status', 'whatsappSent', 'createdAt', 'paidAt', 'penaltyPaid', 'interestPaid', 'amountPaid']) &&
              data.studentId is string && data.studentName is string && data.amount is number &&
              data.dueDate is string && data.month is number && data.year is number &&
              data.status in ['pending', 'paid', 'overdue', 'cancelled'] &&
              data.whatsappSent is list &&
              (!('paidAt' in data) || data.paidAt is timestamp) &&
-             (!('createdAt' in data) || data.createdAt is timestamp);
+             (!('createdAt' in data) || data.createdAt is timestamp) &&
+             (!('penaltyPaid' in data) || data.penaltyPaid is number) &&
+             (!('interestPaid' in data) || data.interestPaid is number) &&
+             (!('amountPaid' in data) || data.amountPaid is number);
     }
 
     function isValidExpense(data) {
@@ -267,7 +270,7 @@ service cloud.firestore {
       return hasOnlyAllowedFields(['title', 'content', 'type', 'isAutomatic', 'createdAt']) &&
              data.title is string && data.title.size() > 0 &&
              data.content is string && data.content.size() > 0 &&
-             data.type in ['welcome', 'promo', 'reminder_predue', 'reminder_due', 'reminder_overdue', 'custom', 'reschedule', 'evaluation', 'pedagogic_reminder', 'material_added', 'enrollment_approved', 'enrollment_rejected', 'pix_payment', 'declaration_issued', 'holiday_reminder', 'grace_period_expiry'] &&
+             data.type in ['welcome', 'promo', 'reminder_predue', 'reminder_due', 'reminder_overdue', 'custom', 'reschedule', 'evaluation', 'pedagogic_reminder', 'material_added', 'enrollment_approved', 'enrollment_rejected', 'pix_payment', 'declaration_issued', 'holiday_reminder', 'grace_period_expiry', 'trial_lesson_teacher'] &&
              data.isAutomatic is bool &&
              (!('createdAt' in data) || data.createdAt is timestamp);
     }
@@ -326,7 +329,7 @@ service cloud.firestore {
     }
 
     function isValidLibraryTopic(data) {
-      return hasOnlyAllowedFields(['moduleName', 'title', 'url', 'type', 'description', 'instrument', 'createdBy', 'createdByName', 'visibleToStudents', 'createdAt']) &&
+      return hasOnlyAllowedFields(['moduleName', 'title', 'url', 'type', 'description', 'instrument', 'createdBy', 'createdByName', 'visibleToStudents', 'visibleToTeachers', 'createdAt']) &&
              data.moduleName is string && data.moduleName.size() > 0 &&
              data.title is string && data.title.size() > 0 &&
              data.url is string &&
@@ -336,6 +339,7 @@ service cloud.firestore {
              (!('createdBy' in data) || data.createdBy is string) &&
              (!('createdByName' in data) || data.createdByName is string) &&
              data.visibleToStudents is list &&
+             (!('visibleToTeachers' in data) || data.visibleToTeachers is list) &&
              (!('createdAt' in data) || data.createdAt is timestamp);
     }
 
@@ -346,12 +350,24 @@ service cloud.firestore {
              (!('createdAt' in data) || data.createdAt is timestamp);
     }
 
+    function isValidSchoolAgendaEvent(data) {
+      return hasOnlyAllowedFields(['title', 'eventType', 'date', 'endDate', 'startTime', 'endTime', 'description', 'createdAt']) &&
+             data.title is string && data.title.size() > 0 &&
+             data.eventType is string && data.eventType.size() > 0 &&
+             data.date is string &&
+             (!('endDate' in data) || data.endDate == null || data.endDate is string) &&
+             data.startTime is string &&
+             data.endTime is string &&
+             (!('description' in data) || data.description == null || data.description is string) &&
+             (!('createdAt' in data) || data.createdAt is timestamp);
+    }
+
     // ===============================================================
     // Rules
     // ===============================================================
 
     match /users/{uid} {
-      allow read: if isAuthenticated();
+      allow read: if isAdmin() || isTeacher() || isOwner(uid);
       allow create: if isAuthenticated() && (
         (isOwner(uid) && isValidUser(request.resource.data) && request.resource.data.role != 'admin') ||
         (isAdmin() && isValidUser(request.resource.data))
@@ -375,7 +391,7 @@ service cloud.firestore {
     }
 
     match /lessons/{lessonId} {
-      allow read: if isAdmin() || (isAuthenticated() && (resource == null || isLessonTeacher(resource.data.teacherId) || isLessonStudent(resource.data.studentId)));
+      allow read: if isAdmin() || isAuthenticated();
       allow create: if (
         (isAdmin() || isLessonTeacher(request.resource.data.teacherId)) && isValidLesson(request.resource.data)
       ) || (
@@ -408,7 +424,7 @@ service cloud.firestore {
     }
 
     match /payments/{paymentId} {
-      allow read: if isAuthenticated();
+      allow read: if isAdmin() || (isAuthenticated() && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && resource != null && resource.data.studentId == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.studentId);
       allow create, update: if isAdmin() && isValidPayment(request.resource.data);
       allow delete: if isAdmin();
     }
@@ -520,6 +536,17 @@ service cloud.firestore {
 
     match /firebase_costs/{costId} {
       allow read: if isAdmin();
+    }
+
+    match /school_agenda_events/{eventId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isAdmin() && isValidSchoolAgendaEvent(request.resource.data);
+      allow delete: if isAdmin();
+    }
+    
+    match /debug_logs/{logId} {
+      allow read: if isAdmin();
+      allow write: if false;
     }
   }
 }

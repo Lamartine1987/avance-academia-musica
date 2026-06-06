@@ -222,10 +222,29 @@ export interface Evaluation {
 export interface SchoolEvent {
   id: string;
   title: string;
-  type: 'holiday' | 'recess';
+  type: 'holiday' | 'recess' | 'event';
   date: string; // YYYY-MM-DD
   endDate?: string; // YYYY-MM-DD
   isEnabled: boolean;
+  description?: string;
+  createdAt: any;
+}
+
+export interface SchoolAgendaEventType {
+  id: string;
+  name: string;
+  color: string;
+  icon: string;
+}
+
+export interface SchoolAgendaEvent {
+  id: string;
+  title: string;
+  eventType: string;
+  date: string; // YYYY-MM-DD
+  endDate?: string; // YYYY-MM-DD
+  startTime: string; // HH:mm
+  endTime: string; // HH:mm
   description?: string;
   createdAt: any;
 }
@@ -251,6 +270,7 @@ export interface LibraryTopic {
   createdBy: string;
   createdByName: string;
   visibleToStudents?: string[]; // IDs dos alunos
+  visibleToTeachers?: string[];
   createdAt: any;
 }
 
@@ -264,6 +284,7 @@ export interface LibraryModule {
 export interface TeacherPaymentSettings {
   paymentDates: number[]; // e.g. [5, 15, 25]
   amountPerStudent: number; // e.g. 80.00
+  amountPerStudentVIP: number; // e.g. 100.00
   amountPerTrialLesson: number; // e.g. 80.00
 }
 

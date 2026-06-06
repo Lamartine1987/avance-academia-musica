@@ -34,7 +34,7 @@ export default function SchoolCalendar({ profile }: SchoolCalendarProps) {
   
   // Form State
   const [title, setTitle] = useState('');
-  const [type, setType] = useState<'holiday' | 'recess'>('holiday');
+  const [type, setType] = useState<'holiday' | 'recess' | 'event'>('holiday');
   const [date, setDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [description, setDescription] = useState('');
@@ -55,8 +55,8 @@ export default function SchoolCalendar({ profile }: SchoolCalendarProps) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title || !date) return;
-    if (type === 'recess' && !endDate) return;
+    if (title === '' || date === '') return;
+    if (type === 'recess' && endDate === '') return;
 
     setIsSubmitting(true);
     try {
@@ -201,7 +201,7 @@ export default function SchoolCalendar({ profile }: SchoolCalendarProps) {
             <CalendarDays className="w-6 h-6 text-orange-500" /> Calendário Escolar
           </h2>
           <p className="text-zinc-500 text-sm mt-1 leading-relaxed">
-            Acompanhe os feriados e períodos de recesso da instituição.
+            Acompanhe os feriados, recessos e eventos da instituição.
           </p>
         </div>
         
@@ -323,7 +323,7 @@ export default function SchoolCalendar({ profile }: SchoolCalendarProps) {
                   <CalendarDays className="w-8 h-8 text-orange-500" />
                 </div>
                 <h3 className="text-2xl font-bold display-font text-zinc-900">Novo Evento</h3>
-                <p className="text-zinc-500 text-sm mt-1">Adicione um feriado ou período de recesso.</p>
+                <p className="text-zinc-500 text-sm mt-1">Adicione um feriado, recesso ou evento da escola.</p>
               </div>
 
               <form onSubmit={handleSubmit} className="space-y-5">
@@ -343,17 +343,18 @@ export default function SchoolCalendar({ profile }: SchoolCalendarProps) {
                   <label className="block text-sm font-medium text-zinc-700 mb-1 ml-1">Tipo de Evento</label>
                   <select
                     value={type}
-                    onChange={(e) => setType(e.target.value as 'holiday' | 'recess')}
+                    onChange={(e) => setType(e.target.value as 'holiday' | 'recess' | 'event')}
                     className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 transition-all font-medium"
                   >
                     <option value="holiday">Feriado (1 ou mais dias)</option>
                     <option value="recess">Recesso Escolar / Férias</option>
+                    <option value="event">Evento (Workshop, Audição, Ensaio, etc.)</option>
                   </select>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-zinc-700 mb-1 ml-1">Data {endDate || type === 'recess' ? 'de Início' : ''}</label>
+                    <label className="block text-sm font-medium text-zinc-700 mb-1 ml-1">Data {(endDate || type === 'recess' || type === 'event') ? 'de Início' : ''}</label>
                     <input
                       type="date"
                       required
@@ -363,7 +364,7 @@ export default function SchoolCalendar({ profile }: SchoolCalendarProps) {
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-zinc-700 mb-1 ml-1">Data Final {type === 'holiday' && <span className="text-zinc-400 font-normal">(Opcional para feriados)</span>}</label>
+                    <label className="block text-sm font-medium text-zinc-700 mb-1 ml-1">Data Final {type !== 'recess' && <span className="text-zinc-400 font-normal">(Opcional para {type === 'event' ? 'eventos' : 'feriados'})</span>}</label>
                     <input
                       type="date"
                       required={type === 'recess'}
@@ -464,6 +465,7 @@ export default function SchoolCalendar({ profile }: SchoolCalendarProps) {
 
 function EventCard({ event, isAdmin, onToggle, onDelete }: { event: SchoolEvent, isAdmin: boolean, onToggle: () => void, onDelete: () => void }) {
   const isRecess = event.type === 'recess';
+  const isEvent = event.type === 'event';
   
   const formatDate = (dateStr: string) => {
     const [y, m, d] = dateStr.split('-');
@@ -488,8 +490,8 @@ function EventCard({ event, isAdmin, onToggle, onDelete }: { event: SchoolEvent,
           <h3 className={`text-lg font-bold leading-tight flex items-center gap-2 ${event.isEnabled ? 'text-zinc-900' : 'text-zinc-500 line-through decoration-red-500/50'}`}>
              {event.title}
           </h3>
-          <p className="text-xs text-orange-500 font-bold uppercase tracking-wider mt-1 bg-orange-50 w-fit px-2 py-0.5 rounded-lg">
-            {isRecess ? 'Recesso Escolar' : 'Feriado'}
+          <p className={`text-xs font-bold uppercase tracking-wider mt-1 w-fit px-2 py-0.5 rounded-lg ${isEvent ? 'text-indigo-600 bg-indigo-50' : 'text-orange-500 bg-orange-50'}`}>
+            {isEvent ? 'Evento Escolar' : isRecess ? 'Recesso Escolar' : 'Feriado'}
           </p>
         </div>
       </div>

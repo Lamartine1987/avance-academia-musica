@@ -28,6 +28,7 @@ export default function Schedule({ profile, onNavigateToDiary, onNavigateToEvalu
   
   const [isAbsenceModalOpen, setIsAbsenceModalOpen] = useState(false);
   const [isSubmittingAbsence, setIsSubmittingAbsence] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [newAbsence, setNewAbsence] = useState({
     teacherId: '',
     startDate: format(new Date(), 'yyyy-MM-dd'),
@@ -263,11 +264,16 @@ export default function Schedule({ profile, onNavigateToDiary, onNavigateToEvalu
 
   const handleAddLesson = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (profile.role !== 'admin' && profile.role !== 'teacher') return;
+    if (profile.role !== 'admin') return;
     
     try {
       const start = new Date(`${newLesson.date}T${newLesson.time}`);
       const end = new Date(start.getTime() + parseInt(newLesson.duration) * 60000);
+
+      if (newLesson.isTrial && start.getTime() < Date.now()) {
+        setFormError('Não é permitido agendar uma Aula Teste em datas ou horários passados.');
+        return;
+      }
 
       // Check for blocked times
       const isBlocked = blockedTimes.some(bt => {
@@ -304,6 +310,8 @@ export default function Schedule({ profile, onNavigateToDiary, onNavigateToEvalu
         return;
       }
 
+      setIsSubmitting(true);
+
       const student = students.find(s => s.id === newLesson.studentId);
       const enrollment = student?.enrollments.find(e => e.teacherId === newLesson.teacherId);
 
@@ -338,9 +346,6 @@ export default function Schedule({ profile, onNavigateToDiary, onNavigateToEvalu
       } else {
         const docRef = await addDoc(collection(db, 'lessons'), lessonData);
         
-        setIsModalOpen(false);
-        setFormError(null);
-
         if (newLesson.isTrial && Number(schoolSettings.trialClassValue) > 0) {
           try {
             await addDoc(collection(db, 'payments'), {
@@ -363,6 +368,8 @@ export default function Schedule({ profile, onNavigateToDiary, onNavigateToEvalu
           try {
             const fn = httpsCallable(getFunctions(), 'notifyTrialLesson');
             await fn({ lessonId: docRef.id });
+            setIsModalOpen(false);
+            setFormError(null);
             setFeedback({
               isOpen: true,
               type: 'success',
@@ -371,6 +378,8 @@ export default function Schedule({ profile, onNavigateToDiary, onNavigateToEvalu
             });
           } catch (e) {
             console.error('Erro ao notificar aula teste:', e);
+            setIsModalOpen(false);
+            setFormError(null);
             setFeedback({
               isOpen: true,
               type: 'warning',
@@ -379,6 +388,8 @@ export default function Schedule({ profile, onNavigateToDiary, onNavigateToEvalu
             });
           }
         } else {
+          setIsModalOpen(false);
+          setFormError(null);
           setFeedback({
             isOpen: true,
             type: 'success',
@@ -389,6 +400,8 @@ export default function Schedule({ profile, onNavigateToDiary, onNavigateToEvalu
       }
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, 'lessons');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -1613,10 +1626,15 @@ export default function Schedule({ profile, onNavigateToDiary, onNavigateToEvalu
                 </div>
               </div>
                 <button 
-                  type="submit"
-                  className="w-full bg-gradient-to-r from-orange-500 to-amber-500 text-white py-4 rounded-2xl font-bold hover:from-orange-600 hover:to-amber-600 transition-all shadow-lg shadow-orange-500/25 active:scale-[0.98] mt-4"
+                  type="submit" 
+                  className="w-full bg-gradient-to-r from-orange-500 to-amber-500 text-white py-4 rounded-2xl font-bold hover:from-orange-600 hover:to-amber-600 transition-all shadow-lg shadow-orange-500/25 active:scale-[0.98] mt-4 disabled:opacity-50 disabled:cursor-not-allowed"
+                  disabled={isSubmitting}
                 >
-                  Confirmar Agendamento
+                  {isSubmitting ? (
+                    <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin mx-auto"></div>
+                  ) : (
+                    'Confirmar Agendamento'
+                  )}
                 </button>
               </form>
             </div>
@@ -1967,32 +1985,34 @@ export default function Schedule({ profile, onNavigateToDiary, onNavigateToEvalu
               <div className="flex flex-col gap-3">
                 {profile.role !== 'student' && (
                   <>
-                    <button 
-                      onClick={() => {
-                        setIsLessonLogModalOpen(false);
-                        const startDate = toDate(selectedLessonForLog.startTime);
-                        const endDate = toDate(selectedLessonForLog.endTime);
-                        const durationMins = startDate && endDate ? (endDate.getTime() - startDate.getTime()) / 60000 : 60;
-                        
-                        setEditingLessonId(selectedLessonForLog.id);
-                        setNewLesson({
-                          studentId: selectedLessonForLog.isTrial ? 'trial' : selectedLessonForLog.studentId,
-                          teacherId: selectedLessonForLog.teacherId || '',
-                          date: startDate ? format(startDate, 'yyyy-MM-dd') : format(new Date(), 'yyyy-MM-dd'),
-                          time: startDate ? safeFormat(startDate, 'HH:mm') : '09:00',
-                          duration: String(durationMins),
-                          isTrial: !!selectedLessonForLog.isTrial,
-                          studentName: selectedLessonForLog.studentName || '',
-                          studentPhone: selectedLessonForLog.studentPhone || '',
-                          instrument: selectedLessonForLog.instrument || ''
-                        });
-                        setFormError(null);
-                        setIsModalOpen(true);
-                      }}
-                      className="w-full bg-blue-50 text-blue-600 border border-blue-100 py-3.5 rounded-2xl font-bold hover:bg-blue-100 transition-colors flex items-center justify-center gap-2 shadow-sm"
-                    >
-                      <Edit3 className="w-5 h-5" /> Editar Aula
-                    </button>
+                    {profile.role === 'admin' && (
+                      <button 
+                        onClick={() => {
+                          setIsLessonLogModalOpen(false);
+                          const startDate = toDate(selectedLessonForLog.startTime);
+                          const endDate = toDate(selectedLessonForLog.endTime);
+                          const durationMins = startDate && endDate ? (endDate.getTime() - startDate.getTime()) / 60000 : 60;
+                          
+                          setEditingLessonId(selectedLessonForLog.id);
+                          setNewLesson({
+                            studentId: selectedLessonForLog.isTrial ? 'trial' : selectedLessonForLog.studentId,
+                            teacherId: selectedLessonForLog.teacherId || '',
+                            date: startDate ? format(startDate, 'yyyy-MM-dd') : format(new Date(), 'yyyy-MM-dd'),
+                            time: startDate ? safeFormat(startDate, 'HH:mm') : '09:00',
+                            duration: String(durationMins),
+                            isTrial: !!selectedLessonForLog.isTrial,
+                            studentName: selectedLessonForLog.studentName || '',
+                            studentPhone: selectedLessonForLog.studentPhone || '',
+                            instrument: selectedLessonForLog.instrument || ''
+                          });
+                          setFormError(null);
+                          setIsModalOpen(true);
+                        }}
+                        className="w-full bg-blue-50 text-blue-600 border border-blue-100 py-3.5 rounded-2xl font-bold hover:bg-blue-100 transition-colors flex items-center justify-center gap-2 shadow-sm"
+                      >
+                        <Edit3 className="w-5 h-5" /> Editar Aula
+                      </button>
+                    )}
 
                     {onNavigateToDiary && (
                       <button 
@@ -2026,15 +2046,17 @@ export default function Schedule({ profile, onNavigateToDiary, onNavigateToEvalu
                       </button>
                     )}
 
-                    <button
-                      onClick={() => {
-                        setLessonToDelete(selectedLessonForLog);
-                        setIsDeleteLessonConfirmOpen(true);
-                      }}
-                      className="w-full bg-red-50 text-red-500 border border-red-100 py-3.5 rounded-2xl font-bold hover:bg-red-100 transition-colors flex items-center justify-center gap-2 shadow-sm mt-3"
-                    >
-                      <Trash2 className="w-5 h-5" /> Excluir da Agenda
-                    </button>
+                    {profile.role === 'admin' && (
+                      <button
+                        onClick={() => {
+                          setLessonToDelete(selectedLessonForLog);
+                          setIsDeleteLessonConfirmOpen(true);
+                        }}
+                        className="w-full bg-red-50 text-red-500 border border-red-100 py-3.5 rounded-2xl font-bold hover:bg-red-100 transition-colors flex items-center justify-center gap-2 shadow-sm mt-3"
+                      >
+                        <Trash2 className="w-5 h-5" /> Excluir da Agenda
+                      </button>
+                    )}
                   </>
                 )}
                 {profile.role === 'student' && (

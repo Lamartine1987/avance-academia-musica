@@ -73,7 +73,9 @@ import SchoolCalendar from './components/SchoolCalendar';
 import Library from './components/Library';
 import TeacherPayments from './components/TeacherPayments';
 
-type View = 'dashboard' | 'students' | 'teachers' | 'schedule' | 'instruments' | 'profile' | 'financial' | 'communication' | 'materials' | 'library' | 'evaluations' | 'diary' | 'documents' | 'calendar' | 'teacher_payments';
+import SchoolAgenda from './components/SchoolAgenda';
+
+type View = 'dashboard' | 'students' | 'teachers' | 'schedule' | 'instruments' | 'profile' | 'financial' | 'communication' | 'materials' | 'library' | 'evaluations' | 'diary' | 'documents' | 'calendar' | 'teacher_payments' | 'event_agenda';
 
 export default function App() {
   const pathname = window.location.pathname;
@@ -104,7 +106,14 @@ export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
-  const [currentView, setCurrentView] = useState<View>('dashboard');
+  const [currentView, setCurrentView] = useState<View>(() => {
+    const saved = localStorage.getItem('avance_current_view');
+    return (saved as View) || 'dashboard';
+  });
+
+  useEffect(() => {
+    localStorage.setItem('avance_current_view', currentView);
+  }, [currentView]);
   const [diaryInitialLesson, setDiaryInitialLesson] = useState<{ studentId: string, lessonId: string } | null>(null);
   const [evaluationInitialData, setEvaluationInitialData] = useState<{ studentId: string, teacherId: string, instrument: string, date: string } | null>(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -150,6 +159,14 @@ export default function App() {
   const [notifications, setNotifications] = useState<any[]>([]);
   const [showNotifications, setShowNotifications] = useState(false);
   const [schoolSettings, setSchoolSettings] = useState<any>(null);
+  const [schoolAgendaAllowedTeacherIds, setSchoolAgendaAllowedTeacherIds] = useState<string[]>([]);
+
+  useEffect(() => {
+    const unsub = onSnapshot(doc(db, 'settings', 'school_agenda_permissions'), (doc) => {
+      if (doc.exists()) setSchoolAgendaAllowedTeacherIds(doc.data().allowedTeacherIds || []);
+    });
+    return () => unsub();
+  }, []);
   
   // Derived state to ensure real-time synchronization with notifications array
   const unreadCount = notifications.filter((n) => !n.read).length;
@@ -328,6 +345,36 @@ export default function App() {
       if (profileUnsubscribe) profileUnsubscribe();
     };
   }, []);
+
+  useEffect(() => {
+    if (!profile) return;
+    
+    let unsubStudent: (() => void) | undefined;
+    let unsubTeacher: (() => void) | undefined;
+
+    if (profile.role === 'student' && profile.studentId) {
+      unsubStudent = onSnapshot(doc(db, 'students', profile.studentId), async (docSnap) => {
+        if (!docSnap.exists() || docSnap.data().status !== 'active') {
+          setSessionKickedMessage("Sua conta foi desativada ou excluída. Contate a secretaria.");
+          await signOut(auth);
+        }
+      });
+    }
+
+    if (profile.role === 'teacher' && profile.teacherId) {
+      unsubTeacher = onSnapshot(doc(db, 'teachers', profile.teacherId), async (docSnap) => {
+        if (!docSnap.exists()) {
+          setSessionKickedMessage("Seu acesso foi desativado ou excluído. Contate a secretaria.");
+          await signOut(auth);
+        }
+      });
+    }
+
+    return () => {
+      if (unsubStudent) unsubStudent();
+      if (unsubTeacher) unsubTeacher();
+    };
+  }, [profile]);
 
   useEffect(() => {
     if (profile && profile.role === 'teacher' && !['schedule', 'profile', 'materials', 'library', 'evaluations', 'diary', 'calendar'].includes(currentView)) {
@@ -620,10 +667,15 @@ export default function App() {
     { id: 'documents', label: 'Documentos', icon: Folder, roles: ['admin', 'student'] },
     { id: 'evaluations', label: 'Avaliações', icon: Award, roles: ['admin', 'teacher', 'student'] },
     { id: 'calendar', label: 'Calendário Escolar', icon: CalendarDays, roles: ['admin', 'teacher', 'student'] },
+    { id: 'event_agenda', label: 'Agenda de Eventos', icon: CalendarDays, roles: ['admin', 'teacher'] },
     { id: 'financial', label: 'Meu Histórico Financeiro', icon: Wallet, roles: ['admin', 'student'] },
     { id: 'teacher_payments', label: 'Pagamentos Professores', icon: Banknote, roles: ['admin'] },
     { id: 'communication', label: 'Configurações', icon: Settings, roles: ['admin'] },
-  ].filter(item => item.roles.includes(profile.role));
+  ].filter(item => {
+    if (!item.roles.includes(profile.role)) return false;
+    if (item.id === 'event_agenda' && profile.role === 'teacher' && !schoolAgendaAllowedTeacherIds.includes(profile.teacherId || '')) return false;
+    return true;
+  });
 
   return (
     <ErrorBoundary>
@@ -863,6 +915,7 @@ export default function App() {
             {currentView === 'communication' && profile.role === 'admin' && <Communication />}
             {currentView === 'materials' && <Materials profile={profile} />}
             {currentView === 'library' && <Library profile={profile} />}
+            {currentView === 'event_agenda' && <SchoolAgenda profile={profile} />}
             {currentView === 'documents' && (profile.role === 'admin' || profile.role === 'student') && <Documents profile={profile} />}
             {currentView === 'evaluations' && <Evaluations profile={profile} initialData={evaluationInitialData} onInitialDataConsumed={() => setEvaluationInitialData(null)} />}
             {currentView === 'calendar' && <SchoolCalendar profile={profile} />}

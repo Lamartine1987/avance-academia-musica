@@ -3,7 +3,7 @@ import { db } from '../firebase';
 import { collection, query, getDocs, doc, getDoc, setDoc, updateDoc, where, addDoc, deleteDoc } from 'firebase/firestore';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { Payment, IntegrationsSettings, Expense } from '../types';
-import { Loader2, DollarSign, Wallet, AlertCircle, Save, CheckCircle2, PlayCircle, Search, Filter, BarChart3, Users as UsersIcon, TrendingUp, Receipt, Plus, Trash2, Edit2, X, Settings, FileText, ArrowUpRight, ArrowDownRight, Calendar, XCircle, ChevronDown, Check, MoreVertical, FileEdit, Calculator, Eye, User, Phone, Download, Clock, Image as ImageIcon, Send, FileSignature, Link as LinkIcon, Lock, Unlock, Zap, Server, History } from 'lucide-react';
+import { Loader2, DollarSign, Wallet, AlertCircle, Save, CheckCircle2, PlayCircle, Search, Filter, BarChart3, Users as UsersIcon, TrendingUp, Receipt, Plus, Trash2, Edit2, X, Settings, FileText, ArrowUpRight, ArrowDownRight, Calendar, XCircle, ChevronDown, Check, MoreVertical, FileEdit, Calculator, Eye, User, Phone, Download, Clock, Image as ImageIcon, Send, FileSignature, Link as LinkIcon, Lock, Unlock, Zap, Server, History, Info } from 'lucide-react';
 import { format, isThisMonth, isPast, subMonths, startOfMonth, endOfMonth } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, Legend, PieChart, Pie, Cell } from 'recharts';
@@ -204,6 +204,98 @@ export default function Financial({ profile }: { profile?: any }) {
       console.error(e);
     }
     setLoading(false);
+  };
+
+  const handleSendPixWhatsApp = async (payment: Payment) => {
+    setFeedbackModal({ isOpen: true, type: 'loading', title: 'Aguarde', message: 'Preparando envio...' });
+    try {
+      const studentDoc = await getDoc(doc(db, 'students', payment.studentId));
+      if (!studentDoc.exists() || !studentDoc.data().phone) {
+        throw new Error('Telefone do aluno não encontrado.');
+      }
+      const studentPhone = studentDoc.data().phone;
+      const studentName = studentDoc.data().name;
+
+      const tSnap = await getDocs(query(collection(db, 'templates'), where('type', '==', 'pix_payment')));
+      if (tSnap.empty) {
+        throw new Error('Template "PIX / Faturamento" não encontrado nas configurações.');
+      }
+      const template = tSnap.docs[0].data();
+
+      const sSnap = await getDoc(doc(db, 'settings', 'integrations'));
+      if (!sSnap.exists()) {
+        throw new Error('Configurações de integração não encontradas.');
+      }
+      const settings = sSnap.data() as any;
+
+      const isApiz = settings.whatsappEngine === 'apiz';
+      const canSendApiz = isApiz && settings.apizUrl && settings.apizToken;
+      const canSendZapi = !isApiz && settings.zapiInstance && settings.zapiToken;
+
+      if (!canSendApiz && !canSendZapi) {
+        throw new Error('Nenhum motor de WhatsApp configurado ou ativo.');
+      }
+
+      const protocol = window.location.protocol;
+      const host = window.location.host;
+      const paymentLink = `${protocol}//${host}/pagamento/${payment.id}`;
+
+      const variables = {
+          nome: studentName.split(' ')[0],
+          valor: formatCurrency(payment.amount),
+          link_pix: paymentLink
+      };
+
+      const cleanPhone = studentPhone.replace(/\D/g, '');
+      if (cleanPhone.length < 10) throw new Error('Telefone inválido');
+      let number = cleanPhone.length <= 11 ? `55${cleanPhone}` : cleanPhone;
+
+      let msg = template.content;
+      Object.keys(variables).forEach(key => {
+        const regex = new RegExp(`{${key}}`, 'g');
+        msg = msg.replace(regex, variables[key as keyof typeof variables]);
+      });
+
+      msg = `🔔 *Aviso do Sistema Avance*\n\n${msg}`;
+
+      if (isApiz) {
+        const baseUrl = settings.apizUrl?.replace(/\/send-text\/?$/, '').replace(/\/$/, '') || '';
+        const endpoint = `${baseUrl}/send-text`;
+        const payload = {
+             instanceName: settings.apizInstanceName || 'teste-crm',
+             number: number,
+             text: msg
+        };
+        await fetch(endpoint, {
+          method: 'POST',
+          headers: {
+             'Content-Type': 'application/json',
+             'x-api-key': settings.apizToken || ''
+          },
+          body: JSON.stringify(payload)
+        });
+      } else {
+        const headers: any = { 'Content-Type': 'application/json' };
+        if (settings.zapiSecurityToken) {
+          headers['Client-Token'] = settings.zapiSecurityToken;
+        }
+        const url = settings.zapiToken?.startsWith('http') ? settings.zapiToken : `https://api.z-api.io/instances/${settings.zapiInstance}/token/${settings.zapiToken}/send-text`;
+        const payload = {
+          instanceName: settings.zapiInstance,
+          phone: number,
+          message: msg
+        };
+        await fetch(url, {
+          method: 'POST',
+          headers: headers,
+          body: JSON.stringify(payload)
+        });
+      }
+      setFeedbackModal({ isOpen: true, type: 'success', title: 'Enviado!', message: 'A mensagem de cobrança foi encaminhada para o WhatsApp do aluno.' });
+    } catch (error: any) {
+      console.error(error);
+      setFeedbackModal({ isOpen: true, type: 'error', title: 'Erro no Envio', message: error.message || 'Ocorreu um problema ao enviar a cobrança.' });
+    }
   };
 
   const openStudentStatement = async (studentId: string, studentName: string) => {
@@ -482,9 +574,16 @@ export default function Financial({ profile }: { profile?: any }) {
     });
   };
 
-  const cleanOrphanPayments = async () => {
-    if (!window.confirm('Tem certeza que deseja verificar e apagar todas as faturas de alunos que já foram excluídos do sistema? Essa ação não pode ser desfeita.')) return;
-    
+  const cleanOrphanPayments = () => {
+    setConfirmModal({
+      isOpen: true,
+      title: 'Limpar Faturas Órfãs',
+      message: 'Tem certeza que deseja verificar e apagar todas as faturas de alunos que já foram excluídos do sistema? Essa ação não pode ser desfeita.',
+      onConfirm: confirmCleanOrphanPayments
+    });
+  };
+
+  const confirmCleanOrphanPayments = async () => {
     setCleaningOrphans(true);
     try {
       const studentsSnap = await getDocs(collection(db, 'students'));
@@ -1260,6 +1359,41 @@ export default function Financial({ profile }: { profile?: any }) {
 
         return (
           <div className="space-y-4">
+            <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4 flex gap-3 items-start">
+              <div className="p-2 bg-blue-100 rounded-xl text-blue-600 shrink-0">
+                <Info className="w-5 h-5" />
+              </div>
+              <div className="text-sm text-blue-900 leading-relaxed w-full">
+                <strong className="font-bold block mb-1">Envios Automáticos</strong>
+                O sistema já envia automaticamente as faturas e cobranças para os alunos de acordo com o que você definir nas configurações de <strong>Lembretes Automáticos</strong> (na aba Comunicação). Os botões de envio listados nesta tela servem apenas para quando você precisar realizar um <strong>reenvio manual</strong> ou uma segunda via!
+                
+                <div className="mt-4 flex flex-wrap gap-x-6 gap-y-2 items-center bg-blue-100/50 p-3 rounded-xl border border-blue-100">
+                  <span className="font-bold text-blue-800 text-xs mr-1">Legenda de Envios:</span>
+                  <div className="flex items-center gap-2">
+                    <span className="inline-flex items-center gap-1 bg-white text-blue-600 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase shadow-sm border border-blue-100">
+                      <CheckCircle2 className="w-3 h-3" />
+                      PRE-DUE
+                    </span>
+                    <span className="text-xs text-blue-800">Aviso Prévio (antes de vencer)</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="inline-flex items-center gap-1 bg-white text-blue-600 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase shadow-sm border border-blue-100">
+                      <CheckCircle2 className="w-3 h-3" />
+                      DUE
+                    </span>
+                    <span className="text-xs text-blue-800">No dia do Vencimento</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="inline-flex items-center gap-1 bg-white text-blue-600 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase shadow-sm border border-blue-100">
+                      <CheckCircle2 className="w-3 h-3" />
+                      OVERDUE
+                    </span>
+                    <span className="text-xs text-blue-800">Cobrança de Atraso</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             <div className="bg-white p-6 rounded-[32px] ring-1 ring-zinc-950/5 shadow-sm grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4">
               <div className="relative">
                 <Search className="w-4 h-4 text-zinc-400 absolute left-4 top-1/2 -translate-y-1/2" />
@@ -1403,6 +1537,13 @@ export default function Financial({ profile }: { profile?: any }) {
                               Marcar Pago
                             </button>
                           )}
+                          <button 
+                            onClick={() => handleSendPixWhatsApp(payment)}
+                            className="text-zinc-400 hover:text-green-500 transition-colors p-1"
+                            title="Enviar PIX por WhatsApp"
+                          >
+                            <Send className="w-5 h-5" />
+                          </button>
                           <button 
                             onClick={() => handleDeleteInvoice(payment.id)}
                             className="text-zinc-400 hover:text-red-500 transition-colors p-1"

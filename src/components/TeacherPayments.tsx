@@ -19,6 +19,7 @@ export default function TeacherPayments({ profile }: { profile?: any }) {
   const [settings, setSettings] = useState<TeacherPaymentSettings>({
     paymentDates: [5, 15, 25],
     amountPerStudent: 80.00,
+    amountPerStudentVIP: 100.00,
     amountPerTrialLesson: 80.00
   });
   
@@ -57,6 +58,7 @@ export default function TeacherPayments({ profile }: { profile?: any }) {
         setSettings({
           paymentDates: data.paymentDates || [5, 15, 25],
           amountPerStudent: data.amountPerStudent || 80.00,
+          amountPerStudentVIP: data.amountPerStudentVIP || 100.00,
           amountPerTrialLesson: data.amountPerTrialLesson !== undefined ? data.amountPerTrialLesson : 80.00
         });
       }
@@ -130,6 +132,7 @@ export default function TeacherPayments({ profile }: { profile?: any }) {
       const newSettings = { 
         ...settings, 
         amountPerStudent: Number(settings.amountPerStudent), 
+        amountPerStudentVIP: Number(settings.amountPerStudentVIP),
         amountPerTrialLesson: Number(settings.amountPerTrialLesson),
         paymentDates: sortedDates 
       };
@@ -304,6 +307,50 @@ export default function TeacherPayments({ profile }: { profile?: any }) {
   const currentDay = currentDate.getDate();
   const currentCycle = isCurrentMonthYear ? getCycleForDay(currentDay) : null;
 
+  let globalTotalMonth = 0;
+  let globalTotalPaid = 0;
+
+  teachers.forEach(teacher => {
+    const cycleTotals = { 1: 0, 2: 0, 3: 0 };
+    
+    const teacherStudents = students.filter(s => s.enrollments && s.enrollments.some(e => e.teacherId === teacher.id));
+    teacherStudents.forEach(s => {
+      const dueDate = s.dueDate || 5;
+      const cycle = getCycleForDay(dueDate);
+      const amount = s.classType === 'individual' ? settings.amountPerStudentVIP : settings.amountPerStudent;
+      cycleTotals[cycle as 1|2|3] += amount;
+    });
+
+    adjustments.filter(a => a.teacherId === teacher.id).forEach(a => {
+      const day = parseInt(a.date.split('-')[2], 10);
+      const cycle = getCycleForDay(day);
+      cycleTotals[cycle as 1|2|3] += a.amount;
+    });
+
+    trialLessons.forEach(l => {
+      if (l.teacherId === teacher.id) {
+        const day = l.startTime.toDate().getDate();
+        const cycle = getCycleForDay(day);
+        cycleTotals[cycle as 1|2|3] += settings.amountPerTrialLesson;
+      }
+    });
+
+    const paidC1 = paidCycles.find(pc => pc.teacherId === teacher.id && pc.cycle === 1);
+    const paidC2 = paidCycles.find(pc => pc.teacherId === teacher.id && pc.cycle === 2);
+    const paidC3 = paidCycles.find(pc => pc.teacherId === teacher.id && pc.cycle === 3);
+
+    if (paidC1) cycleTotals[1] = paidC1.amount;
+    if (paidC2) cycleTotals[2] = paidC2.amount;
+    if (paidC3) cycleTotals[3] = paidC3.amount;
+
+    globalTotalMonth += (cycleTotals[1] + cycleTotals[2] + cycleTotals[3]);
+    if (paidC1) globalTotalPaid += paidC1.amount;
+    if (paidC2) globalTotalPaid += paidC2.amount;
+    if (paidC3) globalTotalPaid += paidC3.amount;
+  });
+
+  const globalTotalPending = globalTotalMonth - globalTotalPaid;
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
@@ -349,9 +396,9 @@ export default function TeacherPayments({ profile }: { profile?: any }) {
         <div className="bg-white p-6 rounded-[32px] ring-1 ring-zinc-950/5 shadow-xl animate-in fade-in slide-in-from-top-4">
           <h3 className="font-bold text-lg mb-4 text-zinc-900">Configurações de Pagamento</h3>
           <form onSubmit={handleSaveSettings} className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
               <div className="space-y-2">
-                <label className="text-sm font-bold text-zinc-700">Valor Mensal por Aluno</label>
+                <label className="text-sm font-bold text-zinc-700">Valor Mensal por Aluno (Turma)</label>
                 <input
                   type="number"
                   required
@@ -359,6 +406,18 @@ export default function TeacherPayments({ profile }: { profile?: any }) {
                   step="0.01"
                   value={settings.amountPerStudent === 0 ? '' : settings.amountPerStudent}
                   onChange={e => setSettings({...settings, amountPerStudent: e.target.value as any})}
+                  className="w-full px-4 py-3 bg-zinc-50 border border-zinc-100 rounded-2xl focus:outline-none focus:ring-2 focus:ring-orange-500/20"
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-bold text-zinc-700">Valor Mensal (VIP/Individual)</label>
+                <input
+                  type="number"
+                  required
+                  min="0"
+                  step="0.01"
+                  value={settings.amountPerStudentVIP === 0 ? '' : settings.amountPerStudentVIP}
+                  onChange={e => setSettings({...settings, amountPerStudentVIP: e.target.value as any})}
                   className="w-full px-4 py-3 bg-zinc-50 border border-zinc-100 rounded-2xl focus:outline-none focus:ring-2 focus:ring-orange-500/20"
                 />
               </div>
@@ -476,6 +535,31 @@ export default function TeacherPayments({ profile }: { profile?: any }) {
         </div>
       )}
 
+      {/* Global Summary Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+        <div className="bg-white p-6 rounded-[32px] ring-1 ring-zinc-950/5 shadow-xl flex flex-col justify-center relative overflow-hidden">
+          <div className="absolute top-0 right-0 p-6 opacity-5">
+            <Banknote className="w-24 h-24" />
+          </div>
+          <p className="text-sm font-bold text-zinc-500 uppercase tracking-wider mb-1">Total do Mês (Previsto)</p>
+          <p className="text-3xl font-black text-zinc-900">{formatCurrency(globalTotalMonth)}</p>
+        </div>
+        <div className="bg-white p-6 rounded-[32px] ring-1 ring-zinc-950/5 shadow-xl flex flex-col justify-center relative overflow-hidden">
+          <div className="absolute top-0 right-0 p-6 opacity-5">
+            <Banknote className="w-24 h-24 text-emerald-500" />
+          </div>
+          <p className="text-sm font-bold text-emerald-600/80 uppercase tracking-wider mb-1">Já Pago</p>
+          <p className="text-3xl font-black text-emerald-600">{formatCurrency(globalTotalPaid)}</p>
+        </div>
+        <div className="bg-white p-6 rounded-[32px] ring-1 ring-zinc-950/5 shadow-xl flex flex-col justify-center relative overflow-hidden">
+          <div className="absolute top-0 right-0 p-6 opacity-5">
+            <Banknote className="w-24 h-24 text-orange-500" />
+          </div>
+          <p className="text-sm font-bold text-orange-600/80 uppercase tracking-wider mb-1">Pendente</p>
+          <p className="text-3xl font-black text-orange-600">{formatCurrency(globalTotalPending)}</p>
+        </div>
+      </div>
+
       {/* Cycle Indicator */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pb-2">
         {[1, 2, 3].map(cycle => {
@@ -533,7 +617,8 @@ export default function TeacherPayments({ profile }: { profile?: any }) {
             teacherStudents.forEach(s => {
               const dueDate = s.dueDate || 5;
               const cycle = getCycleForDay(dueDate);
-              cycleTotals[cycle as 1|2|3] += settings.amountPerStudent;
+              const amount = s.classType === 'individual' ? settings.amountPerStudentVIP : settings.amountPerStudent;
+              cycleTotals[cycle as 1|2|3] += amount;
               cycleStudents[cycle as 1|2|3].push(s);
             });
 
@@ -628,14 +713,18 @@ export default function TeacherPayments({ profile }: { profile?: any }) {
                             <div className="space-y-3">
                               {studList.length > 0 && (
                                 <div>
-                                  <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider mb-1">Alunos ({studList.length}x {formatCurrency(settings.amountPerStudent)})</p>
+                                  <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider mb-1">Alunos ({studList.length})</p>
                                   <ul className="text-xs text-zinc-600 space-y-1">
-                                    {studList.map(s => (
-                                      <li key={s.id} className="flex justify-between">
-                                        <span className="truncate pr-2">{s.name}</span>
-                                        <span className="text-zinc-400 shrink-0">venc: {s.dueDate}</span>
-                                      </li>
-                                    ))}
+                                    {studList.map(s => {
+                                      const isVIP = s.classType === 'individual';
+                                      const val = isVIP ? settings.amountPerStudentVIP : settings.amountPerStudent;
+                                      return (
+                                        <li key={s.id} className="flex justify-between items-center">
+                                          <span className="truncate pr-2">{s.name} {isVIP && <span className="text-[10px] bg-orange-100 text-orange-700 px-1 py-0.5 rounded ml-1 font-bold">VIP</span>}</span>
+                                          <span className="text-zinc-400 shrink-0 font-medium">{formatCurrency(val)}</span>
+                                        </li>
+                                      );
+                                    })}
                                   </ul>
                                 </div>
                               )}
