@@ -8,6 +8,7 @@ import { ptBR } from 'date-fns/locale';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 import ConfirmModal from './ConfirmModal';
+import FeedbackModal from './FeedbackModal';
 
 interface SchoolAgendaProps {
   profile: UserProfile;
@@ -20,6 +21,12 @@ export default function SchoolAgenda({ profile }: SchoolAgendaProps) {
   const [loading, setLoading] = useState(true);
   
   const [currentDate, setCurrentDate] = useState(new Date());
+  const [feedback, setFeedback] = useState<{isOpen: boolean, type: 'success'|'error'|'warning', title: string, message: string}>({
+    isOpen: false,
+    type: 'success',
+    title: '',
+    message: ''
+  });
   
   // Modals
   const [showEventForm, setShowEventForm] = useState(false);
@@ -112,10 +119,10 @@ export default function SchoolAgenda({ profile }: SchoolAgendaProps) {
         config: { startHour, endHour, visibleDays }
       });
       setShowSettingsForm(false);
-      alert('Configurações salvas com sucesso!');
+      setFeedback({ isOpen: true, type: 'success', title: 'Sucesso!', message: 'Configurações salvas com sucesso!' });
     } catch (err) {
       console.error(err);
-      alert('Erro ao salvar configurações.');
+      setFeedback({ isOpen: true, type: 'error', title: 'Erro', message: 'Erro ao salvar configurações.' });
     }
   };
 
@@ -164,9 +171,10 @@ export default function SchoolAgenda({ profile }: SchoolAgendaProps) {
       }
       setShowEventForm(false);
       resetForm();
+      setFeedback({ isOpen: true, type: 'success', title: 'Sucesso!', message: selectedEvent ? 'Evento atualizado!' : 'Evento criado!' });
     } catch (err) {
       console.error(err);
-      alert('Erro ao salvar evento.');
+      setFeedback({ isOpen: true, type: 'error', title: 'Erro', message: 'Erro ao salvar evento.' });
     } finally {
       setIsSubmitting(false);
     }
@@ -177,9 +185,10 @@ export default function SchoolAgenda({ profile }: SchoolAgendaProps) {
     try {
       await deleteDoc(doc(db, 'school_agenda_events', eventToDelete.id));
       setEventToDelete(null);
+      setFeedback({ isOpen: true, type: 'success', title: 'Sucesso!', message: 'Evento excluído.' });
     } catch (err) {
       console.error(err);
-      alert('Erro ao excluir evento.');
+      setFeedback({ isOpen: true, type: 'error', title: 'Erro', message: 'Erro ao excluir evento.' });
     }
   };
 
@@ -201,7 +210,7 @@ export default function SchoolAgenda({ profile }: SchoolAgendaProps) {
       await setDoc(doc(db, 'settings', 'school_agenda_types'), { types: newTypes });
     } catch (err) {
       console.error(err);
-      alert('Erro ao salvar tipos de evento.');
+      setFeedback({ isOpen: true, type: 'error', title: 'Erro', message: 'Erro ao salvar tipos de evento.' });
     }
   };
 
@@ -285,8 +294,16 @@ export default function SchoolAgenda({ profile }: SchoolAgendaProps) {
   }
 
   return (
-    <div className="w-full h-[calc(100vh-80px)] md:h-[calc(100vh-100px)] flex flex-col gap-6">
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-6 rounded-3xl ring-1 ring-zinc-950/5 shadow-sm">
+    <>
+      <FeedbackModal 
+        isOpen={feedback.isOpen} 
+        onClose={() => setFeedback(prev => ({ ...prev, isOpen: false }))}
+        title={feedback.title}
+        message={feedback.message}
+        type={feedback.type}
+      />
+      <div className="w-full h-[calc(100vh-80px)] md:h-[calc(100vh-100px)] flex flex-col gap-6">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-6 rounded-3xl ring-1 ring-zinc-950/5 shadow-sm">
         <div>
           <h2 className="text-2xl font-bold display-font text-zinc-900 flex items-center gap-2">
             <CalendarDays className="w-6 h-6 text-indigo-500" /> Agenda de Eventos da Escola
@@ -780,5 +797,6 @@ export default function SchoolAgenda({ profile }: SchoolAgendaProps) {
         confirmText="Excluir"
       />
     </div>
+    </>
   );
 }

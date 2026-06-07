@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, onSnapshot, addDoc, serverTimestamp, deleteDoc, doc, Timestamp, updateDoc, query, where, getDocs, getDoc, writeBatch } from 'firebase/firestore';
+import { collection, onSnapshot, addDoc, serverTimestamp, deleteDoc, doc, Timestamp, updateDoc, query, where, getDocs, getDoc, writeBatch, setDoc } from 'firebase/firestore';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '../firebase';
 import { getFunctions, httpsCallable } from 'firebase/functions';
@@ -42,6 +42,8 @@ const applyCepMask = (value: string) => {
 
 export default function Students({ profile }: { profile: UserProfile }) {
   const [students, setStudents] = useState<Student[]>([]);
+  const [studentsRaw, setStudentsRaw] = useState<Student[]>([]);
+  const [financialsMap, setFinancialsMap] = useState<Record<string, any>>({});
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [instruments, setInstruments] = useState<Instrument[]>([]);
   const [blockedTimes, setBlockedTimes] = useState<any[]>([]);
@@ -134,10 +136,21 @@ export default function Students({ profile }: { profile: UserProfile }) {
   useEffect(() => {
     const unsubStudents = onSnapshot(collection(db, 'students'), (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Student));
-      setStudents(data);
+      setStudentsRaw(data);
     }, (error) => {
       handleFirestoreError(error, OperationType.LIST, 'students');
     });
+
+    let unsubFinancials = () => {};
+    if (profile.role === 'admin') {
+      unsubFinancials = onSnapshot(collection(db, 'student_financials'), (snapshot) => {
+        const map: any = {};
+        snapshot.docs.forEach(doc => {
+           map[doc.id] = doc.data();
+        });
+        setFinancialsMap(map);
+      });
+    }
 
     const unsubTeachers = onSnapshot(collection(db, 'teachers'), (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Teacher));
@@ -176,12 +189,35 @@ export default function Students({ profile }: { profile: UserProfile }) {
 
     return () => {
       unsubStudents();
+      unsubFinancials();
       unsubTeachers();
       unsubInstruments();
       unsubBlockedTimes();
       unsubSettings();
     };
-  }, []);
+  }, [profile.role]);
+
+  useEffect(() => {
+    if (profile.role === 'admin') {
+      const merged = studentsRaw.map(s => {
+        const fin = financialsMap[s.id];
+        if (fin) {
+          return { 
+            ...s, 
+            courseValue: fin.courseValue, 
+            dueDate: fin.dueDate, 
+            billingStartDate: fin.billingStartDate, 
+            discount: fin.discount, 
+            isScholarship: fin.isScholarship 
+          };
+        }
+        return s;
+      });
+      setStudents(merged);
+    } else {
+      setStudents(studentsRaw);
+    }
+  }, [studentsRaw, financialsMap, profile.role]);
 
   // Auto-calculate grace period when enrollmentDate changes
   useEffect(() => {
@@ -461,6 +497,17 @@ export default function Students({ profile }: { profile: UserProfile }) {
       if (editingStudentId) {
         await updateDoc(doc(db, 'students', editingStudentId), payload);
 
+        if (profile.role === 'admin') {
+          await setDoc(doc(db, 'student_financials', editingStudentId), {
+            courseValue: payload.courseValue || 0,
+            dueDate: payload.dueDate || 10,
+            billingStartDate: payload.billingStartDate || null,
+            discount: payload.discount || 0,
+            isScholarship: payload.isScholarship || false,
+            studentId: editingStudentId
+          }, { merge: true });
+        }
+
         // Delete all future scheduled lessons for this student
         // Also delete any future lesson that does not match the new enrollments anymore
         const now = new Date();
@@ -557,6 +604,17 @@ export default function Students({ profile }: { profile: UserProfile }) {
           systemLogin: generatedEmail,
           createdAt: serverTimestamp()
         });
+
+        if (profile.role === 'admin') {
+          await setDoc(doc(db, 'student_financials', docRef.id), {
+            courseValue: payload.courseValue || 0,
+            dueDate: payload.dueDate || 10,
+            billingStartDate: payload.billingStartDate || null,
+            discount: payload.discount || 0,
+            isScholarship: payload.isScholarship || false,
+            studentId: docRef.id
+          });
+        }
 
         try {
           const fn = getFunctions();

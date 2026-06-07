@@ -83,7 +83,15 @@ async function runFinancialRoutine() {
     try {
         // 1. GENERATE PAYMENTS FOR ACTIVE STUDENTS
         const studentsSnap = await db.collection('students').where('status', '==', 'active').get();
-        const activeStudents = studentsSnap.docs.map(d => (Object.assign({ id: d.id }, d.data())));
+        const finSnap = await db.collection('student_financials').get();
+        const finMap = {};
+        finSnap.docs.forEach(d => finMap[d.id] = d.data());
+        const activeStudents = studentsSnap.docs.map(d => {
+            var _a, _b, _c, _d;
+            const data = d.data();
+            const fin = finMap[d.id] || {};
+            return Object.assign(Object.assign({ id: d.id }, data), { courseValue: (_a = fin.courseValue) !== null && _a !== void 0 ? _a : data.courseValue, discount: (_b = fin.discount) !== null && _b !== void 0 ? _b : data.discount, dueDate: (_c = fin.dueDate) !== null && _c !== void 0 ? _c : data.dueDate, billingStartDate: (_d = fin.billingStartDate) !== null && _d !== void 0 ? _d : data.billingStartDate });
+        });
         const MONTHS_TO_GENERATE = 12;
         for (const student of activeStudents) {
             if (!student.courseValue || !student.dueDate)

@@ -379,11 +379,17 @@ service cloud.firestore {
     }
 
     match /students/{studentId} {
-      allow read: if isAuthenticated();
+      allow read: if isAdmin() || isTeacher() || isLessonStudent(studentId);
       // Allow unauthenticated creation for the Self Service Portal
       allow create: if isValidStudent(request.resource.data);
       allow update: if isAdmin() && isValidStudent(request.resource.data);
       allow delete: if isAdmin();
+    }
+
+    match /student_financials/{studentId} {
+      allow read: if isAdmin();
+      allow create: if true;
+      allow update, delete: if isAdmin();
     }
 
     match /teachers/{teacherId} {

@@ -188,6 +188,15 @@ export default function EnrollmentPortal({ token }: { token: string }) {
         createdAt: serverTimestamp()
       });
 
+      await setDoc(doc(db, 'student_financials', docRef.id), {
+        courseValue: payload.courseValue || 0,
+        dueDate: payload.dueDate || 10,
+        billingStartDate: payload.billingStartDate || null,
+        discount: payload.discount || 0,
+        isScholarship: payload.isScholarship || false,
+        studentId: docRef.id
+      });
+
       await updateDoc(doc(db, 'pending_enrollments', token), {
         status: 'completed',
         studentId: docRef.id,

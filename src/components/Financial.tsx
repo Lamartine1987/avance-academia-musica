@@ -131,6 +131,10 @@ export default function Financial({ profile }: { profile?: any }) {
 
       if (profile?.role === 'admin') {
         const sSnap = await getDocs(query(collection(db, 'students'), where('status', '==', 'active')));
+        const finSnap = await getDocs(collection(db, 'student_financials'));
+        const finMap: Record<string, any> = {};
+        finSnap.forEach(d => finMap[d.id] = d.data());
+
         let activeCount = 0;
         let mrr = 0;
         const instrumentCounts: Record<string, number> = {};
@@ -138,9 +142,13 @@ export default function Financial({ profile }: { profile?: any }) {
 
         sSnap.forEach(d => {
           const data = d.data();
-          sList.push({ id: d.id, ...data });
+          const fin = finMap[d.id] || {};
+          const courseValue = fin.courseValue ?? data.courseValue;
+          const discount = fin.discount ?? data.discount;
+          
+          sList.push({ id: d.id, ...data, courseValue, discount });
           activeCount++;
-          mrr += Math.max(0, (Number(data.courseValue) || 0) - (Number(data.discount) || 0));
+          mrr += Math.max(0, (Number(courseValue) || 0) - (Number(discount) || 0));
 
           if (data.enrollments && Array.isArray(data.enrollments)) {
             data.enrollments.forEach((enrollment: any) => {
@@ -301,15 +309,17 @@ export default function Financial({ profile }: { profile?: any }) {
   const openStudentStatement = async (studentId: string, studentName: string) => {
     try {
       const studentDoc = await getDoc(doc(db, 'students', studentId));
+      const finDoc = await getDoc(doc(db, 'student_financials', studentId));
       let dueDate = null;
       let courseValue = null;
       let discount = null;
       
       if (studentDoc.exists()) {
         const data = studentDoc.data();
-        dueDate = data.dueDate || null;
-        courseValue = data.courseValue || null;
-        discount = data.discount || null;
+        const finData = finDoc.exists() ? finDoc.data() : {};
+        dueDate = finData.dueDate ?? data.dueDate ?? null;
+        courseValue = finData.courseValue ?? data.courseValue ?? null;
+        discount = finData.discount ?? data.discount ?? null;
       }
       
       const history = payments.filter(p => p.studentId === studentId).sort((a, b) => new Date(b.dueDate).getTime() - new Date(a.dueDate).getTime());

@@ -79,7 +79,22 @@ async function runFinancialRoutine() {
   try {
     // 1. GENERATE PAYMENTS FOR ACTIVE STUDENTS
     const studentsSnap = await db.collection('students').where('status', '==', 'active').get();
-    const activeStudents = studentsSnap.docs.map(d => ({ id: d.id, ...d.data() } as any));
+    const finSnap = await db.collection('student_financials').get();
+    const finMap: Record<string, any> = {};
+    finSnap.docs.forEach(d => finMap[d.id] = d.data());
+
+    const activeStudents = studentsSnap.docs.map(d => {
+      const data = d.data();
+      const fin = finMap[d.id] || {};
+      return { 
+        id: d.id, 
+        ...data,
+        courseValue: fin.courseValue ?? data.courseValue,
+        discount: fin.discount ?? data.discount,
+        dueDate: fin.dueDate ?? data.dueDate,
+        billingStartDate: fin.billingStartDate ?? data.billingStartDate
+      } as any;
+    });
 
     const MONTHS_TO_GENERATE = 12;
 

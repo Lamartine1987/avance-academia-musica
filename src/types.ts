@@ -45,6 +45,15 @@ export interface CourseEnrollment {
   schedule: ScheduleItem[];
 }
 
+export interface StudentFinancials {
+  studentId: string;
+  courseValue: number;
+  dueDate: number;
+  billingStartDate?: string;
+  discount?: number;
+  isScholarship?: boolean;
+}
+
 export interface Student {
   id: string;
   name: string;
@@ -73,21 +82,22 @@ export interface Student {
   isUnderage?: boolean;
   guardianName?: string;
   guardianPhone?: string;
-  isScholarship?: boolean;
-  discount?: number;
   extraNotes?: string;
   classType?: 'individual' | 'group';
   enrollments: CourseEnrollment[];
   level?: 'beginner' | 'intermediate' | 'advanced';
   status: 'active' | 'inactive' | 'pending_approval' | 'rejected';
-  courseValue?: number;
-  dueDate?: number;
-  billingStartDate?: string;
   lastEvaluationDate?: string;
   enrollmentDate?: string;
   gracePeriodDeadline?: string;
   contractUrl?: string;
   createdAt: any;
+  // Campos financeiros movidos para StudentFinancials, mantidos como opcionais aqui durante a migração
+  isScholarship?: boolean;
+  discount?: number;
+  courseValue?: number;
+  dueDate?: number;
+  billingStartDate?: string;
 }
 
 export interface Teacher {
