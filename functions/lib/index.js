@@ -1355,7 +1355,7 @@ exports.getInfrastructureCosts = functions.https.onCall(async (data, context) =>
         if (!datasetId || !billingTableId) {
             return { rawCost: 0, finalCost: 0, currency: 'BRL', status: 'pending' };
         }
-        const projectId = process.env.GCP_PROJECT || process.env.GCLOUD_PROJECT;
+        const projectId = process.env.GCP_PROJECT || process.env.GCLOUD_PROJECT || (process.env.FIREBASE_CONFIG ? JSON.parse(process.env.FIREBASE_CONFIG || '{}').projectId : null);
         const sqlQuery = `
             SELECT
                 SUM(cost) as total_cost,
@@ -1396,21 +1396,31 @@ exports.getInfrastructureCosts = functions.https.onCall(async (data, context) =>
 exports.recordMonthlyFirebaseCost = functions.pubsub.schedule("15 0 1 * *").timeZone("America/Sao_Paulo").onRun(async (context) => {
     try {
         console.log("Iniciando rotina de fechamento de custos do Firebase (mês anterior)...");
-        const datasetId = 'faturamento_crm';
-        const dataset = bigquery.dataset(datasetId);
-        const [tables] = await dataset.getTables();
+        const [datasets] = await bigquery.getDatasets();
+        let datasetId = null;
         let billingTableId = null;
-        for (let table of tables) {
-            if (table.id && table.id.startsWith('gcp_billing_export_v1_')) {
-                billingTableId = table.id;
-                break;
+        for (const ds of datasets) {
+            try {
+                const [tables] = await ds.getTables();
+                for (const table of tables) {
+                    if (table.id && table.id.startsWith('gcp_billing_export_v1_')) {
+                        datasetId = ds.id;
+                        billingTableId = table.id;
+                        break;
+                    }
+                }
+                if (datasetId)
+                    break;
+            }
+            catch (e) {
+                // Ignore errors reading specific datasets
             }
         }
-        if (!billingTableId) {
+        if (!datasetId || !billingTableId) {
             console.log("Nenhuma tabela de billing encontrada.");
             return null;
         }
-        const projectId = process.env.GCP_PROJECT || process.env.GCLOUD_PROJECT || 'valentinacosmeticos-5f239';
+        const projectId = process.env.GCP_PROJECT || process.env.GCLOUD_PROJECT || (process.env.FIREBASE_CONFIG ? JSON.parse(process.env.FIREBASE_CONFIG || '{}').projectId : null);
         const sqlQuery = `
             SELECT
                 SUM(cost) as total_cost,
