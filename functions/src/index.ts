@@ -1207,8 +1207,8 @@ export const notifyTrialLesson = functions.https.onCall(async (data, context) =>
   
   // Format Date and Time
   const lessonDate = lessonData.startTime.toDate();
-  const dateStr = lessonDate.toLocaleDateString('pt-BR');
-  const timeStr = lessonDate.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  const dateStr = lessonDate.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+  const timeStr = lessonDate.toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
 
   const notificationPromises = [];
 

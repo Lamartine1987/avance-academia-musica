@@ -169,11 +169,12 @@ export default function App() {
   const [schoolAgendaAllowedTeacherIds, setSchoolAgendaAllowedTeacherIds] = useState<string[]>([]);
 
   useEffect(() => {
+    if (!auth.currentUser) return;
     const unsub = onSnapshot(doc(db, 'settings', 'school_agenda_permissions'), (doc) => {
       if (doc.exists()) setSchoolAgendaAllowedTeacherIds(doc.data().allowedTeacherIds || []);
     });
     return () => unsub();
-  }, []);
+  }, [auth.currentUser]);
   
   // Derived state to ensure real-time synchronization with notifications array
   const unreadCount = notifications.filter((n) => !n.read).length;
@@ -384,10 +385,10 @@ export default function App() {
   }, [profile]);
 
   useEffect(() => {
-    if (profile && profile.role === 'teacher' && !['schedule', 'profile', 'materials', 'library', 'evaluations', 'diary', 'calendar'].includes(currentView)) {
+    if (profile && profile.role === 'teacher' && !['schedule', 'profile', 'materials', 'library', 'evaluations', 'diary', 'calendar', 'event_agenda'].includes(currentView)) {
       setCurrentView('schedule');
     }
-    if (profile && profile.role === 'student' && !['schedule', 'financial', 'profile', 'materials', 'library', 'evaluations', 'documents', 'calendar'].includes(currentView)) {
+    if (profile && profile.role === 'student' && !['schedule', 'financial', 'profile', 'materials', 'library', 'evaluations', 'documents', 'calendar', 'event_agenda'].includes(currentView)) {
       setCurrentView('schedule');
     }
   }, [profile, currentView]);
@@ -512,7 +513,7 @@ export default function App() {
 
   if (!user || !profile) {
     if (!showLogin) {
-      return <LandingPage onLoginClick={() => window.location.hash = '#login'} />;
+      return <LandingPage onLoginClick={() => window.location.hash = '#login'} schoolSettings={schoolSettings} />;
     }
 
     return (
@@ -526,12 +527,18 @@ export default function App() {
           className="max-w-md w-full bg-white/70 backdrop-blur-xl rounded-[32px] p-12 shadow-2xl shadow-black/5 ring-1 ring-zinc-950/5 z-10"
         >
           <div className="text-center mb-8">
-            <div className="w-16 h-16 bg-black rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-lg shadow-orange-500/20">
-              <Music2 className="w-8 h-8 text-orange-500" />
-            </div>
-            <h1 className="text-3xl font-bold tracking-tight text-black mb-2 display-font">Avance</h1>
+            {schoolSettings?.logoUrl ? (
+              <img src={schoolSettings.logoUrl} alt="Logo" className="h-16 mx-auto mb-6 object-contain drop-shadow-xl" />
+            ) : (
+              <div className="w-16 h-16 bg-black rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-lg shadow-orange-500/20">
+                <Music2 className="w-8 h-8 text-orange-500" />
+              </div>
+            )}
+            <h1 className="text-3xl font-bold tracking-tight text-black mb-2 display-font">{schoolSettings?.tradingName?.split(' ')[0] || 'Avance'}</h1>
             <p className="text-zinc-500 leading-relaxed text-sm uppercase tracking-widest font-semibold">
-              Academia de Música
+              {schoolSettings?.tradingName?.split(' ').length > 1 
+                ? schoolSettings?.tradingName.split(' ').slice(1).join(' ') 
+                : 'Academia de Música'}
             </p>
           </div>
 
@@ -674,7 +681,7 @@ export default function App() {
     { id: 'documents', label: 'Documentos', icon: Folder, roles: ['admin', 'student'] },
     { id: 'evaluations', label: 'Avaliações', icon: Award, roles: ['admin', 'teacher', 'student'] },
     { id: 'calendar', label: 'Calendário Escolar', icon: CalendarDays, roles: ['admin', 'teacher', 'student'] },
-    { id: 'event_agenda', label: 'Agenda de Eventos', icon: CalendarDays, roles: ['admin', 'teacher'] },
+    { id: 'event_agenda', label: 'Agenda de Eventos', icon: CalendarDays, roles: ['admin', 'teacher', 'student'] },
     { id: 'financial', label: 'Meu Histórico Financeiro', icon: Wallet, roles: ['admin', 'student'] },
     { id: 'teacher_payments', label: 'Pagamentos Professores', icon: Banknote, roles: ['admin'] },
     { id: 'communication', label: 'Configurações', icon: Settings, roles: ['admin'] },
@@ -851,7 +858,7 @@ export default function App() {
                 <button 
                   onClick={() => {
                     setShowNotifications(!showNotifications);
-                    if (!showNotifications) markNotificationsRead();
+                    if (showNotifications) markNotificationsRead();
                   }}
                   className="relative p-3 rounded-2xl bg-white ring-1 ring-zinc-950/5 hover:bg-zinc-50 transition-all text-zinc-600 shadow-sm outline-none focus:ring-2 focus:ring-orange-500/30"
                 >

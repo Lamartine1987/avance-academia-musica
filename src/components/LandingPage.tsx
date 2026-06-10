@@ -1,10 +1,39 @@
-import React from 'react';
-import { motion, useScroll, useTransform } from 'motion/react';
-import { Music2, ChevronRight, UserCircle, Play, Mic2, Speaker, Sparkles } from 'lucide-react';
+import React, { useState } from 'react';
+import { motion, useScroll, useTransform, AnimatePresence } from 'motion/react';
+import { Music2, ChevronRight, UserCircle, Play, Mic2, Speaker, Sparkles, X, Loader2, MessageCircle } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { db } from '../firebase';
 
-export default function LandingPage({ onLoginClick }: { onLoginClick: () => void }) {
+export default function LandingPage({ onLoginClick, schoolSettings }: { onLoginClick: () => void, schoolSettings?: any }) {
   const { scrollYProgress } = useScroll();
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [formData, setFormData] = useState({ name: '', phone: '', course: '', note: '' });
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitSuccess, setSubmitSuccess] = useState(false);
+  const [isPrivacyModalOpen, setIsPrivacyModalOpen] = useState(false);
+  const [isTermsModalOpen, setIsTermsModalOpen] = useState(false);
+
+  const whatsappLink = `https://wa.me/55${(schoolSettings?.phone || '81999999999').replace(/\D/g, '')}`;
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSubmitting(true);
+    try {
+      await addDoc(collection(db, 'notifications'), {
+        title: 'Novo Lead pelo Site!',
+        message: `${formData.name} tem interesse em aprender ${formData.course}. WhatsApp: ${formData.phone}` + (formData.note ? `\n\nMensagem: ${formData.note}` : ''),
+        read: false,
+        createdAt: serverTimestamp()
+      });
+      setSubmitSuccess(true);
+    } catch (err) {
+      console.error(err);
+      alert('Erro ao enviar, tente novamente.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
   
   // Parallax constraints for Hero
   const heroOpacity = useTransform(scrollYProgress, [0, 0.15], [1, 0]);
@@ -18,7 +47,11 @@ export default function LandingPage({ onLoginClick }: { onLoginClick: () => void
       <nav className="fixed top-0 left-0 right-0 z-50 bg-[#161617]/80 backdrop-blur-md border-b border-white/10 transition-all text-xs font-medium tracking-wide">
         <div className="max-w-[1000px] mx-auto px-4 h-12 flex items-center justify-between">
           <div className="flex items-center gap-2 text-white hover:text-orange-500 transition-colors cursor-pointer">
-            <Music2 className="w-4 h-4" />
+            {schoolSettings?.logoUrl ? (
+              <img src={schoolSettings.logoUrl} alt="Logo" className="h-6 object-contain brightness-0 invert" />
+            ) : (
+              <Music2 className="w-4 h-4" />
+            )}
           </div>
           
           <div className="hidden md:flex items-center gap-8 text-zinc-300">
@@ -43,11 +76,12 @@ export default function LandingPage({ onLoginClick }: { onLoginClick: () => void
 
       {/* Sub Navigation (Product Title Nav) */}
       <div className="sticky top-12 z-40 bg-black/80 backdrop-blur-md border-b border-white/10 hidden md:block">
-        <div className="max-w-[1000px] mx-auto px-4 h-14 flex items-center justify-between text-sm">
-          <span className="font-bold text-lg tracking-tight">Avance Academia de Música</span>
+        <div className="max-w-[1000px] mx-auto px-4 h-14 flex items-center justify-end text-sm">
           <div className="flex items-center gap-4">
-            <span className="font-medium text-zinc-400">Mensalidades a partir de R$ 150</span>
-            <button className="bg-white text-black px-4 py-1 rounded-full font-bold text-xs hover:bg-zinc-200 transition-colors">
+            <button 
+              onClick={() => setIsModalOpen(true)}
+              className="bg-white text-black px-4 py-1 rounded-full font-bold text-xs hover:bg-zinc-200 transition-colors"
+            >
               Inscreva-se
             </button>
           </div>
@@ -71,10 +105,20 @@ export default function LandingPage({ onLoginClick }: { onLoginClick: () => void
           style={{ opacity: heroOpacity, scale: heroScale, y: heroY }}
           className="relative z-10 text-center px-4 w-full flex flex-col items-center justify-center mt-[-10vh]"
         >
+          {schoolSettings?.logoUrl && (
+            <motion.img 
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 1, ease: [0.16, 1, 0.3, 1] }}
+              src={schoolSettings.logoUrl} 
+              alt="Logo da Escola" 
+              className="h-24 md:h-32 object-contain mb-8 drop-shadow-2xl brightness-0 invert" 
+            />
+          )}
           <motion.h1 
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 1, ease: [0.16, 1, 0.3, 1] }}
+            transition={{ duration: 1, ease: [0.16, 1, 0.3, 1], delay: 0.1 }}
             className="text-5xl md:text-8xl font-semibold tracking-tighter leading-none mb-4 text-white drop-shadow-2xl"
           >
             A música <br className="md:hidden" />
@@ -174,8 +218,8 @@ export default function LandingPage({ onLoginClick }: { onLoginClick: () => void
                { name: "Guitarra", img: "https://images.unsplash.com/photo-1516924962500-2b4b3b99ea02?q=80&w=800&auto=format&fit=crop", desc: "Rock, Blues & Jazz" },
                { name: "Violão", img: "https://images.unsplash.com/photo-1510915361894-db8b60106cb1?q=80&w=800&auto=format&fit=crop", desc: "Acústico e Erudito" },
                { name: "Bateria", img: "https://images.unsplash.com/photo-1519892300165-cb5542fb47c7?q=80&w=800&auto=format&fit=crop", desc: "Ritmo e Precisão" },
-               { name: "Canto", img: "https://images.unsplash.com/photo-1528458909336-e7a0adfed0a5?q=80&w=800&auto=format&fit=crop", desc: "Técnica Vocal Avançada" },
-               { name: "Violino", img: "https://images.unsplash.com/photo-1612225330812-01a9c6b355ec?q=80&w=800&auto=format&fit=crop", desc: "Expressão Pura" }
+               { name: "Canto", img: "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?q=80&w=800&auto=format&fit=crop", desc: "Técnica Vocal Avançada" },
+               { name: "Ukulele", img: "https://images.unsplash.com/photo-1707699164633-0e584b2da329?q=80&w=800&auto=format&fit=crop", desc: "Leveza e Descontração" }
              ].map((curso, idx) => (
                 <motion.div 
                   key={idx}
@@ -206,7 +250,10 @@ export default function LandingPage({ onLoginClick }: { onLoginClick: () => void
           </h2>
           <p className="text-xl text-zinc-400 mb-12 font-medium">Matrix de aprendizado adaptativa inclusa em todos os planos.</p>
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-            <button className="bg-white text-black px-8 py-4 rounded-full font-bold hover:scale-105 hover:bg-zinc-200 transition-all flex items-center justify-center gap-2 w-full sm:w-auto">
+            <button 
+              onClick={() => setIsModalOpen(true)}
+              className="bg-white text-black px-8 py-4 rounded-full font-bold hover:scale-105 hover:bg-zinc-200 transition-all flex items-center justify-center gap-2 w-full sm:w-auto"
+            >
               Inscreva-se hoje
             </button>
             <button 
@@ -222,16 +269,237 @@ export default function LandingPage({ onLoginClick }: { onLoginClick: () => void
       {/* Strict Apple-like Micro Footer */}
       <footer className="bg-[#111] py-8 text-xs text-zinc-500 font-medium">
         <div className="max-w-[1000px] mx-auto px-6 flex flex-col md:flex-row items-center justify-between gap-4">
-          <p>Avance Academia de Música &copy; {new Date().getFullYear()}</p>
+          <div className="flex flex-col md:flex-row items-center gap-1 md:gap-3">
+            <p>{schoolSettings?.tradingName || 'Avance Academia de Música'} &copy; {new Date().getFullYear()}</p>
+            <span className="hidden md:inline text-zinc-700">|</span>
+            <p>
+              Feito por <a href="https://wa.me/5581999694866?text=Ol%C3%A1!%20Vi%20o%20sistema%20da%20Avance%20e%20gostaria%20de%20falar%20sobre%20um%20projeto." target="_blank" rel="noopener noreferrer" className="text-zinc-300 font-bold hover:text-emerald-400 transition-colors">LamaTech</a>
+            </p>
+          </div>
           <div className="flex items-center gap-4">
-            <a href="#" className="hover:text-zinc-300">Privacidade</a>
+            <button onClick={() => setIsPrivacyModalOpen(true)} className="hover:text-zinc-300 transition-colors">Privacidade</button>
             <span>|</span>
-            <a href="#" className="hover:text-zinc-300">Termos Gerais</a>
+            <button onClick={() => setIsTermsModalOpen(true)} className="hover:text-zinc-300 transition-colors">Termos Gerais</button>
             <span>|</span>
-            <a href="#" className="hover:text-zinc-300">Fale Comosco</a>
+            <button onClick={() => setIsModalOpen(true)} className="hover:text-zinc-300 transition-colors">Fale Conosco</button>
+            <span>|</span>
+            <a 
+              href={whatsappLink} 
+              target="_blank" 
+              rel="noopener noreferrer" 
+              className="text-emerald-500 hover:text-emerald-400 transition-colors flex items-center gap-1.5"
+            >
+              <MessageCircle className="w-4 h-4" />
+              WhatsApp
+            </a>
           </div>
         </div>
       </footer>
+
+      {/* Contact Modal */}
+      <AnimatePresence>
+        {isModalOpen && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }} 
+              animate={{ opacity: 1 }} 
+              exit={{ opacity: 0 }} 
+              onClick={() => !isSubmitting && setIsModalOpen(false)}
+              className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="relative w-full max-w-md bg-[#111] border border-white/10 rounded-3xl shadow-2xl p-8"
+            >
+              <button 
+                onClick={() => setIsModalOpen(false)}
+                className="absolute top-6 right-6 text-zinc-500 hover:text-white transition-colors"
+                disabled={isSubmitting}
+              >
+                <X className="w-5 h-5" />
+              </button>
+
+              {submitSuccess ? (
+                <div className="text-center py-8">
+                  <div className="w-16 h-16 bg-emerald-500/10 rounded-full flex items-center justify-center mx-auto mb-6">
+                    <Sparkles className="w-8 h-8 text-emerald-500" />
+                  </div>
+                  <h3 className="text-2xl font-bold mb-2">Tudo certo!</h3>
+                  <p className="text-zinc-400">Recebemos seu interesse. Nossa equipe entrará em contato em breve pelo WhatsApp.</p>
+                  <button 
+                    onClick={() => { setIsModalOpen(false); setSubmitSuccess(false); setFormData({name:'', phone:'', course:'', note:''}); }}
+                    className="mt-8 w-full bg-white text-black py-3 rounded-xl font-bold hover:bg-zinc-200 transition-colors"
+                  >
+                    Fechar
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <h3 className="text-2xl font-bold mb-2">Dar o primeiro passo.</h3>
+                  <p className="text-zinc-400 mb-8 text-sm">Deixe seus dados e nós entraremos em contato para apresentar a escola e nossos planos.</p>
+                  
+                  <form onSubmit={handleSubmit} className="space-y-4">
+                    <div>
+                      <label className="block text-xs font-medium text-zinc-400 mb-1 ml-1">Seu Nome</label>
+                      <input 
+                        type="text" 
+                        required
+                        value={formData.name}
+                        onChange={e => setFormData({...formData, name: e.target.value})}
+                        className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/50 transition-all text-white placeholder:text-zinc-600"
+                        placeholder="Como podemos te chamar?"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-zinc-400 mb-1 ml-1">WhatsApp</label>
+                      <input 
+                        type="text" 
+                        required
+                        value={formData.phone}
+                        onChange={e => setFormData({...formData, phone: e.target.value})}
+                        className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/50 transition-all text-white placeholder:text-zinc-600"
+                        placeholder="(00) 00000-0000"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-zinc-400 mb-1 ml-1">O que você quer aprender?</label>
+                      <select 
+                        required
+                        value={formData.course}
+                        onChange={e => setFormData({...formData, course: e.target.value})}
+                        className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/50 transition-all text-white appearance-none"
+                      >
+                        <option value="" disabled>Selecione um curso...</option>
+                        <option value="Piano">Piano</option>
+                        <option value="Guitarra">Guitarra</option>
+                        <option value="Violão">Violão</option>
+                        <option value="Bateria">Bateria</option>
+                        <option value="Canto">Canto</option>
+                        <option value="Ukulele">Ukulele</option>
+                        <option value="Outro">Ainda não sei / Outro</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-zinc-400 mb-1 ml-1">Mensagem (opcional)</label>
+                      <textarea 
+                        value={formData.note}
+                        onChange={e => setFormData({...formData, note: e.target.value})}
+                        className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/50 transition-all text-white placeholder:text-zinc-600 resize-none h-24"
+                        placeholder="Alguma dúvida ou comentário adicional?"
+                      />
+                    </div>
+
+                    <button 
+                      type="submit"
+                      disabled={isSubmitting}
+                      className="w-full bg-gradient-to-r from-orange-500 to-amber-500 text-white rounded-xl py-4 font-bold hover:from-orange-600 hover:to-amber-600 transition-all flex items-center justify-center gap-2 mt-4 shadow-lg shadow-orange-500/20"
+                    >
+                      {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Enviar Interesse'}
+                    </button>
+                  </form>
+                </>
+              )}
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Privacy Modal */}
+      <AnimatePresence>
+        {isPrivacyModalOpen && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }} 
+              animate={{ opacity: 1 }} 
+              exit={{ opacity: 0 }} 
+              onClick={() => setIsPrivacyModalOpen(false)}
+              className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="relative w-full max-w-lg bg-[#111] border border-white/10 rounded-3xl shadow-2xl p-8"
+            >
+              <button 
+                onClick={() => setIsPrivacyModalOpen(false)}
+                className="absolute top-6 right-6 text-zinc-500 hover:text-white transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+              <h3 className="text-2xl font-bold mb-4">Política de Privacidade</h3>
+              <div className="text-zinc-400 text-sm space-y-4 leading-relaxed max-h-[60vh] overflow-y-auto pr-2">
+                <p>
+                  A <strong>{schoolSettings?.tradingName || 'Avance Academia de Música'}</strong> coleta dados pessoais básicos (como nome, telefone e e-mail) com a finalidade exclusiva de prestar serviços educacionais, gerenciar matrículas, agendamento de aulas e processamento de pagamentos.
+                </p>
+                <p>
+                  Seus dados são armazenados de forma segura e não são compartilhados com terceiros sem sua autorização prévia, exceto para o cumprimento de obrigações legais ou processamento de pagamentos através de parceiros certificados.
+                </p>
+                <p>
+                  Nosso sistema utiliza cookies e tecnologias semelhantes apenas para manter a sua sessão ativa, garantir a segurança da plataforma e analisar métricas anônimas de uso para melhorar nossos serviços.
+                </p>
+              </div>
+              <button 
+                onClick={() => setIsPrivacyModalOpen(false)}
+                className="mt-8 w-full bg-white text-black py-3 rounded-xl font-bold hover:bg-zinc-200 transition-colors"
+              >
+                Entendi
+              </button>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Terms Modal */}
+      <AnimatePresence>
+        {isTermsModalOpen && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }} 
+              animate={{ opacity: 1 }} 
+              exit={{ opacity: 0 }} 
+              onClick={() => setIsTermsModalOpen(false)}
+              className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="relative w-full max-w-lg bg-[#111] border border-white/10 rounded-3xl shadow-2xl p-8"
+            >
+              <button 
+                onClick={() => setIsTermsModalOpen(false)}
+                className="absolute top-6 right-6 text-zinc-500 hover:text-white transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+              <h3 className="text-2xl font-bold mb-4">Termos Gerais de Uso</h3>
+              <div className="text-zinc-400 text-sm space-y-4 leading-relaxed max-h-[60vh] overflow-y-auto pr-2">
+                <p>
+                  Ao utilizar os serviços e o sistema da <strong>{schoolSettings?.tradingName || 'Avance Academia de Música'}</strong>, você concorda em cumprir com as regras de agendamento, cancelamento e reagendamento de aulas estabelecidas pela secretaria e detalhadas no contrato de matrícula.
+                </p>
+                <p>
+                  O acesso ao portal do aluno é pessoal e intransferível. A segurança da sua senha é de sua responsabilidade.
+                </p>
+                <p>
+                  A academia reserva-se o direito de atualizar a matriz curricular, horários dos professores e valores das mensalidades com aviso prévio, garantindo sempre a qualidade do ensino.
+                </p>
+                <p>
+                  Em caso de atraso prolongado no pagamento ou violação destas regras, o acesso às aulas e ao sistema poderá ser suspenso temporariamente até a regularização.
+                </p>
+              </div>
+              <button 
+                onClick={() => setIsTermsModalOpen(false)}
+                className="mt-8 w-full bg-white text-black py-3 rounded-xl font-bold hover:bg-zinc-200 transition-colors"
+              >
+                Entendi
+              </button>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { collection, onSnapshot, query, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, getDoc, setDoc } from 'firebase/firestore';
+import { collection, onSnapshot, query, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, getDoc, setDoc, where } from 'firebase/firestore';
 import { db } from '../firebase';
-import { UserProfile, SchoolAgendaEvent, Teacher } from '../types';
-import { CalendarDays, Plus, Trash2, X, Loader2, ChevronLeft, ChevronRight, Settings, Users, Music, Video, Mic, Star } from 'lucide-react';
+import { UserProfile, SchoolAgendaEvent, Teacher, Student } from '../types';
+import { CalendarDays, Plus, Trash2, X, Loader2, ChevronLeft, ChevronRight, Settings, Users, Music, Video, Mic, Star, Search } from 'lucide-react';
 import { format, addDays, subDays, isSameDay, parseISO, startOfWeek, endOfWeek, eachDayOfInterval } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { motion, AnimatePresence } from 'motion/react';
@@ -17,6 +17,7 @@ interface SchoolAgendaProps {
 export default function SchoolAgenda({ profile }: SchoolAgendaProps) {
   const [events, setEvents] = useState<SchoolAgendaEvent[]>([]);
   const [teachers, setTeachers] = useState<Teacher[]>([]);
+  const [students, setStudents] = useState<Student[]>([]);
   const [allowedTeacherIds, setAllowedTeacherIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   
@@ -50,6 +51,9 @@ export default function SchoolAgenda({ profile }: SchoolAgendaProps) {
   const [startTime, setStartTime] = useState('14:00');
   const [endTime, setEndTime] = useState('15:00');
   const [description, setDescription] = useState('');
+  const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>([]);
+  const [selectedTeacherIds, setSelectedTeacherIds] = useState<string[]>([]);
+  const [participantSearch, setParticipantSearch] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Custom Event Types
@@ -69,7 +73,10 @@ export default function SchoolAgenda({ profile }: SchoolAgendaProps) {
 
   useEffect(() => {
     // Fetch Events
-    const q = query(collection(db, 'school_agenda_events'));
+    const q = profile.role === 'student' 
+      ? query(collection(db, 'school_agenda_events'), where('studentIds', 'array-contains', profile.studentId || 'none'))
+      : query(collection(db, 'school_agenda_events'));
+      
     const unsubscribeEvents = onSnapshot(q, (snap) => {
       setEvents(snap.docs.map(d => ({ id: d.id, ...d.data() } as SchoolAgendaEvent)));
       setLoading(false);
@@ -79,6 +86,14 @@ export default function SchoolAgenda({ profile }: SchoolAgendaProps) {
     const unsubscribeTeachers = onSnapshot(collection(db, 'teachers'), (snap) => {
       setTeachers(snap.docs.map(d => ({ id: d.id, ...d.data() } as Teacher)));
     });
+
+    // Fetch Students (only for admins and teachers)
+    let unsubscribeStudents: (() => void) | undefined;
+    if (profile.role !== 'student') {
+      unsubscribeStudents = onSnapshot(collection(db, 'students'), (snap) => {
+        setStudents(snap.docs.map(d => ({ id: d.id, ...d.data() } as Student)).filter(s => s.status === 'active'));
+      });
+    }
 
     // Fetch Permissions and Types
     const fetchSettings = async () => {
@@ -108,6 +123,7 @@ export default function SchoolAgenda({ profile }: SchoolAgendaProps) {
     return () => {
       unsubscribeEvents();
       unsubscribeTeachers();
+      if (unsubscribeStudents) unsubscribeStudents();
       unsubTypes();
     };
   }, []);
@@ -143,6 +159,9 @@ export default function SchoolAgenda({ profile }: SchoolAgendaProps) {
     setStartTime('14:00');
     setEndTime('15:00');
     setDescription('');
+    setSelectedStudentIds([]);
+    setSelectedTeacherIds([]);
+    setParticipantSearch('');
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -159,6 +178,8 @@ export default function SchoolAgenda({ profile }: SchoolAgendaProps) {
         startTime,
         endTime,
         description,
+        studentIds: selectedStudentIds,
+        teacherIds: selectedTeacherIds,
       };
 
       if (selectedEvent) {
@@ -193,7 +214,8 @@ export default function SchoolAgenda({ profile }: SchoolAgendaProps) {
   };
 
   const openEditModal = (event: SchoolAgendaEvent) => {
-    if (!isAdmin) return;
+    if (profile.role === 'student') return;
+    if (!isAdmin && profile.role !== 'teacher') return;
     setSelectedEvent(event);
     setTitle(event.title);
     setEventType(event.eventType);
@@ -202,6 +224,9 @@ export default function SchoolAgenda({ profile }: SchoolAgendaProps) {
     setStartTime(event.startTime);
     setEndTime(event.endTime);
     setDescription(event.description || '');
+    setSelectedStudentIds(event.studentIds || []);
+    setSelectedTeacherIds(event.teacherIds || []);
+    setParticipantSearch('');
     setShowEventForm(true);
   };
 
@@ -238,15 +263,41 @@ export default function SchoolAgenda({ profile }: SchoolAgendaProps) {
 
   const getEventIcon = (typeId: string) => {
     const type = eventTypes.find(t => t.id === typeId);
-    const iconName = type?.icon || 'star';
-    switch (iconName) {
-      case 'users': return <Users className="w-4 h-4" />;
-      case 'mic': return <Mic className="w-4 h-4" />;
-      case 'video': return <Video className="w-4 h-4" />;
-      case 'music': return <Music className="w-4 h-4" />;
-      default: return <Star className="w-4 h-4" />;
+    if (!type) return <Star className="w-5 h-5" />;
+    switch(type.icon) {
+      case 'users': return <Users className="w-5 h-5" />;
+      case 'mic': return <Mic className="w-5 h-5" />;
+      case 'video': return <Video className="w-5 h-5" />;
+      case 'music': return <Music className="w-5 h-5" />;
+      default: return <Star className="w-5 h-5" />;
     }
   };
+
+  const handleToggleStudent = (studentId: string) => {
+    setSelectedStudentIds(prev => 
+      prev.includes(studentId) 
+        ? prev.filter(id => id !== studentId)
+        : [...prev, studentId]
+    );
+  };
+
+  const handleToggleTeacher = (teacherId: string) => {
+    setSelectedTeacherIds(prev => 
+      prev.includes(teacherId) 
+        ? prev.filter(id => id !== teacherId)
+        : [...prev, teacherId]
+    );
+  };
+
+  const filteredStudents = students.filter(s => 
+    s.name.toLowerCase().includes(participantSearch.toLowerCase()) ||
+    s.enrollments?.some(e => e.instrument.toLowerCase().includes(participantSearch.toLowerCase()))
+  );
+
+  const filteredTeachers = teachers.filter(t => 
+    t.name.toLowerCase().includes(participantSearch.toLowerCase()) ||
+    t.instruments?.some(i => i.toLowerCase().includes(participantSearch.toLowerCase()))
+  );
 
   const getEventColor = (typeId: string) => {
     const type = eventTypes.find(t => t.id === typeId);
@@ -282,8 +333,9 @@ export default function SchoolAgenda({ profile }: SchoolAgendaProps) {
     );
   }
 
-  // Check access for teachers
-  if (!isAdmin && !allowedTeacherIds.includes(profile.teacherId || '')) {
+  // Check access for teachers and students
+  const isTeacherWithAccess = profile.role === 'teacher' && allowedTeacherIds.includes(profile.teacherId || '');
+  if (!isAdmin && profile.role !== 'student' && !isTeacherWithAccess) {
     return (
       <div className="flex flex-col items-center justify-center py-20 text-center">
         <CalendarDays className="w-16 h-16 text-zinc-300 mb-4" />
@@ -383,11 +435,17 @@ export default function SchoolAgenda({ profile }: SchoolAgendaProps) {
                   </div>
                   {timeSlots.map((time, timeIdx) => {
                     const dayStr = format(day, 'yyyy-MM-dd');
+                    const cellHour = parseInt(time.split(':')[0], 10);
                     const dayEvents = events.filter(e => {
                       const startD = e.date;
                       const endD = e.endDate || e.date;
                       const isDateInRange = dayStr >= startD && dayStr <= endD;
-                      return isDateInRange && e.startTime.startsWith(time.split(':')[0]);
+                      if (!isDateInRange) return false;
+                      const evStartHour = parseInt(e.startTime.split(':')[0], 10);
+                      const evEndHour = parseInt(e.endTime.split(':')[0], 10);
+                      
+                      if (evStartHour === evEndHour) return cellHour === evStartHour;
+                      return cellHour >= evStartHour && cellHour < evEndHour;
                     });
 
                     return (
@@ -430,6 +488,20 @@ export default function SchoolAgenda({ profile }: SchoolAgendaProps) {
                                   {event.description}
                                 </p>
                               )}
+                              {((event.studentIds && event.studentIds.length > 0) || (event.teacherIds && event.teacherIds.length > 0)) && (
+                                <div className="mt-1.5 flex flex-wrap gap-1">
+                                  {event.studentIds && event.studentIds.length > 0 && (
+                                    <div className="flex items-center gap-1 opacity-80 bg-black/10 w-fit px-1.5 py-0.5 rounded text-[9px] font-bold">
+                                      <Users className="w-3 h-3" /> {event.studentIds.length} aluno(s)
+                                    </div>
+                                  )}
+                                  {event.teacherIds && event.teacherIds.length > 0 && (
+                                    <div className="flex items-center gap-1 opacity-80 bg-black/10 w-fit px-1.5 py-0.5 rounded text-[9px] font-bold">
+                                      <Music className="w-3 h-3" /> {event.teacherIds.length} prof(s)
+                                    </div>
+                                  )}
+                                </div>
+                              )}
                             </div>
                           );
                         })}
@@ -451,7 +523,7 @@ export default function SchoolAgenda({ profile }: SchoolAgendaProps) {
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="bg-white rounded-[32px] p-8 max-w-2xl w-full shadow-2xl relative my-8"
+              className="bg-white rounded-[32px] p-6 sm:p-8 max-w-2xl w-full shadow-2xl relative max-h-[90vh] overflow-y-auto"
             >
               <button
                 onClick={() => setShowSettingsForm(false)}
@@ -574,7 +646,7 @@ export default function SchoolAgenda({ profile }: SchoolAgendaProps) {
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="bg-white rounded-[32px] p-8 max-w-xl w-full shadow-2xl relative my-8"
+              className="bg-white rounded-[32px] p-6 sm:p-8 max-w-xl w-full shadow-2xl relative max-h-[90vh] overflow-y-auto"
             >
               <button
                 onClick={() => setShowEventForm(false)}
@@ -680,6 +752,98 @@ export default function SchoolAgenda({ profile }: SchoolAgendaProps) {
                     className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all h-24 resize-none"
                     placeholder="Detalhes adicionais, equipamentos necessários, etc..."
                   />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-zinc-700 mb-1 ml-1">Participantes (Alunos e Professores)</label>
+                  <p className="text-xs text-zinc-500 ml-1 mb-2">Busque e selecione quem participará ou poderá visualizar este evento.</p>
+                  
+                  <div className="relative mb-3">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                      <Search className="h-4 w-4 text-zinc-400" />
+                    </div>
+                    <input
+                      type="text"
+                      placeholder="Buscar por nome ou instrumento..."
+                      value={participantSearch}
+                      onChange={(e) => setParticipantSearch(e.target.value)}
+                      className="w-full bg-white border border-zinc-200 rounded-xl pl-10 pr-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all"
+                    />
+                  </div>
+
+                  <div className="max-h-56 overflow-y-auto pr-2 space-y-4 bg-zinc-50/80 rounded-2xl border border-zinc-200 p-3">
+                    {/* Lista de Alunos */}
+                    <div>
+                      <h4 className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2 ml-1">Alunos</h4>
+                      {filteredStudents.length === 0 ? (
+                        <p className="text-sm text-zinc-400 italic ml-1">Nenhum aluno encontrado.</p>
+                      ) : (
+                        <div className="space-y-1">
+                          {filteredStudents.map(student => {
+                            const isSelected = selectedStudentIds.includes(student.id);
+                            const instruments = student.enrollments?.map(e => e.instrument).join(', ') || 'Sem instrumento';
+                            return (
+                              <div 
+                                key={`student-${student.id}`}
+                                onClick={() => handleToggleStudent(student.id)}
+                                className={cn(
+                                  "flex items-center gap-3 p-2.5 rounded-xl cursor-pointer transition-all",
+                                  isSelected ? "bg-indigo-100/50" : "hover:bg-white"
+                                )}
+                              >
+                                <div className={cn(
+                                  "w-5 h-5 rounded border flex items-center justify-center transition-colors shrink-0",
+                                  isSelected ? "bg-indigo-500 border-indigo-500 text-white" : "border-zinc-300 bg-white"
+                                )}>
+                                  {isSelected && <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>}
+                                </div>
+                                <div>
+                                  <span className="text-sm font-medium text-zinc-700 block">{student.name}</span>
+                                  <span className="text-[10px] text-zinc-500 block">{instruments}</span>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Lista de Professores */}
+                    <div>
+                      <h4 className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2 ml-1">Professores</h4>
+                      {filteredTeachers.length === 0 ? (
+                        <p className="text-sm text-zinc-400 italic ml-1">Nenhum professor encontrado.</p>
+                      ) : (
+                        <div className="space-y-1">
+                          {filteredTeachers.map(teacher => {
+                            const isSelected = selectedTeacherIds.includes(teacher.id);
+                            const instruments = teacher.instruments?.join(', ') || 'Sem instrumento';
+                            return (
+                              <div 
+                                key={`teacher-${teacher.id}`}
+                                onClick={() => handleToggleTeacher(teacher.id)}
+                                className={cn(
+                                  "flex items-center gap-3 p-2.5 rounded-xl cursor-pointer transition-all",
+                                  isSelected ? "bg-indigo-100/50" : "hover:bg-white"
+                                )}
+                              >
+                                <div className={cn(
+                                  "w-5 h-5 rounded border flex items-center justify-center transition-colors shrink-0",
+                                  isSelected ? "bg-indigo-500 border-indigo-500 text-white" : "border-zinc-300 bg-white"
+                                )}>
+                                  {isSelected && <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>}
+                                </div>
+                                <div>
+                                  <span className="text-sm font-medium text-zinc-700 block">{teacher.name}</span>
+                                  <span className="text-[10px] text-zinc-500 block">{instruments}</span>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </div>
 
                 <div className="pt-4 flex justify-between items-center gap-3 border-t border-zinc-100 mt-6">

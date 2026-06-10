@@ -353,7 +353,7 @@ service cloud.firestore {
     }
 
     function isValidSchoolAgendaEvent(data) {
-      return hasOnlyAllowedFields(['title', 'eventType', 'date', 'endDate', 'startTime', 'endTime', 'description', 'createdAt']) &&
+      return hasOnlyAllowedFields(['title', 'eventType', 'date', 'endDate', 'startTime', 'endTime', 'description', 'studentIds', 'teacherIds', 'createdAt']) &&
              data.title is string && data.title.size() > 0 &&
              data.eventType is string && data.eventType.size() > 0 &&
              data.date is string &&
@@ -361,6 +361,8 @@ service cloud.firestore {
              data.startTime is string &&
              data.endTime is string &&
              (!('description' in data) || data.description == null || data.description is string) &&
+             (!('studentIds' in data) || data.studentIds is list) &&
+             (!('teacherIds' in data) || data.teacherIds is list) &&
              (!('createdAt' in data) || data.createdAt is timestamp);
     }
 
@@ -463,7 +465,9 @@ service cloud.firestore {
 
     match /notifications/{notifId} {
       allow read, update, delete: if isAdmin();
-      allow create: if isAuthenticated();
+      allow create: if isAuthenticated() || (
+        request.resource.data.title == 'Novo Lead pelo Site!'
+      );
     }
 
     match /teacher_absences/{absenceId} {
@@ -548,8 +552,8 @@ service cloud.firestore {
 
     match /school_agenda_events/{eventId} {
       allow read: if isAuthenticated();
-      allow create, update: if isAdmin() && isValidSchoolAgendaEvent(request.resource.data);
-      allow delete: if isAdmin();
+      allow create, update: if (isAdmin() || isTeacher()) && isValidSchoolAgendaEvent(request.resource.data);
+      allow delete: if isAdmin() || isTeacher();
     }
     
     match /debug_logs/{logId} {

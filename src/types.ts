@@ -260,6 +260,8 @@ export interface SchoolAgendaEvent {
   startTime: string; // HH:mm
   endTime: string; // HH:mm
   description?: string;
+  studentIds?: string[];
+  teacherIds?: string[];
   createdAt: any;
 }
 
