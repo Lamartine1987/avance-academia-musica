@@ -1,15 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { collection, query, where, getDocs, doc, updateDoc, serverTimestamp, getDoc } from 'firebase/firestore';
-import { db } from '../firebase';
-import { QrCode, CheckCircle2, User, Camera, ShieldCheck, X } from 'lucide-react';
-import { Html5QrcodeScanner } from 'html5-qrcode';
+import { httpsCallable } from 'firebase/functions';
+import { db, functions } from '../firebase';
+import { CheckCircle2, User, ShieldCheck } from 'lucide-react';
 import { Student } from '../types';
 
 export default function Totem() {
   const [studentIdInput, setStudentIdInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState<{ type: 'idle' | 'success' | 'error', message: string }>({ type: 'idle', message: '' });
-  const [showScanner, setShowScanner] = useState(false);
+  // const [showScanner, setShowScanner] = useState(false);
   const [schoolSettings, setSchoolSettings] = useState<any>(null);
 
   useEffect(() => {
@@ -22,6 +22,7 @@ export default function Totem() {
     fetchSettings();
   }, []);
 
+  /*
   useEffect(() => {
     if (showScanner) {
       const scanner = new Html5QrcodeScanner("reader", { fps: 10, qrbox: {width: 250, height: 250} }, false);
@@ -38,6 +39,7 @@ export default function Totem() {
       };
     }
   }, [showScanner]);
+  */
 
   const sendApizMessage = async (student: Student) => {
     if (!schoolSettings || schoolSettings.whatsappEngine !== 'apiz' || !schoolSettings.apizUrl || !schoolSettings.apizToken) return;
@@ -78,93 +80,11 @@ export default function Totem() {
     setStatus({ type: 'idle', message: '' });
 
     try {
-      let finalStudentId = studentId;
-
-      // Se for uma matrícula curta (digitada manualmente), vamos descobrir o ID real olhando as aulas de hoje
-      if (studentId.length < 15) {
-         const today = new Date();
-         today.setHours(0, 0, 0, 0);
-         const tomorrow = new Date(today);
-         tomorrow.setDate(tomorrow.getDate() + 1);
-         
-         const allTodayLessonsQuery = query(
-           collection(db, 'lessons'),
-           where('startTime', '>=', today),
-           where('startTime', '<', tomorrow)
-         );
-         const lessonsSnap = await getDocs(allTodayLessonsQuery);
-         
-         const validLessons = lessonsSnap.docs.filter(d => ['scheduled', 'completed'].includes(d.data().status));
-         const matchedLesson = validLessons.find(d => d.data().studentId.toUpperCase().startsWith(studentId.toUpperCase()));
-         if (matchedLesson) {
-            finalStudentId = matchedLesson.data().studentId;
-         } else {
-            setStatus({ type: 'error', message: 'Nenhuma aula encontrada hoje para esta matrícula.' });
-            setLoading(false);
-            return;
-         }
-      }
-
-      // 1. Validate if student exists
-      const studentDoc = await getDoc(doc(db, 'students', finalStudentId));
-      if (!studentDoc.exists()) {
-        setStatus({ type: 'error', message: 'Aluno não encontrado ou matrícula inválida.' });
-        setLoading(false);
-        return;
-      }
-
-      const student = { id: studentDoc.id, ...studentDoc.data() } as Student;
-
-      if (student.status !== 'active') {
-         setStatus({ type: 'error', message: 'Matrícula não está ativa.' });
-         setLoading(false);
-         return;
-      }
-
-      // 2. Look for lessons TODAY for this student
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const tomorrow = new Date(today);
-      tomorrow.setDate(tomorrow.getDate() + 1);
-
-      const lessonsQuery = query(
-        collection(db, 'lessons'),
-        where('studentId', '==', finalStudentId)
-      );
-
-      const querySnapshot = await getDocs(lessonsQuery);
+      const totemCheckInFn = httpsCallable(functions, 'totemCheckIn');
+      const result = await totemCheckInFn({ studentIdInput: studentId });
+      const data = result.data as any;
       
-      // Memory filter for date and status to avoid composite index requirements
-      const validLessons = querySnapshot.docs.filter(d => {
-         const data = d.data();
-         if (!['scheduled', 'completed'].includes(data.status)) return false;
-         
-         // data.startTime can be a Firestore Timestamp
-         const lessonDate = data.startTime?.toDate ? data.startTime.toDate() : new Date(data.startTime);
-         return lessonDate >= today && lessonDate < tomorrow;
-      });
-
-      if (validLessons.length === 0) {
-        setStatus({ type: 'error', message: `Olá ${student.name}! Você não possui aulas agendadas para o dia de hoje.` });
-        setLoading(false);
-        return;
-      }
-
-      // 3. Mark check-in on the first upcoming lesson (or all of them today)
-      for (const lessonDoc of validLessons) {
-         if (!lessonDoc.data().checkInTime) {
-            await updateDoc(doc(db, 'lessons', lessonDoc.id), {
-               checkInTime: serverTimestamp()
-            });
-         }
-      }
-
-      // 4. Send APIZ Notification if underage
-      if (student.isUnderage) {
-         await sendApizMessage(student);
-      }
-
-      setStatus({ type: 'success', message: `Bem-vindo(a) ${student.name}! Seu check-in foi realizado com sucesso. Tenha uma ótima aula!` });
+      setStatus({ type: 'success', message: data.message });
       setStudentIdInput('');
 
       // Auto clear success message after 5 seconds
@@ -173,7 +93,8 @@ export default function Totem() {
       }, 6000);
 
     } catch (err: any) {
-      setStatus({ type: 'error', message: 'Erro ao processar check-in: ' + err.message });
+      console.error(err);
+      setStatus({ type: 'error', message: err.message || 'Erro ao processar check-in.' });
     } finally {
       setLoading(false);
     }
@@ -215,40 +136,9 @@ export default function Totem() {
              </div>
            )}
 
-           <div className="grid grid-cols-1 md:grid-cols-2 gap-12 relative">
-              {/* Divider */}
-              <div className="hidden md:block absolute left-1/2 top-0 bottom-0 w-px bg-zinc-100 -translate-x-1/2">
-                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-white px-2 text-zinc-300 font-bold text-sm uppercase">OU</div>
-              </div>
-
-              {/* QR Code Section */}
-              <div className="flex flex-col items-center justify-center space-y-6">
-                 <div className="w-20 h-20 bg-orange-50 rounded-full flex items-center justify-center text-orange-600 mb-2">
-                   <QrCode className="w-10 h-10" />
-                 </div>
-                 <h3 className="text-xl font-bold text-zinc-900 text-center">Usar QR Code</h3>
-                 <p className="text-zinc-500 text-center text-sm">Abra seu Painel do Aluno no celular e aproxime o QR Code da câmera</p>
-                 
-                 {!showScanner ? (
-                   <button 
-                     onClick={() => setShowScanner(true)}
-                     className="w-full bg-zinc-900 text-white py-4 rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-black transition-all shadow-xl shadow-black/10 active:scale-[0.98]"
-                   >
-                     <Camera className="w-5 h-5" />
-                     Ativar Câmera
-                   </button>
-                 ) : (
-                   <div className="w-full relative">
-                     <div id="reader" className="w-full rounded-2xl overflow-hidden border-2 border-orange-500"></div>
-                     <button onClick={() => setShowScanner(false)} className="absolute -top-4 -right-4 bg-white text-zinc-500 p-2 rounded-full shadow-lg border border-zinc-200 hover:text-red-500">
-                        <X className="w-5 h-5" />
-                     </button>
-                   </div>
-                 )}
-              </div>
-
+           <div className="flex flex-col items-center justify-center relative max-w-md mx-auto">
               {/* Manual Input Section */}
-              <div className="flex flex-col items-center justify-center space-y-6">
+              <div className="flex flex-col items-center justify-center space-y-6 w-full">
                  <div className="w-20 h-20 bg-zinc-50 rounded-full flex items-center justify-center text-zinc-400 mb-2">
                    <User className="w-10 h-10" />
                  </div>
@@ -280,7 +170,6 @@ export default function Totem() {
                     </div>
                  )}
               </div>
-
            </div>
         </div>
         <p className="text-zinc-600 mt-8 text-sm font-medium">Totem Inteligente • Avance Academia de Música</p>

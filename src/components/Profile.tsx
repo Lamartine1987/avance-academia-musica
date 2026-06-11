@@ -90,7 +90,7 @@ export default function Profile({ user, profile }: ProfileProps) {
                 Apresente este QR Code no Totem da recepção da escola para registrar a sua presença rapidamente nas aulas de hoje.
               </p>
               <div className="bg-white px-4 py-2 rounded-xl text-xs font-mono font-bold text-orange-800 inline-block border border-orange-200">
-                Matrícula: {profile.studentId.substring(0, 8).toUpperCase()}
+                Matrícula: {profile.studentId.substring(0, 6).toUpperCase()}
               </div>
             </div>
           </div>

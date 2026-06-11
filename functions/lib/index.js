@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getDebugLogsHttp = exports.cleanEmojis = exports.recordMonthlyFirebaseCost = exports.getInfrastructureCosts = exports.checkStudentStatus = exports.manualHolidayReminderRoutine = exports.holidayReminderRoutineDaily = exports.notifyTrialLesson = exports.notifyNewMaterial = exports.onUserDeleted = exports.manualPedagogicalRoutine = exports.pedagogicalRoutineDaily = exports.notifyStudentEvaluation = exports.requestPasswordResetWhatsApp = exports.createStudentUser = exports.notifyMaterialUnlocked = exports.provideNewRescheduleSlots = exports.rejectRescheduleSlots = exports.confirmReschedule = exports.getRescheduleData = exports.registerTeacherAbsence = exports.manualFinancialRoutine = exports.financialRoutineDaily = void 0;
+exports.totemCheckIn = exports.getDebugLogsHttp = exports.cleanEmojis = exports.recordMonthlyFirebaseCost = exports.getInfrastructureCosts = exports.checkStudentStatus = exports.manualHolidayReminderRoutine = exports.holidayReminderRoutineDaily = exports.notifyTrialLesson = exports.notifyNewMaterial = exports.onUserDeleted = exports.manualPedagogicalRoutine = exports.pedagogicalRoutineDaily = exports.notifyStudentEvaluation = exports.requestPasswordResetWhatsApp = exports.createStudentUser = exports.notifyMaterialUnlocked = exports.provideNewRescheduleSlots = exports.rejectRescheduleSlots = exports.confirmReschedule = exports.getRescheduleData = exports.registerTeacherAbsence = exports.manualFinancialRoutine = exports.financialRoutineDaily = void 0;
 const functions = require("firebase-functions/v1");
 const admin = require("firebase-admin");
 const firestore_1 = require("firebase-admin/firestore");
@@ -1540,6 +1540,66 @@ exports.getDebugLogsHttp = functions.https.onRequest(async (req, res) => {
     }
     catch (e) {
         res.status(500).send(String(e));
+    }
+});
+exports.totemCheckIn = functions.https.onCall(async (data, context) => {
+    const { studentIdInput } = data;
+    if (!studentIdInput || typeof studentIdInput !== 'string') {
+        throw new functions.https.HttpsError('invalid-argument', 'Matrícula inválida.');
+    }
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    try {
+        let finalStudentId = studentIdInput;
+        if (studentIdInput.length < 15) {
+            const lessonsSnap = await db.collection('lessons').where('startTime', '>=', today).where('startTime', '<', tomorrow).get();
+            const validLessons = lessonsSnap.docs.filter(d => ['scheduled', 'completed'].includes(d.data().status) && d.data().studentId.toUpperCase().startsWith(studentIdInput.toUpperCase()));
+            if (validLessons.length > 0) {
+                finalStudentId = validLessons[0].data().studentId;
+            }
+            else {
+                throw new functions.https.HttpsError('not-found', 'Nenhuma aula encontrada hoje para esta matrícula.');
+            }
+        }
+        const studentDoc = await db.collection('students').doc(finalStudentId).get();
+        if (!studentDoc.exists)
+            throw new functions.https.HttpsError('not-found', 'Aluno não encontrado.');
+        const student = Object.assign({ id: studentDoc.id }, studentDoc.data());
+        if (student.status !== 'active')
+            throw new functions.https.HttpsError('failed-precondition', 'Matrícula não está ativa.');
+        const lessonsSnap = await db.collection('lessons').where('studentId', '==', finalStudentId).get();
+        const validLessons = lessonsSnap.docs.filter(d => {
+            const data = d.data();
+            if (!['scheduled', 'completed'].includes(data.status))
+                return false;
+            const lessonDate = data.startTime.toDate();
+            return lessonDate >= today && lessonDate < tomorrow;
+        });
+        if (validLessons.length === 0)
+            throw new functions.https.HttpsError('not-found', `Olá ${student.name}! Você não possui aulas agendadas para hoje.`);
+        const batch = db.batch();
+        for (const lessonDoc of validLessons) {
+            if (!lessonDoc.data().checkInTime) {
+                batch.update(lessonDoc.ref, { checkInTime: admin.firestore.FieldValue.serverTimestamp() });
+            }
+        }
+        await batch.commit();
+        if (student.isUnderage && student.responsiblePhone) {
+            const settingsDoc = await db.collection('settings').doc('school').get();
+            const settings = settingsDoc.data();
+            if (settings) {
+                const messageText = `Olá! Informamos que o aluno(a) *${student.name}* acabou de realizar o check-in na recepção e já está presente na escola para a aula de hoje. 🏫🎵\n\nAtt,\n${settings.tradingName || 'Avance'}`;
+                await sendSystemWhatsApp(settings, student.responsiblePhone, messageText);
+            }
+        }
+        return { success: true, message: `Bem-vindo(a) ${student.name}! Seu check-in foi realizado com sucesso. Tenha uma ótima aula!` };
+    }
+    catch (err) {
+        if (err instanceof functions.https.HttpsError)
+            throw err;
+        throw new functions.https.HttpsError('internal', err.message);
     }
 });
 //# sourceMappingURL=index.js.map

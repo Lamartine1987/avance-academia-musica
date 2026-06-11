@@ -1748,3 +1748,64 @@ export const getDebugLogsHttp = functions.https.onRequest(async (req, res) => {
     res.status(500).send(String(e));
   }
 });
+
+export const totemCheckIn = functions.https.onCall(async (data, context) => {
+  const { studentIdInput } = data;
+  if (!studentIdInput || typeof studentIdInput !== 'string') {
+    throw new functions.https.HttpsError('invalid-argument', 'Matrícula inválida.');
+  }
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const tomorrow = new Date(today);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+
+  try {
+    let finalStudentId = studentIdInput;
+
+    if (studentIdInput.length < 15) {
+      const lessonsSnap = await db.collection('lessons').where('startTime', '>=', today).where('startTime', '<', tomorrow).get();
+      const validLessons = lessonsSnap.docs.filter(d => ['scheduled', 'completed'].includes(d.data().status) && d.data().studentId.toUpperCase().startsWith(studentIdInput.toUpperCase()));
+      if (validLessons.length > 0) {
+        finalStudentId = validLessons[0].data().studentId;
+      } else {
+        throw new functions.https.HttpsError('not-found', 'Nenhuma aula encontrada hoje para esta matrícula.');
+      }
+    }
+
+    const studentDoc = await db.collection('students').doc(finalStudentId).get();
+    if (!studentDoc.exists) throw new functions.https.HttpsError('not-found', 'Aluno não encontrado.');
+    const student = { id: studentDoc.id, ...studentDoc.data() } as any;
+    if (student.status !== 'active') throw new functions.https.HttpsError('failed-precondition', 'Matrícula não está ativa.');
+
+    const lessonsSnap = await db.collection('lessons').where('studentId', '==', finalStudentId).get();
+    const validLessons = lessonsSnap.docs.filter(d => {
+      const data = d.data();
+      if (!['scheduled', 'completed'].includes(data.status)) return false;
+      const lessonDate = data.startTime.toDate();
+      return lessonDate >= today && lessonDate < tomorrow;
+    });
+    if (validLessons.length === 0) throw new functions.https.HttpsError('not-found', `Olá ${student.name}! Você não possui aulas agendadas para hoje.`);
+
+    const batch = db.batch();
+    for (const lessonDoc of validLessons) {
+      if (!lessonDoc.data().checkInTime) {
+        batch.update(lessonDoc.ref, { checkInTime: admin.firestore.FieldValue.serverTimestamp() });
+      }
+    }
+    await batch.commit();
+
+    if (student.isUnderage && student.responsiblePhone) {
+      const settingsDoc = await db.collection('settings').doc('school').get();
+      const settings = settingsDoc.data();
+      if (settings) {
+        const messageText = `Olá! Informamos que o aluno(a) *${student.name}* acabou de realizar o check-in na recepção e já está presente na escola para a aula de hoje. 🏫🎵\n\nAtt,\n${settings.tradingName || 'Avance'}`;
+        await sendSystemWhatsApp(settings, student.responsiblePhone, messageText);
+      }
+    }
+    return { success: true, message: `Bem-vindo(a) ${student.name}! Seu check-in foi realizado com sucesso. Tenha uma ótima aula!` };
+  } catch (err: any) {
+    if (err instanceof functions.https.HttpsError) throw err;
+    throw new functions.https.HttpsError('internal', err.message);
+  }
+});

@@ -132,6 +132,8 @@ export interface Lesson {
   status: 'scheduled' | 'completed' | 'cancelled' | 'needs_reschedule' | 'rescheduled';
   notes?: string;
   checkInTime?: any;
+  checkInMethod?: 'manual' | 'totem';
+  checkInBy?: 'admin' | 'teacher';
   photoUrls?: string[];
   isMakeup?: boolean;
   isTrial?: boolean;

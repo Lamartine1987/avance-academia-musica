@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { collection, onSnapshot, query, where, orderBy, doc, setDoc, writeBatch, getDoc, Timestamp } from 'firebase/firestore';
+import { collection, onSnapshot, query, where, orderBy, doc, setDoc, updateDoc, serverTimestamp, writeBatch, getDoc, Timestamp } from 'firebase/firestore';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { db, storage } from '../firebase';
@@ -44,11 +44,12 @@ export default function ClassDiary({ profile, initialStudentId, initialLessonId 
   const [taskToEdit, setTaskToEdit] = useState<Lesson | null>(null);
   const [editTaskDate, setEditTaskDate] = useState('');
   const [editTaskDuration, setEditTaskDuration] = useState('');
-  const [confirmDialog, setConfirmDialog] = useState<{isOpen: boolean, title: string, message: string, onConfirm: () => void}>({
+  const [confirmDialog, setConfirmDialog] = useState<{isOpen: boolean, title: string, message: string, onConfirm: () => void, theme?: 'danger' | 'success'}>({
     isOpen: false,
     title: '',
     message: '',
-    onConfirm: () => {}
+    onConfirm: () => {},
+    theme: 'danger'
   });
   
   const [studentSearchTerm, setStudentSearchTerm] = useState('');
@@ -479,6 +480,35 @@ export default function ClassDiary({ profile, initialStudentId, initialLessonId 
     });
   };
 
+  const handleManualCheckIn = async (lessonId: string) => {
+    if (profile.role !== 'admin' && profile.teacherId !== (lessons.find(l => l.id === lessonId)?.teacherId)) {
+      setFeedback({ isOpen: true, type: 'error', title: 'Erro', message: 'Apenas o administrador ou o professor da aula podem marcar a presença.' });
+      return;
+    }
+    
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Confirmar Check-in Manual',
+      message: 'Tem certeza que deseja marcar o check-in (presença) deste aluno manualmente nesta aula?',
+      theme: 'success',
+      onConfirm: async () => {
+        try {
+          await updateDoc(doc(db, 'lessons', lessonId), {
+            checkInTime: serverTimestamp(),
+            checkInMethod: 'manual',
+            checkInBy: profile.role
+          });
+          setFeedback({ isOpen: true, type: 'success', title: 'Sucesso', message: 'Check-in manual registrado com sucesso!' });
+        } catch (err: any) {
+          console.error(err);
+          setFeedback({ isOpen: true, type: 'error', title: 'Erro', message: 'Erro ao marcar check-in: ' + err.message });
+        } finally {
+          setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+        }
+      }
+    });
+  };
+
   const handleEditTaskSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!taskToEdit || !editTaskDate) return;
@@ -510,8 +540,8 @@ export default function ClassDiary({ profile, initialStudentId, initialLessonId 
       {confirmDialog.isOpen && (
         <div className="fixed inset-0 bg-zinc-950/40 backdrop-blur-md flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-3xl p-6 md:p-8 max-w-sm w-full shadow-2xl shadow-black/10 ring-1 ring-zinc-950/5 text-center">
-            <div className="w-16 h-16 bg-red-50 rounded-full flex items-center justify-center mx-auto mb-6">
-              <AlertCircle className="w-8 h-8 text-red-500" />
+            <div className={cn("w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-6", confirmDialog.theme === 'success' ? "bg-emerald-50" : "bg-red-50")}>
+              {confirmDialog.theme === 'success' ? <CheckCircle2 className="w-8 h-8 text-emerald-500" /> : <AlertCircle className="w-8 h-8 text-red-500" />}
             </div>
             <h3 className="text-xl font-bold text-zinc-900 mb-2">{confirmDialog.title}</h3>
             <p className="text-sm text-zinc-500 mb-8">{confirmDialog.message}</p>
@@ -524,7 +554,7 @@ export default function ClassDiary({ profile, initialStudentId, initialLessonId 
               </button>
               <button
                 onClick={confirmDialog.onConfirm}
-                className="flex-1 bg-red-500 text-white font-bold py-3 px-4 rounded-2xl hover:bg-red-600 transition-colors shadow-lg shadow-red-500/25"
+                className={cn("flex-1 text-white font-bold py-3 px-4 rounded-2xl transition-colors shadow-lg", confirmDialog.theme === 'success' ? "bg-emerald-500 hover:bg-emerald-600 shadow-emerald-500/25" : "bg-red-500 hover:bg-red-600 shadow-red-500/25")}
               >
                 Confirmar
               </button>
@@ -981,6 +1011,7 @@ export default function ClassDiary({ profile, initialStudentId, initialLessonId 
                                     {lesson.checkInTime && (
                                       <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-lg flex items-center gap-1" title="Presente na Recepção">
                                         <CheckCircle2 className="w-3 h-3" /> Check-in às {safeFormat(toDate(lesson.checkInTime), 'HH:mm')}
+                                        {lesson.checkInMethod === 'manual' && <span className="opacity-50 ml-0.5">(Manual)</span>}
                                       </span>
                                     )}
                                     <span className={cn(
@@ -1204,12 +1235,29 @@ export default function ClassDiary({ profile, initialStudentId, initialLessonId 
                                   </td>
                                   <td className="px-6 py-4">
                                     {lesson.checkInTime ? (
-                                      <div className="flex items-center gap-1.5 text-emerald-600 font-bold text-xs bg-emerald-50 w-max px-3 py-1.5 rounded-lg border border-emerald-100">
-                                        <CheckCircle2 className="w-3.5 h-3.5" />
-                                        {safeFormat(toDate(lesson.checkInTime), "HH:mm")}
+                                      <div className="flex flex-col gap-1 w-max">
+                                        <div className="flex items-center gap-1.5 text-emerald-600 font-bold text-xs bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-100">
+                                          <CheckCircle2 className="w-3.5 h-3.5" />
+                                          {safeFormat(toDate(lesson.checkInTime), "HH:mm")}
+                                        </div>
+                                        {lesson.checkInMethod === 'manual' && (
+                                          <span className="text-[9px] uppercase font-bold text-emerald-700 tracking-wider bg-emerald-100 px-2 py-0.5 rounded text-center">
+                                            Lançamento Manual ({lesson.checkInBy === 'admin' ? 'Admin' : 'Prof'})
+                                          </span>
+                                        )}
                                       </div>
                                     ) : (
-                                      <span className="text-zinc-400 text-xs italic">Sem registro</span>
+                                      <div className="flex items-center gap-2">
+                                        <span className="text-zinc-400 text-xs italic">Sem registro</span>
+                                        {(profile.role === 'admin' || profile.teacherId === lesson.teacherId) && (
+                                          <button
+                                            onClick={() => handleManualCheckIn(lesson.id)}
+                                            className="text-[10px] font-bold uppercase tracking-wider bg-orange-100 text-orange-700 hover:bg-orange-200 px-2 py-1 rounded-md transition-colors"
+                                          >
+                                            Marcar Presença
+                                          </button>
+                                        )}
+                                      </div>
                                     )}
                                   </td>
                                 </tr>

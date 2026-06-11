@@ -180,7 +180,7 @@ service cloud.firestore {
     }
 
     function isValidLesson(data) {
-      return hasOnlyAllowedFields(['studentId', 'teacherId', 'instrument', 'startTime', 'endTime', 'status', 'notes', 'photoUrls', 'createdAt', 'isMakeup', 'absenceId', 'isTrial', 'studentName', 'studentPhone', 'isStudyTask', 'topicId', 'topicTitle', 'topicUrl', 'suggestedDuration', 'checkInTime']) &&
+      return hasOnlyAllowedFields(['studentId', 'teacherId', 'instrument', 'startTime', 'endTime', 'status', 'notes', 'photoUrls', 'createdAt', 'isMakeup', 'absenceId', 'isTrial', 'studentName', 'studentPhone', 'isStudyTask', 'topicId', 'topicTitle', 'topicUrl', 'suggestedDuration', 'checkInTime', 'checkInMethod', 'checkInBy']) &&
              data.studentId is string && data.teacherId is string && data.instrument is string &&
              data.startTime is timestamp && data.endTime is timestamp &&
              (!('status' in data) || data.status in ['scheduled', 'completed', 'cancelled', 'needs_reschedule', 'rescheduled']) &&
@@ -197,7 +197,9 @@ service cloud.firestore {
              (!('topicUrl' in data) || data.topicUrl is string) &&
              (!('suggestedDuration' in data) || data.suggestedDuration is number) &&
              (!('createdAt' in data) || data.createdAt is timestamp) &&
-             (!('checkInTime' in data) || data.checkInTime is timestamp);
+             (!('checkInTime' in data) || data.checkInTime is timestamp) &&
+             (!('checkInMethod' in data) || data.checkInMethod in ['manual', 'totem']) &&
+             (!('checkInBy' in data) || data.checkInBy in ['admin', 'teacher']);
     }
 
     function isValidInstrument(data) {

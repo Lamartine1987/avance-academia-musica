@@ -1594,7 +1594,11 @@ export default function Students({ profile }: { profile: UserProfile }) {
                       </div>
                       <div className="text-xs text-zinc-500 mt-2 flex flex-col gap-0.5">
                         <span className="font-medium text-emerald-700">Login Acesso: {isPrivacyMode ? '••••••' : student.systemLogin || '(Não salvo na base de dados)'}</span>
-                        <span>Matrícula: {student.enrollmentDate ? format(new Date(student.enrollmentDate + 'T12:00:00'), 'dd/MM/yyyy') : 'Não informada'}</span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-zinc-700 font-medium">Totem: <strong className="text-orange-600">{isPrivacyMode ? '••••••' : student.id.substring(0, 6).toUpperCase()}</strong></span>
+                          <span className="text-zinc-300">•</span>
+                          <span>Entrada: {student.enrollmentDate ? format(new Date(student.enrollmentDate + 'T12:00:00'), 'dd/MM/yyyy') : 'Não informada'}</span>
+                        </div>
                       </div>
                     </td>
                     <td className="py-5">

@@ -769,7 +769,7 @@ export default function Schedule({ profile, onNavigateToDiary, onNavigateToEvalu
           </div>
           <div className="bg-white/10 backdrop-blur-md border border-white/20 rounded-xl px-6 py-4 text-center shrink-0 w-full md:w-auto">
             <p className="text-xs font-bold text-orange-100 uppercase tracking-widest mb-1">Sua Matrícula</p>
-            <p className="text-2xl font-mono font-black tracking-wider">{profile.studentId.substring(0, 8).toUpperCase()}</p>
+            <p className="text-2xl font-mono font-black tracking-wider">{profile.studentId.substring(0, 6).toUpperCase()}</p>
           </div>
         </div>
       )}
