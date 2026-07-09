@@ -3,7 +3,7 @@ import { collection, query, onSnapshot, addDoc, serverTimestamp, deleteDoc, doc,
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '../firebase';
 import { UserProfile, LibraryTopic, Student, Teacher, LibraryModule, Lesson, Instrument } from '../types';
-import { BookOpen, Plus, Trash2, X, FileText, Video, Headphones, ExternalLink, Loader2, ChevronDown, ChevronUp, LockOpen, GraduationCap, Settings, CalendarDays, CheckCircle2, AlertCircle } from 'lucide-react';
+import { BookOpen, Plus, Trash2, X, FileText, Video, Headphones, ExternalLink, Loader2, ChevronDown, ChevronUp, LockOpen, GraduationCap, Settings, CalendarDays, CheckCircle2, AlertCircle, Eye } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { motion, AnimatePresence } from 'motion/react';
@@ -1552,14 +1552,26 @@ setNewModuleName('');
                                   Acessar Sala de Prática
                                 </button>
                               ) : (
-                                <a 
-                                  href={topic.url} 
-                                  target="_blank" 
-                                  rel="noopener noreferrer"
-                                  className="flex-1 min-w-[100px] flex items-center justify-center gap-2 py-2.5 bg-white text-zinc-700 rounded-xl text-xs font-bold hover:bg-zinc-100 hover:text-black border border-zinc-200 transition-all"
-                                >
-                                  Acessar Link
-                                </a>
+                                <>
+                                  <a 
+                                    href={topic.url} 
+                                    target="_blank" 
+                                    rel="noopener noreferrer"
+                                    className="flex-1 min-w-[90px] flex items-center justify-center gap-1.5 py-2.5 bg-white text-zinc-700 rounded-xl text-xs font-bold hover:bg-zinc-100 hover:text-black border border-zinc-200 transition-all"
+                                    title="Acessar Link Original"
+                                  >
+                                    <ExternalLink className="w-3.5 h-3.5 shrink-0" />
+                                    <span>Link</span>
+                                  </a>
+                                  <button 
+                                    onClick={() => handleOpenStudySession(topic)}
+                                    className="flex-1 min-w-[100px] flex items-center justify-center gap-1.5 py-2.5 bg-zinc-100 text-zinc-700 rounded-xl text-xs font-bold hover:bg-zinc-200 hover:text-black border border-zinc-200 transition-all"
+                                    title="Visualizar Sala de Estudo do Aluno"
+                                  >
+                                    <Eye className="w-3.5 h-3.5 shrink-0" />
+                                    <span>Visualizar</span>
+                                  </button>
+                                </>
                               )}
                               
                               {(isAdmin || isTeacher) && (
