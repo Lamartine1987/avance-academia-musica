@@ -554,8 +554,8 @@ service cloud.firestore {
 
     match /school_agenda_events/{eventId} {
       allow read: if isAuthenticated();
-      allow create, update: if (isAdmin() || isTeacher()) && isValidSchoolAgendaEvent(request.resource.data);
-      allow delete: if isAdmin() || isTeacher();
+      allow create, update: if isAdmin() && isValidSchoolAgendaEvent(request.resource.data);
+      allow delete: if isAdmin();
     }
     
     match /debug_logs/{logId} {

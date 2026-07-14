@@ -664,6 +664,7 @@ export default function SchoolAgenda({ profile }: SchoolAgendaProps) {
               </div>
 
               <form onSubmit={handleSubmit} className="space-y-5">
+                <fieldset disabled={!isAdmin} className="space-y-5">
                 <div>
                   <label className="block text-sm font-medium text-zinc-700 mb-1 ml-1">Título do Evento</label>
                   <input
@@ -671,7 +672,7 @@ export default function SchoolAgenda({ profile }: SchoolAgendaProps) {
                     required
                     value={title}
                     onChange={(e) => setTitle(e.target.value)}
-                    className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all font-medium"
+                    className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all font-medium disabled:opacity-70"
                     placeholder="Ex: Ensaio Banda X"
                   />
                 </div>
@@ -785,10 +786,11 @@ export default function SchoolAgenda({ profile }: SchoolAgendaProps) {
                             return (
                               <div 
                                 key={`student-${student.id}`}
-                                onClick={() => handleToggleStudent(student.id)}
+                                onClick={() => isAdmin && handleToggleStudent(student.id)}
                                 className={cn(
-                                  "flex items-center gap-3 p-2.5 rounded-xl cursor-pointer transition-all",
-                                  isSelected ? "bg-indigo-100/50" : "hover:bg-white"
+                                  "flex items-center gap-3 p-2.5 rounded-xl transition-all",
+                                  isAdmin ? "cursor-pointer" : "cursor-default",
+                                  isSelected ? "bg-indigo-100/50" : (isAdmin ? "hover:bg-white" : "")
                                 )}
                               >
                                 <div className={cn(
@@ -821,10 +823,11 @@ export default function SchoolAgenda({ profile }: SchoolAgendaProps) {
                             return (
                               <div 
                                 key={`teacher-${teacher.id}`}
-                                onClick={() => handleToggleTeacher(teacher.id)}
+                                onClick={() => isAdmin && handleToggleTeacher(teacher.id)}
                                 className={cn(
-                                  "flex items-center gap-3 p-2.5 rounded-xl cursor-pointer transition-all",
-                                  isSelected ? "bg-indigo-100/50" : "hover:bg-white"
+                                  "flex items-center gap-3 p-2.5 rounded-xl transition-all",
+                                  isAdmin ? "cursor-pointer" : "cursor-default",
+                                  isSelected ? "bg-indigo-100/50" : (isAdmin ? "hover:bg-white" : "")
                                 )}
                               >
                                 <div className={cn(
@@ -846,6 +849,7 @@ export default function SchoolAgenda({ profile }: SchoolAgendaProps) {
                   </div>
                 </div>
 
+                </fieldset>
                 <div className="pt-4 flex justify-between items-center gap-3 border-t border-zinc-100 mt-6">
                   <div>
                     {selectedEvent && isAdmin && (
@@ -864,15 +868,17 @@ export default function SchoolAgenda({ profile }: SchoolAgendaProps) {
                       onClick={() => setShowEventForm(false)}
                       className="px-6 py-3 rounded-2xl text-sm font-bold text-zinc-600 hover:bg-zinc-100 transition-all"
                     >
-                      Cancelar
+                      {isAdmin ? 'Cancelar' : 'Fechar'}
                     </button>
-                    <button
-                      type="submit"
-                      disabled={isSubmitting}
-                      className="bg-indigo-500 text-white px-8 py-3 rounded-2xl font-bold hover:bg-indigo-600 transition-all shadow-lg hover:shadow-indigo-500/25 active:scale-95 flex items-center gap-2"
-                    >
-                      {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : (selectedEvent ? 'Atualizar' : 'Salvar')}
-                    </button>
+                    {isAdmin && (
+                      <button
+                        type="submit"
+                        disabled={isSubmitting}
+                        className="bg-indigo-500 text-white px-8 py-3 rounded-2xl font-bold hover:bg-indigo-600 transition-all shadow-lg hover:shadow-indigo-500/25 active:scale-95 flex items-center gap-2"
+                      >
+                        {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : (selectedEvent ? 'Atualizar' : 'Salvar')}
+                      </button>
+                    )}
                   </div>
                 </div>
               </form>
