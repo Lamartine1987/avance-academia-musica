@@ -826,7 +826,7 @@ export default function Communication() {
                
                <div className="opacity-50 pointer-events-none select-none mt-16 flex justify-between items-center text-[10px] text-zinc-500 font-sans tracking-wide border-t border-zinc-200 pt-4">
                   <p>1ª via Cliente - 2ª via {schoolSettings.tradingName || 'Avance'}</p>
-                  <p>Contrato 390/{new Date().getFullYear()} - Pág.1/1</p>
+                  <p>Contrato {student.contractNumber || '390'}/{new Date().getFullYear()} - Pág.1/1</p>
                </div>
              </div>
           </div>

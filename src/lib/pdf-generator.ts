@@ -87,7 +87,7 @@ export const generateSignedContractPDF = async (student: Student, schoolSettings
 
       <div style="text-align: center; margin-bottom: 40px;">
          <h2 style="font-size: 18px; font-weight: bold; margin: 0;">CONTRATO DE PRESTAÇÃO DE SERVIÇO</h2>
-         <p style="font-size: 12px; margin: 5px 0 0 0;">390/${(student.createdAt?.toDate ? student.createdAt.toDate() : new Date()).getFullYear()}</p>
+         <p style="font-size: 12px; margin: 5px 0 0 0;">${student.contractNumber || '390'}/${(student.createdAt?.toDate ? student.createdAt.toDate() : new Date()).getFullYear()}</p>
       </div>
 
       <p style="text-align: justify; margin-bottom: 16px;">

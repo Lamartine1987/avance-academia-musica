@@ -167,7 +167,7 @@ export default function ContractViewer({ student, onClose }: { student: Student,
       
             <div className="text-center mb-10">
                <h2 className="text-xl font-bold uppercase tracking-wide">CONTRATO DE PRESTAÇÃO DE SERVIÇO</h2>
-               <p className="text-sm">390/{(student.createdAt?.toDate ? student.createdAt.toDate() : new Date()).getFullYear()}</p>
+               <p className="text-sm">{student.contractNumber || '390'}/{(student.createdAt?.toDate ? student.createdAt.toDate() : new Date()).getFullYear()}</p>
             </div>
             
             <p className="mb-4 text-justify">

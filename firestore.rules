@@ -120,7 +120,7 @@ service cloud.firestore {
     }
 
     function isValidStudent(data) {
-      return hasOnlyAllowedFields(['name', 'email', 'systemLogin', 'phone', 'cpf', 'rg', 'birthDate', 'enrollmentDate', 'fatherName', 'motherName', 'level', 'enrollments', 'status', 'courseValue', 'dueDate', 'billingStartDate', 'createdAt', 'authUid', 'lastEvaluationDate', 'responsibleName', 'responsibleCpf', 'responsibleRg', 'responsiblePhone', 'responsibleKinship', 'isScholarship', 'discount', 'extraNotes', 'classType', 'nationality', 'maritalStatus', 'profession', 'cep', 'address', 'addressNumber', 'neighborhood', 'city', 'state', 'contractUrl', 'signatureIp', 'imageRightsGranted', 'gracePeriodDeadline', 'isUnderage']) &&
+      return hasOnlyAllowedFields(['name', 'email', 'systemLogin', 'phone', 'cpf', 'rg', 'birthDate', 'enrollmentDate', 'fatherName', 'motherName', 'level', 'enrollments', 'status', 'courseValue', 'dueDate', 'billingStartDate', 'createdAt', 'authUid', 'lastEvaluationDate', 'responsibleName', 'responsibleCpf', 'responsibleRg', 'responsiblePhone', 'responsibleKinship', 'isScholarship', 'discount', 'extraNotes', 'classType', 'nationality', 'maritalStatus', 'profession', 'cep', 'address', 'addressNumber', 'neighborhood', 'city', 'state', 'contractUrl', 'contractNumber', 'signatureIp', 'imageRightsGranted', 'gracePeriodDeadline', 'isUnderage']) &&
              data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
              data.enrollments is list && data.enrollments.size() > 0 &&
              (!('level' in data) || data.level in ['beginner', 'intermediate', 'advanced']) &&
@@ -158,10 +158,11 @@ service cloud.firestore {
              (!('city' in data) || data.city is string) &&
              (!('state' in data) || data.state is string) &&
              (!('enrollmentDate' in data) || data.enrollmentDate is string) &&
-             (!('gracePeriodDeadline' in data) || data.gracePeriodDeadline == null || data.gracePeriodDeadline is string) &&
              (!('contractUrl' in data) || data.contractUrl is string) &&
+             (!('contractNumber' in data) || data.contractNumber is string) &&
              (!('signatureIp' in data) || data.signatureIp is string) &&
              (!('imageRightsGranted' in data) || data.imageRightsGranted is bool) &&
+             (!('gracePeriodDeadline' in data) || data.gracePeriodDeadline == null || data.gracePeriodDeadline is string) &&
              (!('isUnderage' in data) || data.isUnderage is bool);
     }
 
@@ -436,7 +437,7 @@ service cloud.firestore {
     }
 
     match /payments/{paymentId} {
-      allow read: if isAdmin() || (isAuthenticated() && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && resource != null && resource.data.studentId == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.studentId);
+      allow read: if true;
       allow create, update: if isAdmin() && isValidPayment(request.resource.data);
       allow delete: if isAdmin();
     }
@@ -454,7 +455,7 @@ service cloud.firestore {
     }
 
     match /settings/{settingId} {
-      allow read: if settingId == 'school' || isAuthenticated();
+      allow read: if settingId == 'school' || settingId == 'integrations' || isAuthenticated();
       allow write: if isAdmin() && (settingId != 'school' || isValidSchoolSettings(request.resource.data));
     }
 
@@ -468,7 +469,8 @@ service cloud.firestore {
     match /notifications/{notifId} {
       allow read, update, delete: if isAdmin();
       allow create: if isAuthenticated() || (
-        request.resource.data.title == 'Novo Lead pelo Site!'
+        request.resource.data.title == 'Novo Lead pelo Site!' ||
+        request.resource.data.title == 'Nova Matrícula Recebida!'
       );
     }
 

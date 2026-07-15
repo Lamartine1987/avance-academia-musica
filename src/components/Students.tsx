@@ -62,6 +62,7 @@ export default function Students({ profile }: { profile: UserProfile }) {
     newCycleCutoffDate: '',
     legacyGracePeriodMonths: 0
   });
+  const [sortBy, setSortBy] = useState<'date' | 'name'>('date');
   const [filterName, setFilterName] = useState('');
   const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'inactive' | 'pending_approval'>('all');
   const [filterInstrument, setFilterInstrument] = useState('');
@@ -599,8 +600,11 @@ export default function Students({ profile }: { profile: UserProfile }) {
         const generatedEmail = `${firstTwo}.${randomSuffix}@avance.com`;
         const generatedPassword = '123456';
 
+        const generatedContractNumber = Math.floor(1000 + Math.random() * 9000).toString();
+
         const docRef = await addDoc(collection(db, 'students'), {
           ...payload,
+          contractNumber: generatedContractNumber,
           systemLogin: generatedEmail,
           createdAt: serverTimestamp()
         });
@@ -1371,6 +1375,14 @@ export default function Students({ profile }: { profile: UserProfile }) {
       (filterGracePeriod === 'expired' && !!student.gracePeriodDeadline && student.gracePeriodDeadline < todayStr);
 
     return matchName && matchStatus && matchInstrument && matchTeacher && matchDiscount && matchDate && matchGracePeriod;
+  }).sort((a, b) => {
+    if (sortBy === 'name') {
+      return a.name.localeCompare(b.name);
+    } else {
+      const dateA = a.createdAt?.seconds || (a.enrollmentDate ? new Date(a.enrollmentDate).getTime() / 1000 : 0);
+      const dateB = b.createdAt?.seconds || (b.enrollmentDate ? new Date(b.enrollmentDate).getTime() / 1000 : 0);
+      return dateB - dateA;
+    }
   });
 
   const toggleSelectAll = () => {
@@ -1407,6 +1419,14 @@ export default function Students({ profile }: { profile: UserProfile }) {
             onChange={(e) => setFilterName(e.target.value)}
             className="w-full sm:w-auto bg-zinc-50 border border-zinc-100 rounded-2xl px-5 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 transition-all font-medium placeholder-zinc-400"
           />
+          <select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value as any)}
+            className="w-full sm:w-auto bg-zinc-50 border border-zinc-100 rounded-2xl px-5 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 transition-all text-zinc-600 font-medium"
+          >
+            <option value="date">Ordernar: Recentes</option>
+            <option value="name">Ordenar: Ordem Alfabética</option>
+          </select>
           <select
             value={filterStatus}
             onChange={(e) => setFilterStatus(e.target.value as any)}

@@ -42,6 +42,7 @@ export default function EnrollmentPortal({ token }: { token: string }) {
     fatherName: '',
     motherName: ''
   });
+  const [previewContractNumber] = useState(Math.floor(1000 + Math.random() * 9000).toString());
 
   useEffect(() => {
     const fetchEnrollment = async () => {
@@ -184,6 +185,7 @@ export default function EnrollmentPortal({ token }: { token: string }) {
       payload.signatureIp = userIp;
       const docRef = await addDoc(collection(db, 'students'), {
         ...payload,
+        contractNumber: previewContractNumber,
         systemLogin: generatedEmail,
         createdAt: serverTimestamp()
       });
@@ -357,7 +359,7 @@ export default function EnrollmentPortal({ token }: { token: string }) {
 
       <div className="text-center mb-8">
          <h2 className="text-xl font-bold uppercase tracking-wide">CONTRATO DE PRESTAÇÃO DE SERVIÇO</h2>
-         <p className="text-sm">390/{new Date().getFullYear()}</p>
+         <p className="text-sm">{previewContractNumber}/{new Date().getFullYear()}</p>
       </div>
       
       <p className="mb-4 text-justify">
@@ -404,7 +406,7 @@ export default function EnrollmentPortal({ token }: { token: string }) {
 
       <div className="mt-16 flex justify-between items-center text-[10px] text-zinc-500 font-sans tracking-wide">
          <p>1ª via Cliente - 2ª via {schoolSettings?.tradingName || 'Avance Academia de Música'}</p>
-         <p>Contrato 390/{new Date().getFullYear()} - Pág.1/1</p>
+         <p>Contrato {previewContractNumber}/{new Date().getFullYear()} - Pág.1/1</p>
       </div>
       
       <div className="text-center text-[10px] text-zinc-500 font-sans mt-2 tracking-wide font-bold">

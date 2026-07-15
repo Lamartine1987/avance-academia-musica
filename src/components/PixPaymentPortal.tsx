@@ -48,18 +48,32 @@ export default function PixPaymentPortal({ id }: { id: string }) {
   const generateBRCode = () => {
     if (!settings?.pixKey || !payment?.amount || !settings?.pixName) return '';
     
+    const removeAccents = (str: string) => str.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    
+    let cleanKey = settings.pixKey.trim();
+    const isEVP = cleanKey.length === 36 && (cleanKey.match(/-/g) || []).length === 4;
+    const isEmail = cleanKey.includes('@');
+    
+    if (!isEVP && !isEmail) {
+        const hasPlus = cleanKey.startsWith('+');
+        cleanKey = cleanKey.replace(/[\.\-\/\s\(\)]/g, '');
+        if (hasPlus && !cleanKey.startsWith('+')) {
+            cleanKey = '+' + cleanKey;
+        }
+    }
+
     const gui = formatPixField('00', 'br.gov.bcb.pix');
-    const key = formatPixField('01', settings.pixKey);
+    const key = formatPixField('01', cleanKey);
     const field26 = formatPixField('26', gui + key);
     
     const field52 = formatPixField('52', '0000');
     const field53 = formatPixField('53', '986');
     const field54 = formatPixField('54', payment.amount.toFixed(2));
     const field58 = formatPixField('58', 'BR');
-    const field59 = formatPixField('59', settings.pixName.substring(0, 25));
-    const field60 = formatPixField('60', (settings.pixCity || 'Caruaru').substring(0, 15));
+    const field59 = formatPixField('59', removeAccents(settings.pixName).substring(0, 25));
+    const field60 = formatPixField('60', removeAccents(settings.pixCity || 'Caruaru').substring(0, 15));
     
-    const txId = formatPixField('05', 'AVANCE');
+    const txId = formatPixField('05', '***');
     const field62 = formatPixField('62', txId);
     
     let payload = formatPixField('00', '01') + 

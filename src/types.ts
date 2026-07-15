@@ -91,6 +91,7 @@ export interface Student {
   enrollmentDate?: string;
   gracePeriodDeadline?: string;
   contractUrl?: string;
+  contractNumber?: string;
   createdAt: any;
   // Campos financeiros movidos para StudentFinancials, mantidos como opcionais aqui durante a migração
   isScholarship?: boolean;
