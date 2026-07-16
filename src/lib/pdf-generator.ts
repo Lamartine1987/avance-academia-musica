@@ -117,11 +117,11 @@ export const generateSignedContractPDF = async (student: Student, schoolSettings
                 <div style="margin-bottom: 8px; text-align: center;">
                   <div style="display: inline-block; padding: 6px 12px; border: 2px dashed #059669; border-radius: 8px; background-color: #f0fdf4; transform: rotate(1deg); box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
                     <span style="font-size: 11px; font-weight: 900; color: #059669; text-transform: uppercase;">ASSINADO DIGITALMENTE</span><br/>
-                    <span style="font-size: 8px; color: #047857; font-family: monospace;">Admin: ${profile.displayName || 'Sistema'}</span>
+                    <span style="font-size: 8px; color: #047857; font-family: monospace;">B SALVADOR DA SILVA BRAZ COSTA</span>
                   </div>
                 </div>
                <div style="border-top: 1px solid black; margin-bottom: 5px;"></div>
-               <p style="margin:0; font-weight: bold; font-size: 11px; text-transform: uppercase;">${schoolSettings?.tradingName || 'Avance Academia de Música'}</p>
+               <p style="margin:0; font-weight: bold; font-size: 11px; text-transform: uppercase;">B SALVADOR DA SILVA BRAZ COSTA</p>
                <p style="margin:0; font-size: 9px; color: #666;">Contratada / Representante</p>
              </td>
              <td style="text-align: center; padding: 0 20px; vertical-align: bottom;">

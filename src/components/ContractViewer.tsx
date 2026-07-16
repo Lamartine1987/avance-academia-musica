@@ -200,7 +200,7 @@ export default function ContractViewer({ student, onClose }: { student: Student,
                <div className="flex justify-between items-end mt-8 gap-10">
                  <div className="flex-1 text-center">
                    <div className="border-t border-black w-full mb-1"></div>
-                   <p className="font-bold text-xs uppercase">{schoolSettings?.tradingName || 'Avance Academia de Música'}</p>
+                   <p className="font-bold text-xs uppercase">B SALVADOR DA SILVA BRAZ COSTA</p>
                    <p className="text-[10px]">Contratada</p>
                  </div>
                  
