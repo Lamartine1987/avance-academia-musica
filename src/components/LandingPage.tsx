@@ -7,34 +7,12 @@ import { db } from '../firebase';
 
 export default function LandingPage({ onLoginClick, schoolSettings }: { onLoginClick: () => void, schoolSettings?: any }) {
   const { scrollYProgress } = useScroll();
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [formData, setFormData] = useState({ name: '', phone: '', course: '', note: '' });
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [submitSuccess, setSubmitSuccess] = useState(false);
+
   const [isPrivacyModalOpen, setIsPrivacyModalOpen] = useState(false);
   const [isTermsModalOpen, setIsTermsModalOpen] = useState(false);
 
   const whatsappLink = `https://wa.me/55${(schoolSettings?.phone || '81999999999').replace(/\D/g, '')}`;
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsSubmitting(true);
-    try {
-      await addDoc(collection(db, 'notifications'), {
-        title: 'Novo Lead pelo Site!',
-        message: `${formData.name} tem interesse em aprender ${formData.course}. WhatsApp: ${formData.phone}` + (formData.note ? `\n\nMensagem: ${formData.note}` : ''),
-        read: false,
-        createdAt: serverTimestamp()
-      });
-      setSubmitSuccess(true);
-    } catch (err) {
-      console.error(err);
-      alert('Erro ao enviar, tente novamente.');
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-  
   // Parallax constraints for Hero
   const heroOpacity = useTransform(scrollYProgress, [0, 0.15], [1, 0]);
   const heroScale = useTransform(scrollYProgress, [0, 0.15], [1, 0.95]);
@@ -79,7 +57,7 @@ export default function LandingPage({ onLoginClick, schoolSettings }: { onLoginC
         <div className="max-w-[1000px] mx-auto px-4 h-14 flex items-center justify-end text-sm">
           <div className="flex items-center gap-4">
             <button 
-              onClick={() => setIsModalOpen(true)}
+              onClick={() => window.open(`https://wa.me/55${(schoolSettings?.phone || '81999999999').replace(/\\D/g, '')}`, '_blank')}
               className="bg-white text-black px-4 py-1 rounded-full font-bold text-xs hover:bg-zinc-200 transition-colors"
             >
               Inscreva-se
@@ -219,7 +197,7 @@ export default function LandingPage({ onLoginClick, schoolSettings }: { onLoginC
                { name: "Violão", img: "https://images.unsplash.com/photo-1510915361894-db8b60106cb1?q=80&w=800&auto=format&fit=crop", desc: "Acústico e Erudito" },
                { name: "Bateria", img: "https://images.unsplash.com/photo-1519892300165-cb5542fb47c7?q=80&w=800&auto=format&fit=crop", desc: "Ritmo e Precisão" },
                { name: "Canto", img: "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?q=80&w=800&auto=format&fit=crop", desc: "Técnica Vocal Avançada" },
-               { name: "Ukulele", img: "https://images.unsplash.com/photo-1707699164633-0e584b2da329?q=80&w=800&auto=format&fit=crop", desc: "Leveza e Descontração" }
+
              ].map((curso, idx) => (
                 <motion.div 
                   key={idx}
@@ -251,7 +229,7 @@ export default function LandingPage({ onLoginClick, schoolSettings }: { onLoginC
           <p className="text-xl text-zinc-400 mb-12 font-medium">Matrix de aprendizado adaptativa inclusa em todos os planos.</p>
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
             <button 
-              onClick={() => setIsModalOpen(true)}
+              onClick={() => window.open(`https://wa.me/55${(schoolSettings?.phone || '81999999999').replace(/\\D/g, '')}`, '_blank')}
               className="bg-white text-black px-8 py-4 rounded-full font-bold hover:scale-105 hover:bg-zinc-200 transition-all flex items-center justify-center gap-2 w-full sm:w-auto"
             >
               Inscreva-se hoje
@@ -281,7 +259,7 @@ export default function LandingPage({ onLoginClick, schoolSettings }: { onLoginC
             <span>|</span>
             <button onClick={() => setIsTermsModalOpen(true)} className="hover:text-zinc-300 transition-colors">Termos Gerais</button>
             <span>|</span>
-            <button onClick={() => setIsModalOpen(true)} className="hover:text-zinc-300 transition-colors">Fale Conosco</button>
+            <button onClick={() => window.open(`https://wa.me/55${(schoolSettings?.phone || '81999999999').replace(/\\D/g, '')}`, '_blank')} className="hover:text-zinc-300 transition-colors">Fale Conosco</button>
             <span>|</span>
             <a 
               href={whatsappLink} 
@@ -297,114 +275,7 @@ export default function LandingPage({ onLoginClick, schoolSettings }: { onLoginC
       </footer>
 
       {/* Contact Modal */}
-      <AnimatePresence>
-        {isModalOpen && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-            <motion.div 
-              initial={{ opacity: 0 }} 
-              animate={{ opacity: 1 }} 
-              exit={{ opacity: 0 }} 
-              onClick={() => !isSubmitting && setIsModalOpen(false)}
-              className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-            />
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="relative w-full max-w-md bg-[#111] border border-white/10 rounded-3xl shadow-2xl p-8"
-            >
-              <button 
-                onClick={() => setIsModalOpen(false)}
-                className="absolute top-6 right-6 text-zinc-500 hover:text-white transition-colors"
-                disabled={isSubmitting}
-              >
-                <X className="w-5 h-5" />
-              </button>
 
-              {submitSuccess ? (
-                <div className="text-center py-8">
-                  <div className="w-16 h-16 bg-emerald-500/10 rounded-full flex items-center justify-center mx-auto mb-6">
-                    <Sparkles className="w-8 h-8 text-emerald-500" />
-                  </div>
-                  <h3 className="text-2xl font-bold mb-2">Tudo certo!</h3>
-                  <p className="text-zinc-400">Recebemos seu interesse. Nossa equipe entrará em contato em breve pelo WhatsApp.</p>
-                  <button 
-                    onClick={() => { setIsModalOpen(false); setSubmitSuccess(false); setFormData({name:'', phone:'', course:'', note:''}); }}
-                    className="mt-8 w-full bg-white text-black py-3 rounded-xl font-bold hover:bg-zinc-200 transition-colors"
-                  >
-                    Fechar
-                  </button>
-                </div>
-              ) : (
-                <>
-                  <h3 className="text-2xl font-bold mb-2">Dar o primeiro passo.</h3>
-                  <p className="text-zinc-400 mb-8 text-sm">Deixe seus dados e nós entraremos em contato para apresentar a escola e nossos planos.</p>
-                  
-                  <form onSubmit={handleSubmit} className="space-y-4">
-                    <div>
-                      <label className="block text-xs font-medium text-zinc-400 mb-1 ml-1">Seu Nome</label>
-                      <input 
-                        type="text" 
-                        required
-                        value={formData.name}
-                        onChange={e => setFormData({...formData, name: e.target.value})}
-                        className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/50 transition-all text-white placeholder:text-zinc-600"
-                        placeholder="Como podemos te chamar?"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-zinc-400 mb-1 ml-1">WhatsApp</label>
-                      <input 
-                        type="text" 
-                        required
-                        value={formData.phone}
-                        onChange={e => setFormData({...formData, phone: e.target.value})}
-                        className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/50 transition-all text-white placeholder:text-zinc-600"
-                        placeholder="(00) 00000-0000"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-zinc-400 mb-1 ml-1">O que você quer aprender?</label>
-                      <select 
-                        required
-                        value={formData.course}
-                        onChange={e => setFormData({...formData, course: e.target.value})}
-                        className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/50 transition-all text-white appearance-none"
-                      >
-                        <option value="" disabled>Selecione um curso...</option>
-                        <option value="Piano">Piano</option>
-                        <option value="Guitarra">Guitarra</option>
-                        <option value="Violão">Violão</option>
-                        <option value="Bateria">Bateria</option>
-                        <option value="Canto">Canto</option>
-                        <option value="Ukulele">Ukulele</option>
-                        <option value="Outro">Ainda não sei / Outro</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-zinc-400 mb-1 ml-1">Mensagem (opcional)</label>
-                      <textarea 
-                        value={formData.note}
-                        onChange={e => setFormData({...formData, note: e.target.value})}
-                        className="w-full bg-black border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/50 transition-all text-white placeholder:text-zinc-600 resize-none h-24"
-                        placeholder="Alguma dúvida ou comentário adicional?"
-                      />
-                    </div>
-
-                    <button 
-                      type="submit"
-                      disabled={isSubmitting}
-                      className="w-full bg-gradient-to-r from-orange-500 to-amber-500 text-white rounded-xl py-4 font-bold hover:from-orange-600 hover:to-amber-600 transition-all flex items-center justify-center gap-2 mt-4 shadow-lg shadow-orange-500/20"
-                    >
-                      {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Enviar Interesse'}
-                    </button>
-                  </form>
-                </>
-              )}
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
 
       {/* Privacy Modal */}
       <AnimatePresence>
