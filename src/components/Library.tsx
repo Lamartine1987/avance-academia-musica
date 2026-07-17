@@ -156,9 +156,7 @@ const [newModuleName, setNewModuleName] = useState('');
 
       setTopics(fetched);
       
-      // Auto expand all modules initially
-      const uniqueModules = Array.from(new Set(fetched.map(t => t.moduleName)));
-      setExpandedModules(uniqueModules);
+
       
       setLoading(false);
     });
