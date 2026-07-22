@@ -7,6 +7,7 @@ import { db } from '../firebase';
 import { format } from 'date-fns';
 import AlphaTabPlayer from './AlphaTabPlayer';
 import PdfViewer from './PdfViewer';
+import unmute from 'unmute';
 
 interface StudySessionProps {
   topic: LibraryTopic;
@@ -133,13 +134,7 @@ export default function StudySession({ topic, task, isAlreadyCompleted, onClose,
 
   useEffect(() => {
     if (isMetronomePlaying) {
-      if (!audioContextRef.current) {
-        const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
-        audioContextRef.current = new AudioContext();
-      }
-      if (audioContextRef.current.state === 'suspended') {
-        audioContextRef.current.resume();
-      }
+      if (!audioContextRef.current) return;
       
       nextNoteTimeRef.current = audioContextRef.current.currentTime + 0.05;
       currentBeatInBarRef.current = 0;
@@ -168,6 +163,18 @@ export default function StudySession({ topic, task, isAlreadyCompleted, onClose,
   }, []);
 
   const toggleMetronome = () => {
+    if (!isMetronomePlaying) {
+      // Initialize AudioContext on user interaction for Safari compatibility
+      if (!audioContextRef.current) {
+        const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
+        audioContextRef.current = new AudioContext();
+        // @ts-ignore - unmute might not have type definitions
+        unmute(audioContextRef.current); // Bypass iOS silent switch
+      }
+      if (audioContextRef.current.state === 'suspended') {
+        audioContextRef.current.resume();
+      }
+    }
     setIsMetronomePlaying(!isMetronomePlaying);
   };
 
