@@ -198,7 +198,7 @@ export interface MessageTemplate {
   id: string;
   title: string;
   content: string;
-  type: 'welcome' | 'promo' | 'reminder_predue' | 'reminder_due' | 'reminder_overdue' | 'custom' | 'reschedule' | 'evaluation' | 'pedagogic_reminder' | 'material_added' | 'enrollment_approved' | 'enrollment_rejected' | 'holiday_reminder';
+  type: 'welcome' | 'promo' | 'reminder_predue' | 'reminder_due' | 'reminder_overdue' | 'custom' | 'reschedule' | 'evaluation' | 'pedagogic_reminder' | 'material_added' | 'enrollment_approved' | 'enrollment_rejected' | 'holiday_reminder' | 'school_agenda_event';
   isAutomatic: boolean;
   createdAt: any;
 }
@@ -265,6 +265,8 @@ export interface SchoolAgendaEvent {
   description?: string;
   studentIds?: string[];
   teacherIds?: string[];
+  confirmedStudentIds?: string[];
+  declinedStudentIds?: string[];
   createdAt: any;
 }
 

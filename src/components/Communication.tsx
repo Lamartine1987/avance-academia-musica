@@ -481,6 +481,7 @@ export default function Communication() {
       case 'enrollment_rejected': return 'Matrícula Reprovada';
       case 'pix_payment': return 'PIX / Faturamento (Baixa Automática)';
       case 'holiday_reminder': return 'Lembrete de Feriado/Recesso';
+      case 'school_agenda_event': return 'Aviso de Novo Evento (Agenda)';
       case 'grace_period_expiry': return 'Aviso de Fim de Carência';
       case 'custom': return 'Outros';
       default: return type;
@@ -1507,13 +1508,14 @@ export default function Communication() {
                       <option value="pix_payment">PIX / Faturamento (Baixa Automática)</option>
                       <option value="declaration_issued">Declaração Emitida</option>
                       <option value="holiday_reminder">Lembrete de Feriado/Recesso</option>
+                      <option value="school_agenda_event">Aviso de Novo Evento (Agenda)</option>
                       <option value="grace_period_expiry">Aviso de Fim de Carência</option>
                       <option value="custom">Outros</option>
                     </select>
                   </div>
                   
                   
-                  {['welcome', 'material_added', 'enrollment_approved', 'enrollment_rejected', 'declaration_issued', 'holiday_reminder', 'grace_period_expiry', 'pix_payment', 'trial_lesson_teacher'].includes(currentTemplate.type || '') && (
+                  {['welcome', 'material_added', 'enrollment_approved', 'enrollment_rejected', 'declaration_issued', 'holiday_reminder', 'school_agenda_event', 'grace_period_expiry', 'pix_payment', 'trial_lesson_teacher'].includes(currentTemplate.type || '') && (
                     <div className="flex flex-col justify-center">
                       <label className="block text-sm font-bold text-zinc-700 mb-2">Disparo Automático</label>
                       <label className="flex items-center cursor-pointer">
@@ -1537,8 +1539,9 @@ export default function Communication() {
                          ['enrollment_approved', 'enrollment_rejected'].includes(currentTemplate.type || '') ? 'O botão Aprovar/Reprovar irá acionar este envio automaticamente.' :
                          currentTemplate.type === 'holiday_reminder' ? 'Se ativo, enviará este alerta no dia anterior ao feriado, apenas para alunos afetados.' :
                          currentTemplate.type === 'pix_payment' ? 'Envia o PIX via WhatsApp sempre que uma nova fatura for gerada.' :
+                         currentTemplate.type === 'school_agenda_event' ? 'Se ativo, envia para alunos vinculados ao criar um novo evento na agenda.' :
                          currentTemplate.type === 'trial_lesson_teacher' ? 'Envia essa mensagem ao professor sempre que uma aula teste for agendada para ele.' :
-                         'Envia essa mensagem automaticamente quando um novo material for anexado.'}
+                         'Se ativo, o sistema usará este texto nos envios automáticos para este fim.'}
                       </p>
                     </div>
                   )}
@@ -1612,6 +1615,15 @@ export default function Communication() {
                         <>
                           <li><strong>{'{aluno}'}</strong> - O primeiro nome do aluno;</li>
                           <li><strong>{'{feriado}'}</strong> - Título do feriado ou período do recesso;</li>
+                        </>
+                      )}
+                      {currentTemplate.type === 'school_agenda_event' && (
+                        <>
+                          <li><strong>{'{aluno}'}</strong> - O primeiro nome do aluno;</li>
+                          <li><strong>{'{evento}'}</strong> - Título do evento;</li>
+                          <li><strong>{'{data}'}</strong> - A data do evento no formato dd/mm/aaaa;</li>
+                          <li><strong>{'{horario}'}</strong> - O horário de início e fim;</li>
+                          <li><strong>{'{link_confirmacao}'}</strong> - Link mágico para confirmar/recusar presença.</li>
                         </>
                       )}
                     </ul>

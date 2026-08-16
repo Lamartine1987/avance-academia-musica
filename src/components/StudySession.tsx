@@ -7,7 +7,6 @@ import { db } from '../firebase';
 import { format } from 'date-fns';
 import AlphaTabPlayer from './AlphaTabPlayer';
 import PdfViewer from './PdfViewer';
-import unmute from 'unmute';
 
 interface StudySessionProps {
   topic: LibraryTopic;
@@ -168,8 +167,11 @@ export default function StudySession({ topic, task, isAlreadyCompleted, onClose,
       if (!audioContextRef.current) {
         const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
         audioContextRef.current = new AudioContext();
-        // @ts-ignore - unmute might not have type definitions
-        unmute(audioContextRef.current); // Bypass iOS silent switch
+        
+        // Zero-dependency workaround for iOS silent switch
+        // Play a tiny silent audio clip to force iOS to route web audio correctly
+        const dummyAudio = new Audio('data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA');
+        dummyAudio.play().catch(() => {});
       }
       if (audioContextRef.current.state === 'suspended') {
         audioContextRef.current.resume();

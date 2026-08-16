@@ -275,7 +275,7 @@ service cloud.firestore {
       return hasOnlyAllowedFields(['title', 'content', 'type', 'isAutomatic', 'createdAt']) &&
              data.title is string && data.title.size() > 0 &&
              data.content is string && data.content.size() > 0 &&
-             data.type in ['welcome', 'promo', 'reminder_predue', 'reminder_due', 'reminder_overdue', 'custom', 'reschedule', 'evaluation', 'pedagogic_reminder', 'material_added', 'enrollment_approved', 'enrollment_rejected', 'pix_payment', 'declaration_issued', 'holiday_reminder', 'grace_period_expiry', 'trial_lesson_teacher'] &&
+             data.type in ['welcome', 'promo', 'reminder_predue', 'reminder_due', 'reminder_overdue', 'custom', 'reschedule', 'evaluation', 'pedagogic_reminder', 'material_added', 'enrollment_approved', 'enrollment_rejected', 'pix_payment', 'declaration_issued', 'holiday_reminder', 'grace_period_expiry', 'trial_lesson_teacher', 'school_agenda_event'] &&
              data.isAutomatic is bool &&
              (!('createdAt' in data) || data.createdAt is timestamp);
     }
@@ -356,7 +356,7 @@ service cloud.firestore {
     }
 
     function isValidSchoolAgendaEvent(data) {
-      return hasOnlyAllowedFields(['title', 'eventType', 'date', 'endDate', 'startTime', 'endTime', 'description', 'studentIds', 'teacherIds', 'createdAt']) &&
+      return hasOnlyAllowedFields(['title', 'eventType', 'date', 'endDate', 'startTime', 'endTime', 'description', 'studentIds', 'teacherIds', 'confirmedStudentIds', 'declinedStudentIds', 'createdAt']) &&
              data.title is string && data.title.size() > 0 &&
              data.eventType is string && data.eventType.size() > 0 &&
              data.date is string &&
@@ -366,6 +366,8 @@ service cloud.firestore {
              (!('description' in data) || data.description == null || data.description is string) &&
              (!('studentIds' in data) || data.studentIds is list) &&
              (!('teacherIds' in data) || data.teacherIds is list) &&
+             (!('confirmedStudentIds' in data) || data.confirmedStudentIds is list) &&
+             (!('declinedStudentIds' in data) || data.declinedStudentIds is list) &&
              (!('createdAt' in data) || data.createdAt is timestamp);
     }
 
@@ -384,7 +386,9 @@ service cloud.firestore {
     }
 
     match /students/{studentId} {
-      allow read: if isAdmin() || isTeacher() || isLessonStudent(studentId);
+      allow get: if true;
+      allow list: if isAdmin() || isTeacher();
+      allow read: if isLessonStudent(studentId);
       // Allow unauthenticated creation for the Self Service Portal
       allow create: if isValidStudent(request.resource.data);
       allow update: if isAdmin() && isValidStudent(request.resource.data);
@@ -555,8 +559,12 @@ service cloud.firestore {
     }
 
     match /school_agenda_events/{eventId} {
-      allow read: if isAuthenticated();
-      allow create, update: if isAdmin() && isValidSchoolAgendaEvent(request.resource.data);
+      allow get: if true;
+      allow list: if isAuthenticated();
+      allow create: if isAdmin() && isValidSchoolAgendaEvent(request.resource.data);
+      allow update: if (isAdmin() && isValidSchoolAgendaEvent(request.resource.data)) || (
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['confirmedStudentIds', 'declinedStudentIds'])
+      );
       allow delete: if isAdmin();
     }
     

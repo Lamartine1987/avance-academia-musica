@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Play, Pause, Square, Volume2, VolumeX, Loader2, Bell, BellOff } from 'lucide-react';
+import { Play, Pause, Square, Volume2, VolumeX, Loader2, Bell, BellOff, Plus, Minus } from 'lucide-react';
 
 // Use globally injected alphaTab from CDN to bypass Vite WebWorker bundling issues
 const alphaTab = (window as any).alphaTab;
@@ -20,8 +20,8 @@ export default function AlphaTabPlayer({ url }: AlphaTabPlayerProps) {
   const [metronomeVolume, setMetronomeVolume] = useState(1);
   const [originalBpm, setOriginalBpm] = useState(100);
   const [currentBpm, setCurrentBpm] = useState(100);
-
-
+  const [transpose, setTranspose] = useState(0);
+  const [scoreData, setScoreData] = useState<Uint8Array | null>(null);
 
   const togglePlay = () => {
     if (!apiRef.current) return;
@@ -76,6 +76,7 @@ export default function AlphaTabPlayer({ url }: AlphaTabPlayerProps) {
       const initialBpm = score?.tempo || 100;
       setOriginalBpm(initialBpm);
       setCurrentBpm(initialBpm);
+      // setTranspose(0) removido daqui para não resetar ao recarregar a partitura
       setIsReady(true);
     });
 
@@ -100,7 +101,10 @@ export default function AlphaTabPlayer({ url }: AlphaTabPlayerProps) {
       })
       .then(buffer => {
         if (!isCancelled) {
-          api.load(new Uint8Array(buffer));
+          setTranspose(0); // Reset transpose when loading a completely new file
+          const uint8 = new Uint8Array(buffer);
+          setScoreData(uint8);
+          api.load(uint8);
         }
       })
       .catch(err => {
@@ -157,6 +161,43 @@ export default function AlphaTabPlayer({ url }: AlphaTabPlayerProps) {
     setCurrentBpm(newBpm);
     if (apiRef.current && originalBpm > 0) {
       apiRef.current.playbackSpeed = newBpm / originalBpm;
+    }
+  };
+
+  const handleTranspose = (amount: number) => {
+    console.log(`[Transpose] Tentando transpor em ${amount} semitons.`);
+    if (!apiRef.current || !apiRef.current.score) {
+      console.warn("[Transpose] apiRef ou score nulo!");
+      return;
+    }
+
+    const newTranspose = transpose + amount;
+    console.log(`[Transpose] Novo valor de transposição: ${newTranspose}`);
+    setTranspose(newTranspose);
+    
+    try {
+      // Aplica a transposição em todas as tracks
+      const tracks = apiRef.current.score.tracks;
+      for (let i = 0; i < tracks.length; i++) {
+        tracks[i].transpositionPitch = newTranspose;
+      }
+      
+      // Atualiza as configurações caso o alphaTab dependa disso
+      if (apiRef.current.settings.notation) {
+        apiRef.current.settings.notation.transpositionPitches = Array(tracks.length).fill(newTranspose);
+        apiRef.current.updateSettings();
+      }
+
+      console.log(`[Transpose] Transposição aplicada com sucesso nas propriedades.`);
+      
+      // Força a re-renderização visual e recria o áudio do zero usando os dados binários
+      apiRef.current.render();
+      if (scoreData) {
+          console.log(`[Transpose] Recarregando partitura dos dados brutos para reconstruir áudio...`);
+          apiRef.current.load(scoreData);
+      }
+    } catch (e) {
+      console.error(`[Transpose] Erro ao tentar transpor:`, e);
     }
   };
 
@@ -238,6 +279,34 @@ export default function AlphaTabPlayer({ url }: AlphaTabPlayerProps) {
             disabled={!isReady}
             title="BPM da Partitura"
           />
+        </div>
+
+        <div className="h-8 w-px bg-zinc-200 mx-2 hidden sm:block"></div>
+
+        {/* Transpose Control */}
+        <div className="flex items-center gap-1 shrink-0 bg-white border border-zinc-200 rounded-lg px-2 py-1">
+          <span className="text-xs md:text-sm font-medium text-zinc-500 hidden md:block w-16 text-center" title="Transposição em Semitons (Meio Tom)">
+            Semitons
+          </span>
+          <button 
+            onClick={() => handleTranspose(-1)}
+            disabled={!isReady}
+            className="w-6 h-6 flex items-center justify-center rounded bg-zinc-100 hover:bg-zinc-200 text-zinc-600 disabled:opacity-50"
+            title="-1 Semitom"
+          >
+            <Minus className="w-3 h-3" />
+          </button>
+          <span className="text-xs md:text-sm font-bold text-zinc-700 w-8 text-center" title="Transposição (semitons)">
+            {transpose > 0 ? `+${transpose}` : transpose}
+          </span>
+          <button 
+            onClick={() => handleTranspose(1)}
+            disabled={!isReady}
+            className="w-6 h-6 flex items-center justify-center rounded bg-zinc-100 hover:bg-zinc-200 text-zinc-600 disabled:opacity-50"
+            title="+1 Semitom"
+          >
+            <Plus className="w-3 h-3" />
+          </button>
         </div>
 
 

@@ -76,6 +76,8 @@ import TeacherPayments from './components/TeacherPayments';
 
 import SchoolAgenda from './components/SchoolAgenda';
 
+import RSVPPortal from './components/RSVPPortal';
+
 type View = 'dashboard' | 'students' | 'teachers' | 'schedule' | 'instruments' | 'profile' | 'financial' | 'communication' | 'materials' | 'library' | 'evaluations' | 'diary' | 'documents' | 'calendar' | 'teacher_payments' | 'event_agenda';
 
 export default function App() {
@@ -99,6 +101,10 @@ export default function App() {
   if (pathname.startsWith('/pagamento/')) {
     const paymentId = pathname.replace('/pagamento/', '');
     return <PixPaymentPortal id={paymentId} />;
+  }
+
+  if (pathname.startsWith('/rsvp')) {
+    return <RSVPPortal />;
   }
 
   const [currentHash, setCurrentHash] = useState(window.location.hash);
