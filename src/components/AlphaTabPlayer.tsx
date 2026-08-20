@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Play, Pause, Square, Volume2, VolumeX, Loader2, Bell, BellOff, Plus, Minus } from 'lucide-react';
+import { Play, Pause, Square, Volume2, VolumeX, Loader2, Bell, BellOff, Plus, Minus, Music, Radio } from 'lucide-react';
 
 // Use globally injected alphaTab from CDN to bypass Vite WebWorker bundling issues
 const alphaTab = (window as any).alphaTab;
@@ -22,6 +22,22 @@ export default function AlphaTabPlayer({ url }: AlphaTabPlayerProps) {
   const [currentBpm, setCurrentBpm] = useState(100);
   const [transpose, setTranspose] = useState(0);
   const [scoreData, setScoreData] = useState<Uint8Array | null>(null);
+  const [useSynth, setUseSynth] = useState(false);
+
+  const togglePlayerMode = () => {
+    const newUseSynth = !useSynth;
+    setUseSynth(newUseSynth);
+    if (apiRef.current && scoreData) {
+       // 2 = EnabledSynthesizer, 1 = EnabledAutomatic
+       apiRef.current.settings.player.playerMode = newUseSynth ? 2 : 1;
+       apiRef.current.updateSettings();
+       // Recarrega a partitura para o AlphaTab reconstruir os engines de áudio corretos
+       apiRef.current.load(scoreData);
+       
+       // Garante que o estado de pause seja redefinido
+       setIsPlaying(false);
+    }
+  };
 
   const togglePlay = () => {
     if (!apiRef.current) return;
@@ -63,6 +79,7 @@ export default function AlphaTabPlayer({ url }: AlphaTabPlayerProps) {
       },
       player: {
         enablePlayer: true,
+        playerMode: 1, // 1 = EnabledAutomatic (Usa backing track se tiver)
         soundFont: 'https://cdn.jsdelivr.net/npm/@coderline/alphatab@latest/dist/soundfont/sonivox.sf2',
         scrollElement: wrapperRef.current
       }
@@ -234,6 +251,40 @@ export default function AlphaTabPlayer({ url }: AlphaTabPlayerProps) {
             onChange={handleVolume}
             className="w-16 md:w-24 accent-emerald-500"
           />
+        </div>
+
+        <div className="h-8 w-px bg-zinc-200 mx-2 hidden sm:block"></div>
+
+        <div className="flex bg-zinc-100 p-1 rounded-lg border border-zinc-200 shrink-0">
+          <button 
+            onClick={() => { if (useSynth) togglePlayerMode(); }}
+            disabled={!isReady}
+            title="Ouvir a Gravação Original (se houver)"
+            className={`px-3 py-1.5 text-xs md:text-sm font-medium rounded-md flex items-center gap-2 transition-all disabled:opacity-50 ${
+              !useSynth 
+                ? 'bg-white text-emerald-700 shadow-sm ring-1 ring-black/5' 
+                : 'text-zinc-500 hover:text-zinc-700 hover:bg-zinc-200/50'
+            }`}
+          >
+            <Radio className="w-3.5 h-3.5 md:w-4 md:h-4" />
+            <span className="hidden md:inline">Áudio Original</span>
+            <span className="inline md:hidden">Áudio</span>
+          </button>
+          
+          <button 
+            onClick={() => { if (!useSynth) togglePlayerMode(); }}
+            disabled={!isReady}
+            title="Ouvir as Notas da Partitura (Permite usar o Metrônomo)"
+            className={`px-3 py-1.5 text-xs md:text-sm font-medium rounded-md flex items-center gap-2 transition-all disabled:opacity-50 ${
+              useSynth 
+                ? 'bg-white text-emerald-700 shadow-sm ring-1 ring-black/5' 
+                : 'text-zinc-500 hover:text-zinc-700 hover:bg-zinc-200/50'
+            }`}
+          >
+            <Music className="w-3.5 h-3.5 md:w-4 md:h-4" />
+            <span className="hidden md:inline">Partitura (MIDI)</span>
+            <span className="inline md:hidden">MIDI</span>
+          </button>
         </div>
 
         <div className="h-8 w-px bg-zinc-200 mx-2 hidden sm:block"></div>
