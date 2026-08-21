@@ -218,8 +218,13 @@ export default function SchoolAgenda({ profile }: SchoolAgendaProps) {
                     for (const sId of selectedStudentIds) {
                       const student = students.find(s => s.id === sId);
                       if (student && student.phone) {
-                        const cleanedPhone = student.phone.replace(/\D/g, '');
-                        if (cleanedPhone.length >= 10) {
+                        let cleanedPhone = student.phone.replace(/\D/g, '');
+                        // Adicionar 55 se não tiver
+                        if (cleanedPhone.length === 10 || cleanedPhone.length === 11) {
+                          cleanedPhone = `55${cleanedPhone}`;
+                        }
+
+                        if (cleanedPhone.length >= 12) {
                           const firstName = student.name.split(' ')[0];
                           const linkConfirmacao = `${window.location.origin}/rsvp?e=${eventId}&s=${sId}`;
                           const msg = templateText
@@ -229,38 +234,60 @@ export default function SchoolAgenda({ profile }: SchoolAgendaProps) {
                             .replace(/{horario}/g, timeRange)
                             .replace(/{link_confirmacao}/g, linkConfirmacao);
                             
-                          if (isApiz) {
-                             const baseUrl = settings.apizUrl.replace(/\/send-text\/?$/, '').replace(/\/$/, '');
-                             const endpoint = `${baseUrl}/send-text`;
-                             const payload = {
-                                  instanceName: settings.apizInstanceName || 'teste-crm',
-                                  number: cleanedPhone,
-                                  text: msg
-                             };
-                             fetch(endpoint, {
-                               method: 'POST',
-                               headers: {
-                                  'Content-Type': 'application/json',
-                                  'x-api-key': settings.apizToken || ''
-                               },
-                               body: JSON.stringify(payload)
-                             }).catch(err => console.error("Event WS Error (APIZ):", err));
-                          } else {
-                             const endpoint = `https://api.z-api.io/instances/${settings.zapiInstance}/token/${settings.zapiToken}/send-text`;
-                             const headers: any = { 'Content-Type': 'application/json' };
-                             if (settings.zapiSecurityToken) {
-                               headers['Client-Token'] = settings.zapiSecurityToken;
+                          const sendToAPI = async (phoneToTry: string) => {
+                             if (isApiz) {
+                               const baseUrl = settings.apizUrl.replace(/\/send-text\/?$/, '').replace(/\/$/, '');
+                               const endpoint = `${baseUrl}/send-text`;
+                               const payload = {
+                                    instanceName: settings.apizInstanceName || 'teste-crm',
+                                    number: phoneToTry,
+                                    text: msg
+                               };
+                               return fetch(endpoint, {
+                                 method: 'POST',
+                                 headers: {
+                                    'Content-Type': 'application/json',
+                                    'x-api-key': settings.apizToken || ''
+                                 },
+                                 body: JSON.stringify(payload)
+                               });
+                             } else {
+                               const endpoint = `https://api.z-api.io/instances/${settings.zapiInstance}/token/${settings.zapiToken}/send-text`;
+                               const headers: any = { 'Content-Type': 'application/json' };
+                               if (settings.zapiSecurityToken) {
+                                 headers['Client-Token'] = settings.zapiSecurityToken;
+                               }
+                               const payload = {
+                                   phone: phoneToTry,
+                                   message: msg
+                               };
+                               return fetch(endpoint, {
+                                 method: 'POST',
+                                 headers: headers,
+                                 body: JSON.stringify(payload)
+                               });
                              }
-                             const payload = {
-                                 phone: cleanedPhone,
-                                 message: msg
-                             };
-                             fetch(endpoint, {
-                               method: 'POST',
-                               headers: headers,
-                               body: JSON.stringify(payload)
-                             }).catch(err => console.error("Event WS Error (ZAPI):", err));
-                          }
+                          };
+
+                          sendToAPI(cleanedPhone)
+                            .then(async (res) => {
+                              if (!res.ok) {
+                                // Fallback: try adding/removing 9th digit se falhar
+                                let altPhone = '';
+                                if (cleanedPhone.length === 13) {
+                                  // remove 9th digit (index 4) -> '5581' + '99694866'
+                                  altPhone = cleanedPhone.substring(0, 4) + cleanedPhone.substring(5);
+                                } else if (cleanedPhone.length === 12) {
+                                  // add 9th digit -> '5581' + '9' + '99694866'
+                                  altPhone = cleanedPhone.substring(0, 4) + '9' + cleanedPhone.substring(4);
+                                }
+                                if (altPhone) {
+                                  console.log(`[WhatsApp Fallback] Retrying with ${altPhone} for student ${student.name}`);
+                                  await sendToAPI(altPhone);
+                                }
+                              }
+                            })
+                            .catch(err => console.error("Event WS Error:", err));
                         }
                       }
                     }

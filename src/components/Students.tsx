@@ -1170,62 +1170,72 @@ export default function Students({ profile }: { profile: UserProfile }) {
       }
       console.log(`[sendMessage] Telefone limpo formatado:`, cleanedPhone);
 
-      if (isApiz) {
-        const baseUrl = settings.apizUrl?.replace(/\/send-text\/?$/, '').replace(/\/$/, '') || '';
-        const endpoint = `${baseUrl}/send-text`;
-        const payload = {
-             instanceName: settings.apizInstanceName || 'teste-crm',
-             number: cleanedPhone,
-             text: message
-        };
-        console.log(`[sendMessage] Disparando para APIZ na URL: ${endpoint} com payload:`, { ...payload, text: '...' });
+      const sendToAPI = async (phoneToTry: string, isFallback: boolean = false) => {
+        if (isApiz) {
+          const baseUrl = settings.apizUrl?.replace(/\/send-text\/?$/, '').replace(/\/$/, '') || '';
+          const endpoint = `${baseUrl}/send-text`;
+          const payload = {
+               instanceName: settings.apizInstanceName || 'teste-crm',
+               number: phoneToTry,
+               text: message
+          };
+          if (!isFallback) console.log(`[sendMessage] Disparando para APIZ na URL: ${endpoint} com payload:`, { ...payload, text: '...' });
 
-        const response = await fetch(endpoint, {
-          method: 'POST',
-          headers: {
-             'Content-Type': 'application/json',
-             'x-api-key': settings.apizToken || ''
-          },
-          body: JSON.stringify(payload)
-        });
+          return await fetch(endpoint, {
+            method: 'POST',
+            headers: {
+               'Content-Type': 'application/json',
+               'x-api-key': settings.apizToken || ''
+            },
+            body: JSON.stringify(payload)
+          });
+        } else {
+          const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+          if (settings.zapiSecurityToken) {
+              headers['Client-Token'] = settings.zapiSecurityToken;
+          }
+
+          const endpoint = `https://api.z-api.io/instances/${settings.zapiInstance}/token/${settings.zapiToken}/send-text`;
+          const payload = {
+              phone: phoneToTry,
+              message: message
+          };
+          if (!isFallback) console.log(`[sendMessage] Disparando para Z-API na URL: ${endpoint} com payload:`, { ...payload, message: '...' });
+
+          return await fetch(endpoint, {
+            method: 'POST',
+            headers: headers,
+            body: JSON.stringify(payload)
+          });
+        }
+      };
+
+      try {
+        let response = await sendToAPI(cleanedPhone);
         
-        console.log(`[sendMessage] Resposta da APIZ: Status ${response.status}`);
+        if (!response.ok) {
+           let altPhone = '';
+           if (cleanedPhone.length === 13) {
+             altPhone = cleanedPhone.substring(0, 4) + cleanedPhone.substring(5);
+           } else if (cleanedPhone.length === 12) {
+             altPhone = cleanedPhone.substring(0, 4) + '9' + cleanedPhone.substring(4);
+           }
+           
+           if (altPhone) {
+             console.log(`[sendMessage] WhatsApp Fallback: Tentando com o número alternativo ${altPhone}`);
+             response = await sendToAPI(altPhone, true);
+           }
+        }
         
         if (!response.ok) {
            const errText = await response.text();
-           console.error("[sendMessage] APIZ Error Payload:", { phone: cleanedPhone, message, response: errText });
-           alert(`Erro da nossa APIZ Própria: ${errText}.`);
+           console.error("[sendMessage] Erro no envio via API Payload/Fallback:", { phone: cleanedPhone, message, response: errText });
+           alert(`Erro da API: ${errText}. Verifique se o telefone tem WhatsApp ou se conectou a instância.`);
         } else {
-           console.log(`[sendMessage] Mensagem enviada via APIZ com sucesso!`);
+           console.log(`[sendMessage] Mensagem enviada via API com sucesso!`);
         }
-      } else {
-        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-        if (settings.zapiSecurityToken) {
-            headers['Client-Token'] = settings.zapiSecurityToken;
-        }
-
-        const endpoint = `https://api.z-api.io/instances/${settings.zapiInstance}/token/${settings.zapiToken}/send-text`;
-        const payload = {
-            phone: cleanedPhone,
-            message: message
-        };
-        console.log(`[sendMessage] Disparando para Z-API na URL: ${endpoint} com payload:`, { ...payload, message: '...' });
-
-        const response = await fetch(endpoint, {
-          method: 'POST',
-          headers: headers,
-          body: JSON.stringify(payload)
-        });
-
-        console.log(`[sendMessage] Resposta da ZAPI: Status ${response.status}`);
-
-        if (!response.ok) {
-          const errText = await response.text();
-          console.error("[sendMessage] ZAPI Error 400 Payload:", { phone: cleanedPhone, message, response: errText });
-          alert(`Erro da Z-API (400): ${errText}. Verifique se o telefone tem WhatsApp ou se conectou a instância.`);
-        } else {
-           console.log(`[sendMessage] Mensagem enviada via ZAPI com sucesso!`);
-        }
+      } catch (err) {
+        console.error("[sendMessage] Network error:", err);
       }
 
     } catch (e) {
