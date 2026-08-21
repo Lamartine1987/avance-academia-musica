@@ -189,24 +189,27 @@ export default function Financial({ profile }: { profile?: any }) {
           });
         }
         
-        try {
-          setFetchingFirebaseCost(true);
-          const fn = getFunctions();
-          const getCosts = httpsCallable(fn, 'getInfrastructureCosts');
-          const result: any = await getCosts();
-          if (result.data?.status === 'success') {
-            setFirebaseCost(result.data.finalCost);
-          } else if (result.data?.status === 'pending') {
-            setFirebaseCost(0);
-          } else if (result.data?.status === 'error') {
-            console.error('BigQuery Error:', result.data.error);
-            setFirebaseCost(0);
+        // Dispara a busca de custos de infraestrutura em background, sem bloquear o carregamento principal
+        (async () => {
+          try {
+            setFetchingFirebaseCost(true);
+            const fn = getFunctions();
+            const getCosts = httpsCallable(fn, 'getInfrastructureCosts');
+            const result: any = await getCosts();
+            if (result.data?.status === 'success') {
+              setFirebaseCost(result.data.finalCost);
+            } else if (result.data?.status === 'pending') {
+              setFirebaseCost(0);
+            } else if (result.data?.status === 'error') {
+              console.error('BigQuery Error:', result.data.error);
+              setFirebaseCost(0);
+            }
+          } catch (e) {
+            console.error('Failed to fetch infra costs:', e);
+          } finally {
+            setFetchingFirebaseCost(false);
           }
-        } catch (e) {
-          console.error('Failed to fetch infra costs:', e);
-        } finally {
-          setFetchingFirebaseCost(false);
-        }
+        })();
       }
     } catch (e) {
       console.error(e);
