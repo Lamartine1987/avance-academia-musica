@@ -99,6 +99,7 @@ async function runFinancialRoutine() {
     const MONTHS_TO_GENERATE = 12;
 
     for (const student of activeStudents) {
+      if (student.isScholarship) continue; // Bolsistas não pagam mensalidade
       if (!student.courseValue || !student.dueDate) continue;
 
       const existingPaymentsQuery = await db.collection('payments')
@@ -259,8 +260,8 @@ async function runFinancialRoutine() {
       
       const studentData = studentDoc.data() as any;
       
-      // Do not send messages to inactive students
-      if (studentData.status === 'inactive') continue;
+      // Do not send messages to inactive or scholarship students
+      if (studentData.status === 'inactive' || studentData.isScholarship) continue;
 
       const phone = studentData.phone;
       if (!phone) continue; // Cannot send without phone
