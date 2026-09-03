@@ -429,7 +429,7 @@ export default function Teachers({ profile }: { profile: UserProfile }) {
                   />
                   <div className="flex flex-col">
                     <span className="text-sm text-zinc-900 font-bold">Permissão de Biblioteca Oficial</span>
-                    <span className="text-xs text-zinc-500">Permitir que este professor adicione Módulos e Tópicos na Biblioteca da Escola.</span>
+                    <span className="text-xs text-zinc-500">Permitir que este professor adicione Tópicos na Biblioteca (Restrito aos instrumentos que ele ensina).</span>
                   </div>
                 </label>
               </div>

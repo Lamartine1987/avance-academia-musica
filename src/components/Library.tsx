@@ -411,7 +411,14 @@ const [newModuleName, setNewModuleName] = useState('');
 
   const openModuleUnlockModal = (moduleName: string) => {
     setModuleToUnlock(moduleName);
-    setSelectedStudentsForModule([]);
+    const mTopics = finalTopics.filter(t => t.moduleName === moduleName);
+    const existingStudentIds = new Set<string>();
+    mTopics.forEach(t => {
+      if (t.visibleToStudents) {
+        t.visibleToStudents.forEach(id => existingStudentIds.add(id));
+      }
+    });
+    setSelectedStudentsForModule(Array.from(existingStudentIds));
     setShowModuleUnlockModal(true);
   };
 
@@ -427,9 +434,8 @@ const [newModuleName, setNewModuleName] = useState('');
     e.preventDefault();
     if (!moduleToUnlock) return;
     
-    if (selectedStudentsForModule.length === 0) {
+    if (!moduleToUnlock) {
       setShowModuleUnlockModal(false);
-      setModuleToUnlock(null);
       return;
     }
     
@@ -439,11 +445,8 @@ const [newModuleName, setNewModuleName] = useState('');
       const batch = writeBatch(db);
       
       for (const topic of moduleTopics) {
-        const currentIds = topic.visibleToStudents || [];
-        const newIdsSet = new Set([...currentIds, ...selectedStudentsForModule]);
-        
         batch.update(doc(db, 'library', topic.id), {
-          visibleToStudents: Array.from(newIdsSet)
+          visibleToStudents: selectedStudentsForModule
         });
       }
       
@@ -462,17 +465,15 @@ const [newModuleName, setNewModuleName] = useState('');
 
   const handleUnlockModuleForTeachers = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!moduleToUnlock || selectedTeachersForModule.length === 0) return;
+    if (!moduleToUnlock) return;
     setIsSubmitting(true);
     try {
       const moduleTopics = topics.filter(t => t.moduleName === moduleToUnlock);
       const batch = writeBatch(db);
 
       for (const topic of moduleTopics) {
-        const currentIds = topic.visibleToTeachers || [];
-        const newIdsSet = new Set([...currentIds, ...selectedTeachersForModule]);
         batch.update(doc(db, 'library', topic.id), {
-          visibleToTeachers: Array.from(newIdsSet)
+          visibleToTeachers: selectedTeachersForModule
         });
       }
 
@@ -663,7 +664,6 @@ setNewModuleName('');
       const isModuleVisible = (moduleName: string) => {
     if (profile.role === 'admin') return true;
     if (isStudent) return true; // Students already have topics filtered by visibleToStudents
-    if (teacherData?.canManageLibrary) return true;
 
     const teacherInsts = teacherData?.instruments || [];
     
@@ -782,7 +782,7 @@ setNewModuleName('');
                     className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 transition-all font-medium"
                   >
                     <option value="" disabled>Selecione um módulo...</option>
-                    {libraryModules.map(m => (
+                    {libraryModules.filter(m => isModuleVisible(m.name)).map(m => (
                        <option key={m.id} value={m.name}>{m.name}</option>
                     ))}
                   </select>
@@ -1440,7 +1440,14 @@ setNewModuleName('');
                         onClick={(e) => { 
                           e.stopPropagation(); 
                           setModuleToUnlock(moduleName);
-                          setSelectedTeachersForModule([]);
+                          const mTopics = finalTopics.filter(t => t.moduleName === moduleName);
+                          const existingTeacherIds = new Set<string>();
+                          mTopics.forEach(t => {
+                            if (t.visibleToTeachers) {
+                              t.visibleToTeachers.forEach(id => existingTeacherIds.add(id));
+                            }
+                          });
+                          setSelectedTeachersForModule(Array.from(existingTeacherIds));
                           setShowTeacherUnlockModal(true);
                         }}
                         className="hidden md:flex items-center gap-1.5 py-2 px-3 bg-orange-50 text-orange-700 rounded-xl text-xs font-bold hover:bg-orange-100 transition-all border border-orange-100"
